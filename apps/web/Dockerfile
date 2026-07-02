@@ -2,9 +2,9 @@ FROM node:20-alpine AS base
 RUN apk add --no-cache openssl libc6-compat
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 WORKDIR /app
+ENV NODE_ENV=development
 
 FROM base AS deps
-ENV NODE_ENV=development
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY packages/config/package.json ./packages/config/
 COPY packages/shared/package.json ./packages/shared/
@@ -12,8 +12,7 @@ COPY apps/web/package.json ./apps/web/
 RUN pnpm install --frozen-lockfile
 
 FROM base AS builder
-ENV NODE_ENV=development
-COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/ ./
 COPY . .
 RUN pnpm install --frozen-lockfile
 ENV NEXT_TELEMETRY_DISABLED=1

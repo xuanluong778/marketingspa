@@ -19,6 +19,7 @@
   "devDependencies": {
     "@marketingspa/config": "workspace:*",
     "prettier": "^3.4.2",
+    "prisma": "^6.1.0",
     "turbo": "^2.3.3",
     "typescript": "^5.7.2"
   },

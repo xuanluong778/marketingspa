@@ -2,9 +2,9 @@ FROM node:20-alpine AS base
 RUN apk add --no-cache openssl libc6-compat
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 WORKDIR /app
+ENV NODE_ENV=development
 
 FROM base AS deps
-ENV NODE_ENV=development
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY packages/config/package.json ./packages/config/
 COPY packages/shared/package.json ./packages/shared/
@@ -13,8 +13,7 @@ COPY apps/api/package.json ./apps/api/
 RUN pnpm install --frozen-lockfile
 
 FROM base AS builder
-ENV NODE_ENV=development
-COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/ ./
 COPY . .
 RUN pnpm install --frozen-lockfile
 RUN pnpm exec prisma generate --schema=packages/database/prisma/schema.prisma
@@ -28,6 +27,7 @@ WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=builder /app/apps/api/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/packages/database/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 EXPOSE 4000
 CMD ["node", "dist/main.js"]
