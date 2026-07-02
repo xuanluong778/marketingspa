@@ -1,0 +1,7 @@
+{
+  "extends": "@marketingspa/config/tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "exclude": ["node_modules", "dist", ".next", "apps/ai-service-placeholder"]
+}

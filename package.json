@@ -1,0 +1,30 @@
+{
+  "name": "marketingspa",
+  "version": "0.1.0",
+  "private": true,
+  "description": "SaaS marketing platform for spas - MVP monorepo",
+  "scripts": {
+    "dev": "turbo run dev",
+    "dev:web:clean": "pnpm --filter @marketingspa/web dev:clean",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "db:generate": "pnpm --filter @marketingspa/database generate",
+    "db:migrate": "pnpm --filter @marketingspa/database migrate:dev",
+    "db:migrate:deploy": "pnpm --filter @marketingspa/database migrate:deploy",
+    "db:seed": "pnpm --filter @marketingspa/database seed",
+    "db:studio": "pnpm --filter @marketingspa/database studio"
+  },
+  "devDependencies": {
+    "@marketingspa/config": "workspace:*",
+    "prettier": "^3.4.2",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  },
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  }
+}

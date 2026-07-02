@@ -1,0 +1,1112 @@
+// Prisma schema - MarketingSpa SaaS (multi-tenant)
+// Mọi bảng nghiệp vụ đều gắn organizationId để cô lập dữ liệu theo spa
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// Enums
+// =============================================================================
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  UNKNOWN
+}
+
+enum LeadPipelineStatus {
+  NEW
+  CONTACTED
+  BOOKED
+  VISITED
+  PURCHASED
+  LOST
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CONFIRMED
+  ARRIVED
+  NO_SHOW
+  CANCELLED
+  COMPLETED
+}
+
+enum OrderStatus {
+  DRAFT
+  PENDING
+  PAID
+  PARTIALLY_PAID
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  CARD
+  MOMO
+  ZALOPAY
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum ExpenseCategory {
+  ADVERTISING
+  RENT
+  SALARY
+  SUPPLIES
+  UTILITIES
+  MAINTENANCE
+  OTHER
+}
+
+enum AdPlatform {
+  META
+  GOOGLE
+  TIKTOK
+  ZALO
+  MANUAL
+  OTHER
+}
+
+enum AdCampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  COMPLETED
+  ARCHIVED
+}
+
+enum MessageChannel {
+  EMAIL
+  SMS
+  ZALO
+  MESSENGER
+  PUSH
+}
+
+enum AutomationTriggerType {
+  LEAD_CREATED
+  APPOINTMENT_CREATED
+  APPOINTMENT_24H_BEFORE
+  APPOINTMENT_2H_BEFORE
+  APPOINTMENT_REMINDER
+  NO_SHOW
+  BIRTHDAY
+  CUSTOMER_INACTIVE
+  ORDER_COMPLETED
+  MANUAL
+}
+
+enum AutomationLogStatus {
+  PENDING
+  RUNNING
+  SENT
+  SUCCESS
+  FAILED
+  SKIPPED
+}
+
+enum IntegrationProvider {
+  META_ADS
+  GOOGLE_ADS
+  ZALO_OA
+  SMS
+  EMAIL
+}
+
+enum IntegrationStatus {
+  DISCONNECTED
+  CONNECTED
+  ERROR
+}
+
+enum CreditTransactionType {
+  CREDIT
+  DEBIT
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELLED
+  EXPIRED
+}
+
+/// Marketing campaign (email/SMS/Zalo) — giữ cho worker queue hiện tại
+enum MarketingCampaignStatus {
+  DRAFT
+  SCHEDULED
+  RUNNING
+  COMPLETED
+  CANCELLED
+}
+
+enum ChatbotBotStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+}
+
+enum ChatbotChannelType {
+  WEBSITE_WIDGET
+  FACEBOOK
+  ZALO
+  TELEGRAM
+  API
+}
+
+enum ChatbotChannelStatus {
+  PENDING
+  CONNECTED
+  DISCONNECTED
+}
+
+enum ChatbotSourceType {
+  FAQ
+  URL
+  FILE
+  MANUAL
+}
+
+enum ChatbotConversationStatus {
+  OPEN
+  CLOSED
+  NEEDS_STAFF
+}
+
+enum ChatbotLeadStatus {
+  NEW
+  CONTACTED
+  CONVERTED
+  LOST
+}
+
+// =============================================================================
+// Core tenancy & RBAC
+// =============================================================================
+
+/// Spa / tenant
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  phone     String?
+  email     String?
+  address   String?
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  branches          Branch[]
+  users             User[]
+  roles             Role[]
+  employees         Employee[]
+  customers         Customer[]
+  leads             Lead[]
+  leadSources       LeadSource[]
+  funnelStages      FunnelStage[]
+  appointments      Appointment[]
+  services          Service[]
+  orders            Order[]
+  payments          Payment[]
+  expenses          Expense[]
+  adAccounts        AdAccount[]
+  adCampaigns       AdCampaign[]
+  adDailyStats      AdDailyStat[]
+  messageTemplates  MessageTemplate[]
+  automationFlows   AutomationFlow[]
+  automationLogs    AutomationLog[]
+  aiReports         AiReport[]
+  auditLogs         AuditLog[]
+  subscriptions     Subscription[]
+  creditWallet      CreditWallet?
+  marketingCampaigns Campaign[]
+  integrations      Integration[]
+  businessGoalScenarios BusinessGoalScenario[]
+  chatbotBots           ChatbotBot[]
+  chatbotChannels       ChatbotChannel[]
+  chatbotKnowledgeSources ChatbotKnowledgeSource[]
+  chatbotConversations  ChatbotConversation[]
+  chatbotLeads          ChatbotLead[]
+  chatbotUsage          ChatbotUsage[]
+  chatbotSettings       ChatbotOrgSettings?
+  chatbotFacebookPages  ChatbotFacebookPage[]
+
+  @@map("organizations")
+}
+
+model Branch {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  name           String
+  code           String?
+  address        String?
+  phone          String?
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employees    Employee[]
+  customers    Customer[]
+  leads        Lead[]
+  appointments Appointment[]
+  orders       Order[]
+  expenses     Expense[]
+  businessGoalScenarios BusinessGoalScenario[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("branches")
+}
+
+model Permission {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  name        String
+  module      String
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  roles RolePermission[]
+
+  @@index([module])
+  @@map("permissions")
+}
+
+model Role {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  code           String
+  name           String
+  description    String?
+  isSystem       Boolean  @default(false) @map("is_system")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  users        User[]
+  permissions  RolePermission[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("roles")
+}
+
+model RolePermission {
+  roleId       String @map("role_id")
+  permissionId String @map("permission_id")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+/// MVP: user gắn 1 organization; sau mở rộng qua OrganizationMember
+model User {
+  id             String   @id @default(uuid())
+  email          String   @unique
+  passwordHash   String   @map("password_hash")
+  name           String
+  organizationId String   @map("organization_id")
+  roleId         String   @map("role_id")
+  employeeId     String?  @unique @map("employee_id")
+  isActive       Boolean  @default(true) @map("is_active")
+  lastLoginAt    DateTime? @map("last_login_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  role         Role         @relation(fields: [roleId], references: [id])
+  employee     Employee?    @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  auditLogs    AuditLog[]
+  businessGoalScenarios BusinessGoalScenario[]
+
+  @@index([organizationId])
+  @@index([roleId])
+  @@map("users")
+}
+
+model Employee {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  branchId       String?  @map("branch_id")
+  name           String
+  phone          String?
+  email          String?
+  position       String?
+  isActive       Boolean  @default(true) @map("is_active")
+  hiredAt        DateTime? @map("hired_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branch        Branch?       @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  user          User?
+  assignedLeads Lead[]        @relation("LeadAssignee")
+  appointments  Appointment[]
+
+  @@index([organizationId])
+  @@index([branchId])
+  @@map("employees")
+}
+
+// =============================================================================
+// CRM — Customer & Lead pipeline
+// =============================================================================
+
+model LeadSource {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  name           String
+  code           String?
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customers    Customer[]
+  leads        Lead[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@map("lead_sources")
+}
+
+model FunnelStage {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  name           String
+  position       Int      @default(0)
+  color          String?
+  isDefault      Boolean  @default(false) @map("is_default")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leads        Lead[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId, position])
+  @@map("funnel_stages")
+}
+
+model Customer {
+  id             String    @id @default(uuid())
+  organizationId String    @map("organization_id")
+  branchId       String?   @map("branch_id")
+  leadSourceId   String?   @map("lead_source_id")
+  name           String
+  phone          String?
+  email          String?
+  gender         Gender    @default(UNKNOWN)
+  birthday       DateTime? @db.Date
+  note           String?
+  tags           String[]  @default([])
+  source         String? /// legacy/free-text source nếu chưa map LeadSource
+  isActive       Boolean   @default(true) @map("is_active")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branch              Branch?              @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  leadSource          LeadSource?          @relation(fields: [leadSourceId], references: [id], onDelete: SetNull)
+  leads               Lead[]
+  appointments        Appointment[]
+  orders              Order[]
+  automationLogs      AutomationLog[]
+  marketingCampaigns  CampaignCustomer[]
+
+  @@index([organizationId])
+  @@index([organizationId, phone])
+  @@index([branchId])
+  @@map("customers")
+}
+
+model Lead {
+  id               String             @id @default(uuid())
+  organizationId   String             @map("organization_id")
+  branchId         String?            @map("branch_id")
+  leadSourceId     String?            @map("lead_source_id")
+  funnelStageId    String?            @map("funnel_stage_id")
+  assignedToId     String?            @map("assigned_to_id")
+  customerId       String?            @map("customer_id")
+  name             String
+  phone            String?
+  email            String?
+  pipelineStatus   LeadPipelineStatus @default(NEW) @map("pipeline_status")
+  note             String?
+  estimatedValue   Decimal?           @map("estimated_value") @db.Decimal(12, 2)
+  lostReason       String?            @map("lost_reason")
+  convertedAt      DateTime?          @map("converted_at")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branch         Branch?         @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  leadSource     LeadSource?     @relation(fields: [leadSourceId], references: [id], onDelete: SetNull)
+  funnelStage    FunnelStage?    @relation(fields: [funnelStageId], references: [id], onDelete: SetNull)
+  assignedTo     Employee?       @relation("LeadAssignee", fields: [assignedToId], references: [id], onDelete: SetNull)
+  customer       Customer?       @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  appointments   Appointment[]
+  automationLogs AutomationLog[]
+
+  @@index([organizationId, pipelineStatus])
+  @@index([assignedToId])
+  @@index([customerId])
+  @@map("leads")
+}
+
+// =============================================================================
+// Operations — Appointment, Service, Order, Payment, Expense
+// =============================================================================
+
+model Service {
+  id              String   @id @default(uuid())
+  organizationId  String   @map("organization_id")
+  name            String
+  description     String?
+  price           Decimal  @db.Decimal(12, 2)
+  durationMinutes Int      @default(60) @map("duration_minutes")
+  category        String?
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  organization  Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  appointments  Appointment[]
+  orderItems    OrderItem[]
+
+  @@index([organizationId])
+  @@map("services")
+}
+
+model Appointment {
+  id              String            @id @default(uuid())
+  organizationId  String            @map("organization_id")
+  branchId        String            @map("branch_id")
+  customerId      String?           @map("customer_id")
+  leadId          String?           @map("lead_id")
+  employeeId      String?           @map("employee_id")
+  serviceId       String?           @map("service_id")
+  scheduledAt     DateTime          @map("scheduled_at")
+  durationMinutes Int               @default(60) @map("duration_minutes")
+  status          AppointmentStatus @default(SCHEDULED)
+  note            String?
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branch       Branch       @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  customer     Customer?    @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  lead         Lead?        @relation(fields: [leadId], references: [id], onDelete: SetNull)
+  employee     Employee?    @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  service      Service?     @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, scheduledAt])
+  @@index([branchId, status])
+  @@map("appointments")
+}
+
+model Order {
+  id             String      @id @default(uuid())
+  organizationId String      @map("organization_id")
+  branchId       String?     @map("branch_id")
+  customerId     String      @map("customer_id")
+  orderNumber    String      @map("order_number")
+  status         OrderStatus @default(PENDING)
+  subtotal       Decimal     @default(0) @db.Decimal(12, 2)
+  discount       Decimal     @default(0) @db.Decimal(12, 2)
+  total          Decimal     @default(0) @db.Decimal(12, 2)
+  note           String?
+  orderedAt      DateTime    @default(now()) @map("ordered_at")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branch       Branch?      @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  items        OrderItem[]
+  payments     Payment[]
+
+  @@unique([organizationId, orderNumber])
+  @@index([organizationId, orderedAt])
+  @@index([customerId])
+  @@map("orders")
+}
+
+model OrderItem {
+  id         String  @id @default(uuid())
+  orderId    String  @map("order_id")
+  serviceId  String? @map("service_id")
+  name       String
+  quantity   Int     @default(1)
+  unitPrice  Decimal @map("unit_price") @db.Decimal(12, 2)
+  totalPrice Decimal @map("total_price") @db.Decimal(12, 2)
+
+  order   Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  service Service? @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model Payment {
+  id             String        @id @default(uuid())
+  organizationId String        @map("organization_id")
+  orderId        String        @map("order_id")
+  amount         Decimal       @db.Decimal(12, 2)
+  method         PaymentMethod @default(CASH)
+  status         PaymentStatus @default(PENDING)
+  reference      String?
+  paidAt         DateTime?     @map("paid_at")
+  createdAt      DateTime      @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  order        Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, paidAt])
+  @@index([orderId])
+  @@map("payments")
+}
+
+model Expense {
+  id             String          @id @default(uuid())
+  organizationId String          @map("organization_id")
+  branchId       String?         @map("branch_id")
+  adCampaignId   String?         @map("ad_campaign_id")
+  category       ExpenseCategory
+  description    String
+  amount         Decimal         @db.Decimal(12, 2)
+  expenseDate    DateTime        @map("expense_date") @db.Date
+  note           String?
+  createdAt      DateTime        @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branch       Branch?      @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  adCampaign   AdCampaign?  @relation(fields: [adCampaignId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, expenseDate])
+  @@index([category])
+  @@map("expenses")
+}
+
+// =============================================================================
+// Advertising — manual input trước, sau kết nối Meta/Google API
+// =============================================================================
+
+model AdAccount {
+  id             String     @id @default(uuid())
+  organizationId String     @map("organization_id")
+  platform       AdPlatform
+  name           String
+  externalId     String?    @map("external_id")
+  currency       String     @default("VND")
+  isActive       Boolean    @default(true) @map("is_active")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  campaigns    AdCampaign[]
+
+  @@index([organizationId, platform])
+  @@map("ad_accounts")
+}
+
+model AdCampaign {
+  id             String           @id @default(uuid())
+  organizationId String           @map("organization_id")
+  adAccountId    String           @map("ad_account_id")
+  name           String
+  platform       AdPlatform
+  status         AdCampaignStatus @default(DRAFT)
+  budget         Decimal?         @db.Decimal(12, 2)
+  startDate      DateTime?        @map("start_date") @db.Date
+  endDate        DateTime?        @map("end_date") @db.Date
+  externalId     String?          @map("external_id")
+  note           String?
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  adAccount    AdAccount     @relation(fields: [adAccountId], references: [id], onDelete: Cascade)
+  dailyStats   AdDailyStat[]
+  expenses     Expense[]
+
+  @@index([organizationId, status])
+  @@index([adAccountId])
+  @@map("ad_campaigns")
+}
+
+model AdDailyStat {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  adCampaignId   String   @map("ad_campaign_id")
+  date           DateTime @db.Date
+  impressions    Int      @default(0)
+  clicks         Int      @default(0)
+  spend          Decimal  @default(0) @db.Decimal(12, 2)
+  leads          Int      @default(0)
+  conversions    Int      @default(0)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  adCampaign   AdCampaign   @relation(fields: [adCampaignId], references: [id], onDelete: Cascade)
+
+  @@unique([adCampaignId, date])
+  @@index([organizationId, date])
+  @@map("ad_daily_stats")
+}
+
+// =============================================================================
+// Marketing automation & messaging
+// =============================================================================
+
+model MessageTemplate {
+  id             String         @id @default(uuid())
+  organizationId String         @map("organization_id")
+  name           String
+  channel        MessageChannel
+  subject        String?
+  body           String
+  variables      Json           @default("[]")
+  isActive       Boolean        @default(true) @map("is_active")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  automationFlows AutomationFlow[]
+
+  @@index([organizationId, channel])
+  @@map("message_templates")
+}
+
+model AutomationFlow {
+  id                String                @id @default(uuid())
+  organizationId    String                @map("organization_id")
+  messageTemplateId String?               @map("message_template_id")
+  name              String
+  triggerType       AutomationTriggerType @map("trigger_type")
+  channel           MessageChannel?       @map("channel")
+  delayMinutes      Int                   @default(0) @map("delay_minutes")
+  triggerConfig     Json                  @default("{}") @map("trigger_config")
+  isActive          Boolean               @default(true) @map("is_active")
+  createdAt         DateTime              @default(now()) @map("created_at")
+  updatedAt         DateTime              @updatedAt @map("updated_at")
+
+  organization    Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  messageTemplate MessageTemplate? @relation(fields: [messageTemplateId], references: [id], onDelete: SetNull)
+  logs            AutomationLog[]
+
+  @@index([organizationId, triggerType])
+  @@map("automation_flows")
+}
+
+model AutomationLog {
+  id               String              @id @default(uuid())
+  organizationId   String              @map("organization_id")
+  automationFlowId String              @map("automation_flow_id")
+  customerId       String?             @map("customer_id")
+  leadId           String?             @map("lead_id")
+  channel          MessageChannel?     @map("channel")
+  renderedContent  String?             @map("rendered_content")
+  status           AutomationLogStatus @default(PENDING)
+  result           Json?
+  executedAt       DateTime?           @map("executed_at")
+  createdAt        DateTime            @default(now()) @map("created_at")
+
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  automationFlow AutomationFlow @relation(fields: [automationFlowId], references: [id], onDelete: Cascade)
+  customer       Customer?      @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  lead           Lead?          @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([automationFlowId])
+  @@map("automation_logs")
+}
+
+/// Marketing / messaging provider credentials (encrypted at rest)
+model Integration {
+  id                   String              @id @default(uuid())
+  organizationId       String              @map("organization_id")
+  provider             IntegrationProvider
+  status               IntegrationStatus   @default(DISCONNECTED)
+  encryptedCredentials String?             @map("encrypted_credentials")
+  metadata             Json                @default("{}")
+  lastTestedAt         DateTime?           @map("last_tested_at")
+  createdAt            DateTime            @default(now()) @map("created_at")
+  updatedAt            DateTime            @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, provider])
+  @@index([organizationId])
+  @@map("integrations")
+}
+
+/// Marketing message campaign (queue worker) — tách biệt AdCampaign
+model Campaign {
+  id             String                  @id @default(uuid())
+  organizationId String                  @map("organization_id")
+  name           String
+  status         MarketingCampaignStatus @default(DRAFT)
+  channel        MessageChannel
+  scheduledAt    DateTime?               @map("scheduled_at")
+  sentCount      Int                     @default(0) @map("sent_count")
+  createdAt      DateTime                @default(now()) @map("created_at")
+  updatedAt      DateTime                @updatedAt @map("updated_at")
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customers    CampaignCustomer[]
+
+  @@index([organizationId, status])
+  @@map("campaigns")
+}
+
+model CampaignCustomer {
+  campaignId String @map("campaign_id")
+  customerId String @map("customer_id")
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@id([campaignId, customerId])
+  @@map("campaign_customers")
+}
+
+// =============================================================================
+// AI, audit, billing
+// =============================================================================
+
+model AiReport {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  type           String
+  title          String
+  content        Json
+  generatedAt    DateTime @default(now()) @map("generated_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, type])
+  @@map("ai_reports")
+}
+
+model AuditLog {
+  id             String   @id @default(uuid())
+  organizationId String?  @map("organization_id")
+  userId         String?  @map("user_id")
+  action         String
+  entityType     String   @map("entity_type")
+  entityId       String?  @map("entity_id")
+  metadata       Json?
+  ipAddress      String?  @map("ip_address")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  user         User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}
+
+model SubscriptionPlan {
+  id              String   @id @default(uuid())
+  code            String   @unique
+  name            String
+  priceMonthly    Decimal  @map("price_monthly") @db.Decimal(12, 2)
+  creditsIncluded Int      @default(0) @map("credits_included")
+  features        Json     @default("[]")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  subscriptions Subscription[]
+
+  @@map("subscription_plans")
+}
+
+model Subscription {
+  id                 String             @id @default(uuid())
+  organizationId     String             @map("organization_id")
+  planId             String             @map("plan_id")
+  status             SubscriptionStatus @default(TRIALING)
+  currentPeriodStart DateTime           @map("current_period_start")
+  currentPeriodEnd   DateTime           @map("current_period_end")
+  cancelledAt        DateTime?          @map("cancelled_at")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  plan         SubscriptionPlan @relation(fields: [planId], references: [id])
+
+  @@index([organizationId, status])
+  @@map("subscriptions")
+}
+
+model CreditWallet {
+  id             String   @id @default(uuid())
+  organizationId String   @unique @map("organization_id")
+  balance        Decimal  @default(0) @db.Decimal(12, 2)
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  transactions CreditTransaction[]
+
+  @@map("credit_wallets")
+}
+
+model CreditTransaction {
+  id             String                @id @default(uuid())
+  organizationId String                @map("organization_id")
+  walletId       String                @map("wallet_id")
+  type           CreditTransactionType
+  amount         Decimal               @db.Decimal(12, 2)
+  balanceAfter   Decimal               @map("balance_after") @db.Decimal(12, 2)
+  reason         String?
+  referenceId    String?               @map("reference_id")
+  createdAt      DateTime              @default(now()) @map("created_at")
+
+  wallet CreditWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([walletId])
+  @@map("credit_transactions")
+}
+
+// =============================================================================
+// Business goal scenarios
+// =============================================================================
+
+model BusinessGoalScenario {
+  id                           String   @id @default(uuid())
+  organizationId               String   @map("organization_id")
+  branchId                     String?  @map("branch_id")
+  name                         String
+  averageRevenuePerTransaction Decimal  @map("average_revenue_per_transaction") @db.Decimal(14, 2)
+  currentTransactionCount      Int      @map("current_transaction_count")
+  variableCostRate             Decimal  @map("variable_cost_rate") @db.Decimal(5, 2)
+  fixedCost                    Decimal  @map("fixed_cost") @db.Decimal(14, 2)
+  leadConversionRate           Decimal  @map("lead_conversion_rate") @db.Decimal(5, 2)
+  targetProfit                 Decimal  @map("target_profit") @db.Decimal(14, 2)
+  calculatedRevenue            Decimal  @map("calculated_revenue") @db.Decimal(14, 2)
+  calculatedGrossProfit        Decimal  @map("calculated_gross_profit") @db.Decimal(14, 2)
+  calculatedNetProfit          Decimal  @map("calculated_net_profit") @db.Decimal(14, 2)
+  breakEvenTransactions        Int?     @map("break_even_transactions")
+  breakEvenLeads               Int?     @map("break_even_leads")
+  targetTransactions           Int?     @map("target_transactions")
+  targetLeads                  Int?     @map("target_leads")
+  createdById                  String   @map("created_by_id")
+  createdAt                    DateTime @default(now()) @map("created_at")
+  updatedAt                    DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branch       Branch?      @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  createdBy    User         @relation(fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([organizationId, createdAt])
+  @@index([branchId])
+  @@map("business_goal_scenarios")
+}
+
+// =============================================================================
+// Chatbot CSKH
+// =============================================================================
+
+model ChatbotBot {
+  id               String           @id @default(uuid())
+  organizationId   String           @map("organization_id")
+  botName          String           @map("bot_name")
+  websiteUrl       String?          @map("website_url")
+  businessName     String?          @map("business_name")
+  industry         String?
+  hotline          String?
+  mainServices     String?          @map("main_services") @db.Text
+  consultationTone String           @default("friendly") @map("consultation_tone")
+  greeting         String?          @db.VarChar(500)
+  allowedDomains   String?          @map("allowed_domains") @db.VarChar(2000)
+  status           ChatbotBotStatus @default(DRAFT)
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  organization  Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  knowledge     ChatbotKnowledgeSource[]
+  channels      ChatbotChannel[]
+  conversations ChatbotConversation[]
+  leads         ChatbotLead[]
+  usage         ChatbotUsage[]
+  facebookPages ChatbotFacebookPage[]
+
+  @@index([organizationId, status])
+  @@map("chatbot_bots")
+}
+
+model ChatbotKnowledgeSource {
+  id             String            @id @default(uuid())
+  organizationId String            @map("organization_id")
+  botId          String            @map("bot_id")
+  sourceType     ChatbotSourceType @map("source_type")
+  title          String
+  url            String?           @db.VarChar(2000)
+  content        String?           @db.Text
+  status         String            @default("active")
+  crawlError     String?           @map("crawl_error") @db.VarChar(500)
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bot          ChatbotBot   @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@index([botId, status])
+  @@index([organizationId])
+  @@map("chatbot_knowledge_sources")
+}
+
+model ChatbotChannel {
+  id             String               @id @default(uuid())
+  organizationId String               @map("organization_id")
+  botId          String?              @map("bot_id")
+  name           String
+  channelType    ChatbotChannelType   @map("channel_type")
+  status         ChatbotChannelStatus @default(PENDING)
+  config         Json                 @default("{}")
+  createdAt      DateTime             @default(now()) @map("created_at")
+  updatedAt      DateTime             @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bot          ChatbotBot?  @relation(fields: [botId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, channelType])
+  @@map("chatbot_channels")
+}
+
+model ChatbotConversation {
+  id                String                    @id @default(uuid())
+  organizationId    String                    @map("organization_id")
+  botId             String                    @map("bot_id")
+  sessionId         String                    @map("session_id")
+  visitorName       String?                   @map("visitor_name")
+  visitorPhone      String?                   @map("visitor_phone")
+  channel           String                    @default("website")
+  externalUserId    String?                   @map("external_user_id")
+  channelRef        String?                   @map("channel_ref")
+  status            ChatbotConversationStatus @default(OPEN)
+  lastUserMessageAt DateTime?                 @map("last_user_message_at")
+  createdAt         DateTime                  @default(now()) @map("created_at")
+  updatedAt         DateTime                  @updatedAt @map("updated_at")
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bot          ChatbotBot        @relation(fields: [botId], references: [id], onDelete: Cascade)
+  messages     ChatbotMessage[]
+  leads        ChatbotLead[]
+
+  @@unique([botId, sessionId])
+  @@index([organizationId, updatedAt])
+  @@map("chatbot_conversations")
+}
+
+model ChatbotMessage {
+  id             String   @id @default(uuid())
+  conversationId String   @map("conversation_id")
+  role           String
+  message        String   @db.Text
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  conversation ChatbotConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@map("chatbot_messages")
+}
+
+model ChatbotLead {
+  id             String            @id @default(uuid())
+  organizationId String            @map("organization_id")
+  botId          String            @map("bot_id")
+  conversationId String?           @map("conversation_id")
+  name           String?
+  phone          String?
+  need           String?           @db.Text
+  pageUrl        String?           @map("page_url") @db.VarChar(2000)
+  status         ChatbotLeadStatus @default(NEW)
+  createdAt      DateTime          @default(now()) @map("created_at")
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bot          ChatbotBot           @relation(fields: [botId], references: [id], onDelete: Cascade)
+  conversation ChatbotConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([botId])
+  @@map("chatbot_leads")
+}
+
+model ChatbotUsage {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  botId          String?  @map("bot_id")
+  month          String   @db.VarChar(7)
+  aiReplies      Int      @default(0) @map("ai_replies")
+  creditsUsed    Int      @default(0) @map("credits_used")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bot          ChatbotBot?  @relation(fields: [botId], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, month, botId])
+  @@index([organizationId, month])
+  @@map("chatbot_usage")
+}
+
+model ChatbotOrgSettings {
+  id             String   @id @default(uuid())
+  organizationId String   @unique @map("organization_id")
+  model          String   @default("gpt-4o-mini")
+  temperature    Float    @default(0.4)
+  systemPrompt   String?  @map("system_prompt") @db.Text
+  greeting       String?  @db.VarChar(500)
+  fallbackReply  String?  @map("fallback_reply") @db.Text
+  monthlyLimit   Int      @default(1000) @map("monthly_limit")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("chatbot_org_settings")
+}
+
+model ChatbotFacebookPage {
+  id                      String   @id @default(uuid())
+  organizationId          String   @map("organization_id")
+  botId                   String   @map("bot_id")
+  pageId                  String   @map("page_id")
+  pageName                String   @map("page_name")
+  pageAccessTokenEncrypted String  @map("page_access_token_encrypted") @db.Text
+  aiEnabled               Boolean  @default(true) @map("ai_enabled")
+  status                  String   @default("connected")
+  webhookSubscribed       Boolean  @default(false) @map("webhook_subscribed")
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  bot          ChatbotBot   @relation(fields: [botId], references: [id], onDelete: Cascade)
+
+  @@unique([pageId])
+  @@index([organizationId])
+  @@map("chatbot_facebook_pages")
+}

@@ -1,0 +1,2 @@
+source=postgresql host=127.0.0.1 port=5433 db=digiseo
+source=sqlite file=/var/www/seoauto_vn_usr/data/www/app.db

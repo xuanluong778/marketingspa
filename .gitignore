@@ -1,0 +1,52 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+.next/
+out/
+build/
+*.tsbuildinfo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+backups/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Testing
+coverage/
+
+# Prisma
+packages/database/prisma/migrations/**/migration_lock.toml
+
+# Docker volumes (local)
+docker/data/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+apps/ai-service-placeholder/.venv/
+
+# Sentry
+.sentryclirc
+
+# Turbo
+.turbo/

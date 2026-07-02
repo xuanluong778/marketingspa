@@ -1,0 +1,46 @@
+96:from app.routers.chatbot_cskh import router as chatbot_cskh_router
+97:from app.routers.chatbot_cskh_platform import router as chatbot_cskh_platform_router
+98:from app.routers.chatbot_cskh_inbox import router as chatbot_cskh_inbox_router
+99:from app.routers.chatbot_cskh_knowledge import router as chatbot_cskh_knowledge_router
+100:from app.routers.chatbot_cskh_kb import router as chatbot_cskh_kb_router
+101:from app.routers.chatbot_cskh_facebook import router as chatbot_cskh_facebook_router
+102:from app.routers.chatbot_cskh_public import router as chatbot_cskh_public_router
+253:app.include_router(chatbot_cskh_platform_router, prefix="/api/chatbot")
+254:app.include_router(chatbot_cskh_knowledge_router, prefix="/api/chatbot")
+255:app.include_router(chatbot_cskh_kb_router, prefix="/api/chatbot")
+256:app.include_router(chatbot_cskh_inbox_router, prefix="/api/chatbot")
+257:app.include_router(chatbot_cskh_facebook_router, prefix="/api/chatbot")
+259:app.include_router(chatbot_cskh_public_router, prefix="/api/chatbot")
+264:app.include_router(chatbot_cskh_router, prefix="/api/chatbot-cskh")
+480:def _ensure_chatbot_workflow_credit_logs() -> None:
+481:    from app.migrations.ensure_chatbot_workflow_credit_logs import ensure_chatbot_workflow_credit_logs
+483:    ensure_chatbot_workflow_credit_logs()
+486:_ensure_chatbot_workflow_credit_logs()
+489:def _ensure_chatbot_cskh_tables() -> None:
+490:    from app.migrations.ensure_chatbot_cskh_tables import ensure_chatbot_cskh_tables
+492:    ensure_chatbot_cskh_tables()
+495:_ensure_chatbot_cskh_tables()
+498:def _ensure_chatbot_cskh_widget_columns() -> None:
+499:    from app.migrations.ensure_chatbot_cskh_widget_columns import ensure_chatbot_cskh_widget_columns
+501:    ensure_chatbot_cskh_widget_columns()
+504:_ensure_chatbot_cskh_widget_columns()
+507:def _ensure_chatbot_cskh_credit_columns() -> None:
+508:    from app.migrations.ensure_chatbot_cskh_credit_columns import ensure_chatbot_cskh_credit_columns
+510:    ensure_chatbot_cskh_credit_columns()
+513:_ensure_chatbot_cskh_credit_columns()
+516:def _ensure_chatbot_cskh_allowed_domains() -> None:
+517:    from app.migrations.ensure_chatbot_cskh_allowed_domains import ensure_chatbot_cskh_allowed_domains
+519:    ensure_chatbot_cskh_allowed_domains()
+522:_ensure_chatbot_cskh_allowed_domains()
+525:def _ensure_chatbot_cskh_facebook() -> None:
+526:    from app.migrations.ensure_chatbot_cskh_facebook import ensure_chatbot_cskh_facebook
+528:    ensure_chatbot_cskh_facebook()
+531:_ensure_chatbot_cskh_facebook()
+534:def _ensure_chatbot_knowledge_columns() -> None:
+535:    from app.migrations.ensure_chatbot_knowledge_columns import ensure_chatbot_knowledge_columns
+537:    ensure_chatbot_knowledge_columns()
+540:_ensure_chatbot_knowledge_columns()
+543:def _ensure_chatbot_kb_tables() -> None:
+544:    from app.migrations.ensure_chatbot_kb_tables import ensure_chatbot_kb_tables
+546:    ensure_chatbot_kb_tables()
+549:_ensure_chatbot_kb_tables()

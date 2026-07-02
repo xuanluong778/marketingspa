@@ -1,0 +1,4 @@
+# SSL certificates directory
+# Production: mount Let's Encrypt certs here
+# fullchain.pem
+# privkey.pem

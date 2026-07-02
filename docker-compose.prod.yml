@@ -1,0 +1,33 @@
+# Production override - SSL + nginx production config
+# Usage: docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+services:
+  nginx:
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./docker/ssl:/etc/nginx/ssl:ro
+      - certbot_www:/var/www/certbot:ro
+
+  web:
+    environment:
+      NEXT_PUBLIC_API_URL: https://${DOMAIN}
+      NEXT_PUBLIC_APP_URL: https://${DOMAIN}
+
+  api:
+    environment:
+      NEXT_PUBLIC_APP_URL: https://${DOMAIN}
+
+  # Certbot - lấy SSL Let's Encrypt (chạy thủ công lần đầu)
+  certbot:
+    image: certbot/certbot
+    container_name: marketingspa-certbot
+    volumes:
+      - ./docker/ssl:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    entrypoint: /bin/sh -c "trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done"
+
+volumes:
+  certbot_www:
