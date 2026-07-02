@@ -73,10 +73,11 @@ export function ChatbotEmbedList({
           website. Kích hoạt chatbot trước khi widget hiển thị cho khách.
         </p>
         <p className="text-sm text-amber-200/90">
-          Website HTTPS cần <strong>plugin proxy WordPress</strong> trên server (chưa cài → widget 404).
-          Cài file <code className="text-white/90">scripts/chatbot-embed-proxy/mspa-chatbot-proxy.zip</code>{' '}
-          qua WP Admin → Plugins → Add New → Upload. Kích hoạt plugin → Settings → MarketingSpa Chatbot →
-          nhập URL API. Vào Settings → Permalinks → Save để refresh rewrite.
+          Website HTTPS cần <strong>plugin proxy WordPress</strong> trên server (chưa cài → widget
+          404). Cài file{' '}
+          <code className="text-white/90">scripts/chatbot-embed-proxy/mspa-chatbot-proxy.zip</code>{' '}
+          qua WP Admin → Plugins → Add New → Upload. Kích hoạt plugin → Settings → MarketingSpa
+          Chatbot → nhập URL API. Vào Settings → Permalinks → Save để refresh rewrite.
         </p>
 
         {bots && bots.length > 1 && (
@@ -189,7 +190,10 @@ export function ChatbotEmbedList({
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex justify-end gap-2 flex-wrap" onClick={(e) => e.stopPropagation()}>
+                      <div
+                        className="flex justify-end gap-2 flex-wrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         {bot.status !== 'ACTIVE' && onUpdateStatus && (
                           <Button
                             type="button"

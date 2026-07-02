@@ -27,7 +27,14 @@ interface BotFormPanelProps {
   saving?: boolean;
 }
 
-export function BotFormPanel({ form, onChange, onSave, onCancel, onActivate, saving }: BotFormPanelProps) {
+export function BotFormPanel({
+  form,
+  onChange,
+  onSave,
+  onCancel,
+  onActivate,
+  saving,
+}: BotFormPanelProps) {
   const suggest = useChatbotSuggest();
   const [greetingHints, setGreetingHints] = useState<string[]>([]);
 

@@ -50,11 +50,7 @@ import {
   useDisconnectFacebookPage,
   useChatbotConversation,
 } from '@/hooks/use-chatbot-cskh';
-import {
-  CHANNEL_LABELS,
-  SOURCE_TYPE_LABELS,
-  type ChatbotBot,
-} from '@/types/chatbot-cskh';
+import { CHANNEL_LABELS, SOURCE_TYPE_LABELS, type ChatbotBot } from '@/types/chatbot-cskh';
 import { formatDateTime } from '@/lib/format';
 import { copyToClipboard } from '@/lib/copy-to-clipboard';
 import { BotFormPanel } from '@/components/chatbot-cskh/bot-form-panel';
