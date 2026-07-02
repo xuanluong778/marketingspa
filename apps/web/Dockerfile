@@ -2,13 +2,14 @@ FROM node:20-alpine AS base
 RUN apk add --no-cache openssl libc6-compat
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 WORKDIR /app
-ENV NODE_ENV=development
 
 FROM base AS builder
 COPY . .
-RUN pnpm install --frozen-lockfile
+# Cần devDependencies khi install; Next.js build bắt buộc NODE_ENV=production
+RUN NODE_ENV=development pnpm install --frozen-lockfile
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV DOCKER_BUILD=true
+ENV NODE_ENV=production
 RUN pnpm --filter @marketingspa/shared build
 RUN pnpm --filter @marketingspa/web build
 
