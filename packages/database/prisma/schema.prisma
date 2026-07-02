@@ -2,7 +2,8 @@
 // Mọi bảng nghiệp vụ đều gắn organizationId để cô lập dữ liệu theo spa
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
