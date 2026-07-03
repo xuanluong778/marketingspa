@@ -45,9 +45,12 @@ import {
 } from '@/lib/business-goal-form';
 import { calculateBusinessGoalMetrics } from '@/lib/business-goal-metrics';
 import { formatDateTime, formatVnd } from '@/lib/format';
-import type { BusinessGoalInput, BusinessGoalScenario } from '@/types/business-goals';
 import { cn } from '@/lib/utils';
 import { BG_BOX, BG_BOX_FIELDS } from '@/components/business-goals/business-goals-theme';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { AdPerformancePanel } from '@/components/business-goals/ad-performance-panel';
+
+import type { BusinessGoalInput, BusinessGoalScenario } from '@/types/business-goals';
 
 type FormErrors = Partial<Record<keyof BusinessGoalInput, string>>;
 
@@ -180,95 +183,108 @@ export default function BusinessGoalsPage() {
         </div>
       </div>
 
-      {/* Hero + KPIs */}
-      {calculated && (
-        <div className="space-y-3">
-          <ResultHeroCard metrics={metrics} />
-          <KpiCards metrics={metrics} />
-        </div>
-      )}
+      <Tabs defaultValue="goals" className="space-y-5">
+        <TabsList className="grid w-full max-w-md grid-cols-2">
+          <TabsTrigger value="goals">Tính mục tiêu</TabsTrigger>
+          <TabsTrigger value="ad-performance">Hiệu quả quảng cáo</TabsTrigger>
+        </TabsList>
 
-      {/* Main 2-column layout */}
-      <div className="grid gap-5 lg:grid-cols-5">
-        <Card className={cn('lg:col-span-3', BG_BOX, BG_BOX_FIELDS)}>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base text-white">Nhập liệu</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <BusinessGoalForm
-              state={formState}
-              onChange={(s) => {
-                setFormState(s);
-                setCalculated(false);
-              }}
-              inputMode={inputMode}
-              onInputModeChange={setInputMode}
-            />
-
-            {Object.keys(errors).length > 0 && (
-              <p className="text-sm text-red-300">
-                {Object.values(errors).filter(Boolean).join(' · ')}
-              </p>
-            )}
-
-            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap pt-2 border-t border-white/10">
-              <Button onClick={handleCalculate} className="sm:flex-1">
-                <Calculator className="h-4 w-4 mr-2" />
-                Tính toán
-              </Button>
-              <Button
-                variant="outline"
-                onClick={handleReset}
-                className="border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white"
-              >
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Reset
-              </Button>
-              <Button
-                variant="outline"
-                onClick={handleSaveDraft}
-                className="border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white"
-              >
-                <Save className="h-4 w-4 mr-2" />
-                {draftSaved ? 'Đã lưu nháp!' : 'Lưu nháp'}
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={handleSample}
-                className="bg-white/15 text-white hover:bg-white/20"
-              >
-                <Sparkles className="h-4 w-4 mr-2" />
-                Dùng dữ liệu mẫu
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => setSaveOpen(true)}
-                disabled={!calculated || createScenario.isPending}
-                className="border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white"
-              >
-                Lưu kịch bản
-              </Button>
+        <TabsContent value="goals" className="space-y-5 mt-0">
+          {/* Hero + KPIs */}
+          {calculated && (
+            <div className="space-y-3">
+              <ResultHeroCard metrics={metrics} />
+              <KpiCards metrics={metrics} />
             </div>
-          </CardContent>
-        </Card>
+          )}
 
-        <div className="lg:col-span-2 space-y-4 lg:sticky lg:top-4 lg:self-start">
-          {!calculated ? (
-            <Card className={cn(BG_BOX)}>
-              <CardContent className="py-12 [&_.text-muted-foreground]:text-white/70 [&_p.font-medium]:text-white">
-                <EmptyState
-                  title="Chưa có kết quả"
-                  description="Nhập số liệu và nhấn Tính toán để xem insight"
+          {/* Main 2-column layout */}
+          <div className="grid gap-5 lg:grid-cols-5">
+            <Card className={cn('lg:col-span-3', BG_BOX, BG_BOX_FIELDS)}>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base text-white">Nhập liệu</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <BusinessGoalForm
+                  state={formState}
+                  onChange={(s) => {
+                    setFormState(s);
+                    setCalculated(false);
+                  }}
+                  inputMode={inputMode}
+                  onInputModeChange={setInputMode}
                 />
+
+                {Object.keys(errors).length > 0 && (
+                  <p className="text-sm text-red-300">
+                    {Object.values(errors).filter(Boolean).join(' · ')}
+                  </p>
+                )}
+
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap pt-2 border-t border-white/10">
+                  <Button onClick={handleCalculate} className="sm:flex-1">
+                    <Calculator className="h-4 w-4 mr-2" />
+                    Tính toán
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleReset}
+                    className="border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+                  >
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Reset
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={handleSaveDraft}
+                    className="border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+                  >
+                    <Save className="h-4 w-4 mr-2" />
+                    {draftSaved ? 'Đã lưu nháp!' : 'Lưu nháp'}
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    onClick={handleSample}
+                    className="bg-white/15 text-white hover:bg-white/20"
+                  >
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    Dùng dữ liệu mẫu
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setSaveOpen(true)}
+                    disabled={!calculated || createScenario.isPending}
+                    className="border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+                  >
+                    Lưu kịch bản
+                  </Button>
+                </div>
               </CardContent>
             </Card>
-          ) : (
-            <InsightsPanel metrics={metrics} />
-          )}
-        </div>
-      </div>
 
-      <FooterTips />
+            <div className="lg:col-span-2 space-y-4 lg:sticky lg:top-4 lg:self-start">
+              {!calculated ? (
+                <Card className={cn(BG_BOX)}>
+                  <CardContent className="py-12 [&_.text-muted-foreground]:text-white/70 [&_p.font-medium]:text-white">
+                    <EmptyState
+                      title="Chưa có kết quả"
+                      description="Nhập số liệu và nhấn Tính toán để xem insight"
+                    />
+                  </CardContent>
+                </Card>
+              ) : (
+                <InsightsPanel metrics={metrics} />
+              )}
+            </div>
+          </div>
+
+          <FooterTips />
+        </TabsContent>
+
+        <TabsContent value="ad-performance" className="mt-0">
+          <AdPerformancePanel />
+        </TabsContent>
+      </Tabs>
 
       <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
         <DialogContent>

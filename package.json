@@ -15,6 +15,7 @@
     "db:migrate": "node scripts/with-root-env.cjs pnpm --filter @marketingspa/database migrate:dev",
     "db:migrate:deploy": "node scripts/with-root-env.cjs pnpm --filter @marketingspa/database migrate:deploy",
     "db:seed": "node scripts/with-root-env.cjs pnpm --filter @marketingspa/database seed",
+    "test:ad-performance": "node scripts/test-ad-performance-metrics.cjs",
     "db:studio": "pnpm --filter @marketingspa/database studio"
   },
   "devDependencies": {
