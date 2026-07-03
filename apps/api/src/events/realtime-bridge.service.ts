@@ -9,22 +9,54 @@ import { EventsGateway } from './events.gateway';
 export class RealtimeBridgeService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RealtimeBridgeService.name);
   private subscriber: Redis | null = null;
+  private connecting = false;
+  private reconnectTimer: NodeJS.Timeout | null = null;
 
   constructor(
     private readonly config: ConfigService,
     private readonly events: EventsGateway,
   ) {}
 
-  async onModuleInit() {
-    const redisUrl = this.config.get<string>('REDIS_URL', 'redis://localhost:6379');
-    this.subscriber = new Redis(redisUrl, { maxRetriesPerRequest: null });
+  onModuleInit() {
+    void this.connectSubscriber();
+  }
 
-    this.subscriber.on('error', (err) => {
-      this.logger.error(`Redis subscriber error: ${err.message}`);
+  private scheduleReconnect() {
+    if (this.reconnectTimer) return;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      void this.connectSubscriber();
+    }, 10_000);
+  }
+
+  private async connectSubscriber() {
+    if (this.connecting) return;
+    this.connecting = true;
+
+    const redisUrl = this.config.get<string>('REDIS_URL', 'redis://localhost:6379');
+
+    if (this.subscriber) {
+      try {
+        await this.subscriber.quit();
+      } catch {
+        // ignore cleanup errors
+      }
+      this.subscriber = null;
+    }
+
+    const subscriber = new Redis(redisUrl, {
+      maxRetriesPerRequest: null,
+      connectTimeout: 5_000,
+      retryStrategy: () => null,
+      enableOfflineQueue: false,
+    });
+    this.subscriber = subscriber;
+
+    subscriber.on('error', (err) => {
+      this.logger.warn(`Redis subscriber error: ${err.message}`);
     });
 
-    await this.subscriber.subscribe(REALTIME_CHANNEL);
-    this.subscriber.on('message', (channel, message) => {
+    subscriber.on('message', (channel, message) => {
       if (channel !== REALTIME_CHANNEL) return;
       try {
         const { organizationId, event, payload } = JSON.parse(message) as {
@@ -39,10 +71,26 @@ export class RealtimeBridgeService implements OnModuleInit, OnModuleDestroy {
       }
     });
 
-    this.logger.log(`Subscribed to ${REALTIME_CHANNEL}`);
+    try {
+      await subscriber.connect();
+      await subscriber.subscribe(REALTIME_CHANNEL);
+      this.logger.log(`Subscribed to ${REALTIME_CHANNEL}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(
+        `Redis unavailable — realtime bridge paused (API vẫn chạy bình thường): ${message}`,
+      );
+      this.scheduleReconnect();
+    } finally {
+      this.connecting = false;
+    }
   }
 
   async onModuleDestroy() {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     if (this.subscriber) {
       await this.subscriber.quit();
       this.subscriber = null;

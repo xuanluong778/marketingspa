@@ -5,6 +5,7 @@
   "description": "SaaS marketing platform for spas - MVP monorepo",
   "scripts": {
     "dev": "turbo run dev",
+    "dev:infra": "docker compose -f docker-compose.dev.yml up -d",
     "dev:web:clean": "pnpm --filter @marketingspa/web dev:clean",
     "build": "turbo run build",
     "lint": "turbo run lint",

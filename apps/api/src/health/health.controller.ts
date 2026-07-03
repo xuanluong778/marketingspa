@@ -4,6 +4,15 @@ import { Inject } from '@nestjs/common';
 import { REDIS_CLIENT } from '../redis/redis.constants';
 import type Redis from 'ioredis';
 
+async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error('timeout')), ms);
+    }),
+  ]);
+}
+
 @Controller('health')
 export class HealthController {
   constructor(
@@ -17,14 +26,14 @@ export class HealthController {
     let redisOk = false;
 
     try {
-      await this.prisma.$queryRaw`SELECT 1`;
+      await withTimeout(this.prisma.$queryRaw`SELECT 1`, 2_000);
       dbOk = true;
     } catch {
       dbOk = false;
     }
 
     try {
-      const pong = await this.redis.ping();
+      const pong = await withTimeout(this.redis.ping(), 2_000);
       redisOk = pong === 'PONG';
     } catch {
       redisOk = false;

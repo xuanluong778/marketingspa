@@ -1,0 +1,29 @@
+# Hạ tầng dev local (PostgreSQL + Redis) khi Laragon chưa có Redis/Postgres
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: marketingspa-postgres-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: marketingspa
+      POSTGRES_PASSWORD: change_me_strong_password
+      POSTGRES_DB: marketingspa
+    ports:
+      - '5433:5432'
+    volumes:
+      - marketingspa_postgres_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U marketingspa']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: marketingspa-redis-dev
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+
+volumes:
+  marketingspa_postgres_dev:

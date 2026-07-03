@@ -11,9 +11,15 @@ import { REDIS_CLIENT } from './redis.constants';
       inject: [ConfigService],
       useFactory: (config: ConfigService) => {
         const url = config.get<string>('REDIS_URL', 'redis://localhost:6379');
-        return new Redis(url, {
+        const client = new Redis(url, {
           maxRetriesPerRequest: null, // Required by BullMQ
+          connectTimeout: 5_000,
+          enableOfflineQueue: false,
         });
+        client.on('error', (err) => {
+          console.warn(`[redis] ${err.message}`);
+        });
+        return client;
       },
     },
   ],
