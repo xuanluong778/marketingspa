@@ -8,6 +8,9 @@ const inter = Inter({ subsets: ['latin', 'vietnamese'] });
 export const metadata: Metadata = {
   title: 'MarketingSpa - Nền tảng marketing cho spa',
   description: 'SaaS marketing automation dành cho spa và wellness',
+  icons: {
+    icon: '/favicon.svg',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

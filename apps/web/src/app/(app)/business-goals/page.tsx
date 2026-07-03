@@ -1,5 +1,6 @@
 'use client';
 
+import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Calculator,
@@ -48,7 +49,19 @@ import { formatDateTime, formatVnd } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { BG_BOX, BG_BOX_FIELDS } from '@/components/business-goals/business-goals-theme';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AdPerformancePanel } from '@/components/business-goals/ad-performance-panel';
+
+const AdPerformancePanel = dynamic(
+  () =>
+    import('@/components/business-goals/ad-performance-panel').then((m) => m.AdPerformancePanel),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="rounded-lg border border-white/10 bg-[#0B2115] p-8 text-center text-white/70">
+        Đang tải tab Hiệu quả quảng cáo...
+      </div>
+    ),
+  },
+);
 
 import type { BusinessGoalInput, BusinessGoalScenario } from '@/types/business-goals';
 

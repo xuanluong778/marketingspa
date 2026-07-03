@@ -12,6 +12,7 @@ export function useBusinessGoalScenarios() {
   return useQuery({
     queryKey: ['business-goals'],
     queryFn: () => apiClient<BusinessGoalScenarioList>('/business-goals'),
+    retry: false,
   });
 }
 
