@@ -12,9 +12,9 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "db:generate": "pnpm --filter @marketingspa/database generate",
-    "db:migrate": "pnpm --filter @marketingspa/database migrate:dev",
-    "db:migrate:deploy": "pnpm --filter @marketingspa/database migrate:deploy",
-    "db:seed": "pnpm --filter @marketingspa/database seed",
+    "db:migrate": "node scripts/with-root-env.cjs pnpm --filter @marketingspa/database migrate:dev",
+    "db:migrate:deploy": "node scripts/with-root-env.cjs pnpm --filter @marketingspa/database migrate:deploy",
+    "db:seed": "node scripts/with-root-env.cjs pnpm --filter @marketingspa/database seed",
     "db:studio": "pnpm --filter @marketingspa/database studio"
   },
   "devDependencies": {
