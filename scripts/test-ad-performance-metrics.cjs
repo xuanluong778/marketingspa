@@ -17,7 +17,7 @@ function calculateCampaignMetrics(row) {
   const impressions = cpm > 0 ? (adBudget / cpm) * 1000 : 0;
   const resultCount = impressions * (resultRate / 100);
   const costPerResult = resultCount > 0 ? adBudget / resultCount : 0;
-  const reachPeople = frequency > 0 ? resultCount / frequency : 0;
+  const reachPeople = frequency > 0 ? impressions / frequency : 0;
   return { impressions, resultCount, costPerResult, reachPeople };
 }
 
@@ -30,6 +30,7 @@ const sales = calculateCampaignMetrics({
 
 assert.ok(Math.abs(sales.resultCount - 1597.5) < 0.1, 'sales resultCount ~1597.5');
 assert.ok(sales.impressions === 532500, 'sales impressions');
+assert.ok(Math.abs(sales.reachPeople - 532500 / 1.42) < 0.1, 'sales reachPeople = impressions/frequency');
 
 const engagement = calculateCampaignMetrics({
   adBudget: 150_000_000,

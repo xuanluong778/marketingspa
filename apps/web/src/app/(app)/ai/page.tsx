@@ -1,26 +1,41 @@
-import { Sparkles } from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { PageHeader } from '@/components/shared/page-header';
+'use client';
 
-export default function AiMarketingPage() {
+import { Suspense, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { LoadingState } from '@/components/shared/page-state';
+import { buildContentAutoPostHref } from '@/lib/content-auto-post-routes';
+
+function AiLegacyRedirectInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    const extra: Record<string, string> = {};
+    if (tab === 'personal') {
+      router.replace(buildContentAutoPostHref('create', { section: 'personal' }));
+      return;
+    }
+    if (tab === 'advanced') {
+      router.replace(buildContentAutoPostHref('create', { section: 'advanced' }));
+      return;
+    }
+    searchParams.forEach((value, key) => {
+      if (key !== 'tab') extra[key] = value;
+    });
+    router.replace(
+      buildContentAutoPostHref('create', Object.keys(extra).length ? extra : undefined),
+    );
+  }, [router, searchParams]);
+
+  return <LoadingState message="Đang chuyển hướng..." />;
+}
+
+/** Redirect route cũ /ai → /content */
+export default function AiLegacyRedirectPage() {
   return (
-    <div>
-      <PageHeader title="AI Marketing" description="Gợi ý chiến dịch và nội dung thông minh" />
-      <Card className="border-dashed">
-        <CardHeader className="text-center">
-          <div className="flex justify-center mb-2">
-            <Sparkles className="h-10 w-10 text-primary" />
-          </div>
-          <CardTitle>AI Marketing sắp ra mắt</CardTitle>
-          <CardDescription>
-            Module AI đang được phát triển. Sẽ tích hợp gợi ý nội dung, phân tích lead và tối ưu
-            chiến dịch ads.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="text-center text-sm text-muted-foreground">
-          Backend AI service placeholder đã sẵn sàng trong monorepo.
-        </CardContent>
-      </Card>
-    </div>
+    <Suspense fallback={<LoadingState message="Đang chuyển hướng..." />}>
+      <AiLegacyRedirectInner />
+    </Suspense>
   );
 }

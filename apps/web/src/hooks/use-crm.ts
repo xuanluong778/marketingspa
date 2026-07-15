@@ -22,6 +22,18 @@ export function useBranches() {
   });
 }
 
+export function useCreateBranch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { name: string; code?: string; address?: string; phone?: string }) =>
+      apiClient<Branch>('/organizations/branches', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['branches'] }),
+  });
+}
+
 export function useLeadSources() {
   return useQuery({
     queryKey: ['lead-sources'],

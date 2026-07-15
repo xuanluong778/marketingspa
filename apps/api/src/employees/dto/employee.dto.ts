@@ -24,7 +24,7 @@ export class CreateEmployeeDto {
   branchId?: string;
 
   @IsOptional()
-  @IsIn(['OWNER', 'MANAGER', 'MARKETING', 'SALE', 'TECHNICIAN'])
+  @IsIn(['OWNER', 'MANAGER', 'MARKETING', 'SALE', 'TECHNICIAN', 'HR'])
   roleCode?: string;
 }
 
@@ -54,7 +54,7 @@ export class UpdateEmployeeDto {
   isActive?: boolean;
 
   @IsOptional()
-  @IsIn(['OWNER', 'MANAGER', 'MARKETING', 'SALE', 'TECHNICIAN'])
+  @IsIn(['OWNER', 'MANAGER', 'MARKETING', 'SALE', 'TECHNICIAN', 'HR'])
   roleCode?: string;
 }
 

@@ -39,7 +39,17 @@ export async function registerRepeatableJobs() {
     { repeat: { pattern: '0 2 * * *' }, jobId: 'daily-backup' },
   );
 
+  const autoPostQueue = new Queue(QUEUE_NAMES.AUTO_POST_PUBLISH, {
+    connection,
+    prefix: queuePrefix,
+  });
+  await autoPostQueue.add(
+    'scan-due-scheduled',
+    {},
+    { repeat: { pattern: '* * * * *' }, jobId: 'auto-post-scan-due' },
+  );
+
   console.log('[scheduler] Repeatable jobs registered');
 
-  await Promise.all(Object.values(queues).map((q) => q.close()));
+  await Promise.all([...Object.values(queues).map((q) => q.close()), autoPostQueue.close()]);
 }

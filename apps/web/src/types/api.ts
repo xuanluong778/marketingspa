@@ -13,6 +13,8 @@ export interface AuthUser {
   role: string;
   roleName: string;
   organizationId: string;
+  employeeId?: string | null;
+  permissions?: string[];
   organization: { id: string; name: string; slug: string };
   employee: { id: string; name: string } | null;
 }

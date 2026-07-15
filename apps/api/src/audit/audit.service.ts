@@ -9,6 +9,7 @@ export interface AuditLogInput {
   entityType: string;
   entityId?: string;
   metadata?: Prisma.InputJsonValue;
+  ipAddress?: string;
 }
 
 @Injectable()
@@ -24,6 +25,7 @@ export class AuditService {
         entityType: input.entityType,
         entityId: input.entityId,
         metadata: input.metadata,
+        ipAddress: input.ipAddress,
       },
     });
   }

@@ -1,12 +1,16 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { LeadPipelineStatus, OrderStatus, AppointmentStatus } from '@marketingspa/database';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
 import { CreateEmployeeDto, UpdateEmployeeDto, EmployeeQueryDto } from './dto/employee.dto';
 import { buildPaginatedResult, getPaginationParams } from '../common/utils/pagination.util';
 
 @Injectable()
 export class EmployeesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   async findAll(organizationId: string, query: EmployeeQueryDto) {
     const { page, pageSize, skip, take } = getPaginationParams(query);
@@ -46,8 +50,12 @@ export class EmployeesService {
     return employee;
   }
 
-  async create(organizationId: string, dto: CreateEmployeeDto) {
-    return this.prisma.employee.create({
+  async create(
+    organizationId: string,
+    dto: CreateEmployeeDto,
+    actor?: { userId?: string; ipAddress?: string },
+  ) {
+    const employee = await this.prisma.employee.create({
       data: {
         organizationId,
         name: dto.name,
@@ -58,10 +66,27 @@ export class EmployeesService {
       },
       include: { branch: true },
     });
+
+    await this.audit.log({
+      organizationId,
+      userId: actor?.userId,
+      action: 'employee.create',
+      entityType: 'Employee',
+      entityId: employee.id,
+      metadata: { after: { name: employee.name, branchId: employee.branchId, position: employee.position } },
+      ipAddress: actor?.ipAddress,
+    });
+
+    return employee;
   }
 
-  async update(organizationId: string, id: string, dto: UpdateEmployeeDto) {
-    await this.findOne(organizationId, id);
+  async update(
+    organizationId: string,
+    id: string,
+    dto: UpdateEmployeeDto,
+    actor?: { userId?: string; ipAddress?: string },
+  ) {
+    const before = await this.findOne(organizationId, id);
 
     if (dto.roleCode) {
       const role = await this.prisma.role.findFirst({
@@ -83,19 +108,62 @@ export class EmployeesService {
 
     const { roleCode: _roleCode, ...data } = dto;
     void _roleCode;
-    return this.prisma.employee.update({
+    const employee = await this.prisma.employee.update({
       where: { id },
       data,
       include: { branch: true, user: { include: { role: true } } },
     });
+
+    await this.audit.log({
+      organizationId,
+      userId: actor?.userId,
+      action: 'employee.update',
+      entityType: 'Employee',
+      entityId: id,
+      metadata: {
+        before: {
+          name: before.name,
+          branchId: before.branchId,
+          position: before.position,
+          isActive: before.isActive,
+          roleCode: before.user?.role?.code,
+        },
+        after: {
+          name: employee.name,
+          branchId: employee.branchId,
+          position: employee.position,
+          isActive: employee.isActive,
+          roleCode: employee.user?.role?.code ?? dto.roleCode,
+        },
+      },
+      ipAddress: actor?.ipAddress,
+    });
+
+    return employee;
   }
 
-  async remove(organizationId: string, id: string) {
+  async remove(
+    organizationId: string,
+    id: string,
+    actor?: { userId?: string; ipAddress?: string },
+  ) {
     await this.findOne(organizationId, id);
-    return this.prisma.employee.update({
+    const employee = await this.prisma.employee.update({
       where: { id },
       data: { isActive: false },
     });
+
+    await this.audit.log({
+      organizationId,
+      userId: actor?.userId,
+      action: 'employee.deactivate',
+      entityType: 'Employee',
+      entityId: id,
+      metadata: { before: { isActive: true }, after: { isActive: false } },
+      ipAddress: actor?.ipAddress,
+    });
+
+    return employee;
   }
 
   /** KPI hiệu suất nhân viên theo khoảng thời gian */

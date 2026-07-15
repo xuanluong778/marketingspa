@@ -4,9 +4,13 @@
   "private": true,
   "description": "SaaS marketing platform for spas - MVP monorepo",
   "scripts": {
-    "dev": "turbo run dev",
-    "dev:infra": "docker compose -f docker-compose.dev.yml up -d",
-    "dev:web:clean": "pnpm --filter @marketingspa/web dev:clean",
+    "dev": "node scripts/ensure-dev-infra.cjs && turbo run dev",
+    "dev:web": "pnpm --filter @marketingspa/web dev",
+    "dev:api": "pnpm --filter @marketingspa/api dev",
+    "dev:infra": "node scripts/ensure-dev-infra.cjs --strict",
+    "ensure:api": "node scripts/ensure-api-dev.cjs",
+    "hrm:phase0": "node scripts/with-root-env.cjs node scripts/hrm-phase0-align-roles.cjs",
+    "dev:web:clean": "node scripts/restart-web-dev.cjs",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
@@ -16,6 +20,10 @@
     "db:migrate:deploy": "node scripts/with-root-env.cjs pnpm --filter @marketingspa/database migrate:deploy",
     "db:seed": "node scripts/with-root-env.cjs pnpm --filter @marketingspa/database seed",
     "test:ad-performance": "node scripts/test-ad-performance-metrics.cjs",
+    "test:content-marketing": "node scripts/test-content-marketing-logic.cjs",
+    "test:ai-ads-manager": "node scripts/test-ai-ads-manager.cjs",
+    "test:auto-post": "node scripts/test-auto-post.cjs",
+    "test:meta-fanpage": "node scripts/test-meta-fanpage.cjs",
     "db:studio": "pnpm --filter @marketingspa/database studio"
   },
   "devDependencies": {

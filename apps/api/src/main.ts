@@ -2,6 +2,8 @@ import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { existsSync, mkdirSync } from 'fs';
+import { join } from 'path';
 import { AppModule } from './app.module';
 import { initSentry } from './sentry';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
@@ -9,7 +11,9 @@ import { resolveChatbotWidgetPath } from './chatbot-cskh/utils/chatbot-widget';
 
 async function bootstrap() {
   initSentry();
-  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    rawBody: true,
+  });
 
   app.setGlobalPrefix('api/v1');
   app.useGlobalPipes(
@@ -21,6 +25,12 @@ async function bootstrap() {
     }),
   );
   app.useGlobalFilters(new GlobalExceptionFilter());
+
+  const uploadsDir = join(process.cwd(), 'uploads');
+  if (!existsSync(uploadsDir)) {
+    mkdirSync(uploadsDir, { recursive: true });
+  }
+  app.useStaticAssets(uploadsDir, { prefix: '/uploads/' });
 
   // CORS: frontend app + widget embed trên website khách
   app.enableCors({

@@ -15,8 +15,12 @@ export interface AdBusinessInput {
   grossProfitRate: number;
   manualOrderCount: number;
   useManualOrderCount: boolean;
-  manualTotalAdSpend: number;
-  useManualTotalAdSpend: boolean;
+  /** @deprecated giữ tương thích draft cũ */
+  manualTotalAdSpend?: number;
+  /** @deprecated giữ tương thích draft cũ */
+  useManualTotalAdSpend?: boolean;
+  otherCost: number;
+  leadCloseRate: number;
 }
 
 export interface AdPerformanceFormState {
@@ -37,6 +41,13 @@ export interface AdPerformanceWarning {
   id: string;
   message: string;
   tone: 'success' | 'warning' | 'danger';
+  priority: number;
+}
+
+export interface AdPerformanceInsight {
+  id: string;
+  label: string;
+  value: string;
 }
 
 export interface AdPerformanceMetrics {
@@ -51,6 +62,11 @@ export interface AdPerformanceMetrics {
   profitAfterAds: number;
   profitBeforeAds: number;
   costPerOrder: number;
+  roas: number;
+  breakEvenOrders: number;
+  otherCost: number;
   status: AdPerformanceStatus;
   warnings: AdPerformanceWarning[];
+  insights: AdPerformanceInsight[];
+  hasInput: boolean;
 }

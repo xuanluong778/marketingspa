@@ -50,3 +50,9 @@ apps/ai-service-placeholder/.venv/
 
 # Turbo
 .turbo/
+
+# Dev runtime logs / dumps
+tmp/
+
+# Local file uploads (HRM documents, etc.)
+apps/api/uploads/

@@ -1,18 +1,20 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
+  BarChart3,
   Calculator,
+  Loader2,
   Plus,
   RefreshCw,
   Save,
   Sparkles,
   Trash2,
-  TrendingDown,
-  TrendingUp,
-  Minus,
-  AlertTriangle,
 } from 'lucide-react';
+import { AdPerformanceInsightsSidebar } from '@/components/business-goals/ad-performance-insights';
+import { AdPerformanceFacebookConnect } from '@/components/business-goals/ad-performance-facebook-connect';
+import { AdPerformanceKpiSection } from '@/components/business-goals/ad-performance-kpi';
 import { MoneyInput } from '@/components/business-goals/money-input';
 import { PercentInput, CountInput } from '@/components/business-goals/percent-input';
 import { Button } from '@/components/ui/button';
@@ -41,56 +43,34 @@ import {
   type AdPerformanceFieldErrors,
 } from '@/lib/ad-performance-metrics';
 import type { AdCampaignRow, AdPerformanceFormState } from '@/types/ad-performance';
+import type { FacebookSyncedCampaign } from '@/types/facebook-ads';
+import { facebookCampaignsToFormRows } from '@/lib/facebook-ads-to-form';
 import { useCurrentUser } from '@/hooks/use-auth';
 
 const INPUT_CELL =
-  'bg-amber-50 border-amber-300 text-slate-900 placeholder:text-slate-400 focus-visible:ring-amber-400';
-const RESULT_CELL = 'bg-slate-50 text-slate-700 font-medium tabular-nums';
+  'h-8 bg-amber-50 border-amber-200 text-slate-900 text-xs placeholder:text-slate-400 focus-visible:ring-amber-400 md:text-sm';
+const RESULT_CELL = 'bg-slate-50 text-slate-700 text-xs font-medium tabular-nums md:text-sm';
 
 function formatCount(value: number): string {
-  if (!Number.isFinite(value)) return '0';
+  if (!Number.isFinite(value) || value <= 0) return '—';
   return new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 }).format(value);
 }
 
-function formatPercent(value: number): string {
-  if (!Number.isFinite(value)) return '0%';
-  return `${new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 2 }).format(value)}%`;
-}
-
-function AdPerformanceHero({
-  status,
-  profitAfterAds,
-}: {
-  status: 'profit' | 'loss' | 'break_even';
-  profitAfterAds: number;
-}) {
-  const config = {
-    profit: {
-      bg: 'bg-emerald-600',
-      icon: TrendingUp,
-      text: `LÃI RỒI! +${formatVnd(Math.abs(profitAfterAds))}`,
-    },
-    loss: {
-      bg: 'bg-red-600',
-      icon: TrendingDown,
-      text: `ĐANG LỖ -${formatVnd(Math.abs(profitAfterAds))}`,
-    },
-    break_even: {
-      bg: 'bg-orange-500',
-      icon: Minus,
-      text: 'HÒA VỐN',
-    },
-  }[status];
-
-  const Icon = config.icon;
-
+function EmptyState({ onSample }: { onSample: () => void }) {
   return (
-    <div className={cn('rounded-2xl px-6 py-8 text-center text-white shadow-lg', config.bg)}>
-      <div className="flex items-center justify-center gap-3">
-        <Icon className="h-8 w-8 shrink-0" />
-        <p className="text-2xl font-bold tracking-tight sm:text-3xl">{config.text}</p>
+    <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center shadow-sm">
+      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-50">
+        <BarChart3 className="h-7 w-7 text-violet-600" />
       </div>
-      <p className="mt-2 text-sm text-white/85">Kết luận lãi / lỗ sau quảng cáo</p>
+      <h3 className="text-lg font-semibold text-slate-900">Chưa có dữ liệu quảng cáo</h3>
+      <p className="mx-auto mt-2 max-w-md text-sm text-slate-600">
+        Thêm chiến dịch và nhập số liệu kinh doanh — hệ thống tự tính ROAS, lãi/lỗ và insight chiến
+        dịch.
+      </p>
+      <Button type="button" className="mt-6" onClick={onSample}>
+        <Sparkles className="mr-2 h-4 w-4" />
+        Dùng dữ liệu mẫu
+      </Button>
     </div>
   );
 }
@@ -100,15 +80,29 @@ export function AdPerformancePanel() {
   const userId = user?.id;
 
   const [formState, setFormState] = useState<AdPerformanceFormState>(defaultAdPerformanceFormState);
-  const [calculated, setCalculated] = useState(false);
+  const [draftLoaded, setDraftLoaded] = useState(false);
   const [errors, setErrors] = useState<AdPerformanceFieldErrors>({});
   const [draftSaved, setDraftSaved] = useState(false);
+  const lastFacebookImportRef = useRef('');
+  const searchParams = useSearchParams();
+
+  const oauthMessage = useMemo(() => {
+    const fb = searchParams.get('facebook');
+    if (fb === 'connected')
+      return 'Kết nối Facebook Ads thành công! Chọn tài khoản quảng cáo và đồng bộ.';
+    if (fb === 'error') {
+      const msg = searchParams.get('message');
+      return msg ? `Kết nối thất bại: ${decodeURIComponent(msg)}` : 'Kết nối Facebook thất bại.';
+    }
+    return null;
+  }, [searchParams]);
 
   const metrics = useMemo(() => calculateAdPerformanceMetrics(formState), [formState]);
 
   useEffect(() => {
     const draft = loadAdPerformanceDraft(userId);
     if (draft) setFormState(draft);
+    setDraftLoaded(true);
   }, [userId]);
 
   const updateCampaign = useCallback((index: number, patch: Partial<AdCampaignRow>) => {
@@ -116,29 +110,28 @@ export function AdPerformancePanel() {
       ...prev,
       campaigns: prev.campaigns.map((row, i) => (i === index ? { ...row, ...patch } : row)),
     }));
-    setCalculated(false);
+  }, []);
+
+  const updateBusiness = useCallback((patch: Partial<AdPerformanceFormState['business']>) => {
+    setFormState((prev) => ({
+      ...prev,
+      business: { ...prev.business, ...patch },
+    }));
   }, []);
 
   const handleCalculate = useCallback(() => {
     const validation = validateAdPerformanceInput(formState);
-    if (Object.keys(validation).length > 0) {
-      setErrors(validation);
-      return;
-    }
-    setErrors({});
-    setCalculated(true);
+    setErrors(validation);
   }, [formState]);
 
   const handleReset = useCallback(() => {
     setFormState(defaultAdPerformanceFormState);
     setErrors({});
-    setCalculated(false);
   }, []);
 
   const handleSample = useCallback(() => {
     setFormState(sampleAdPerformanceFormState);
     setErrors({});
-    setCalculated(true);
   }, []);
 
   const handleSaveDraft = useCallback(() => {
@@ -152,7 +145,6 @@ export function AdPerformancePanel() {
       ...prev,
       campaigns: [...prev.campaigns, createEmptyCampaignRow()],
     }));
-    setCalculated(false);
   }, []);
 
   const removeCampaign = useCallback((index: number) => {
@@ -163,58 +155,88 @@ export function AdPerformancePanel() {
           ? [createEmptyCampaignRow()]
           : prev.campaigns.filter((_, i) => i !== index),
     }));
-    setCalculated(false);
   }, []);
 
-  const displayMetrics = calculated ? metrics : null;
+  const handleImportFacebookCampaigns = useCallback((campaigns: FacebookSyncedCampaign[]) => {
+    if (!campaigns.length) return;
+    const key = campaigns.map((c) => `${c.campaignId}:${c.syncedAt}:${c.spend}`).join('|');
+    if (key === lastFacebookImportRef.current) return;
+    lastFacebookImportRef.current = key;
+    const rows = facebookCampaignsToFormRows(campaigns);
+    setFormState((prev) => ({ ...prev, campaigns: rows }));
+  }, []);
+
+  if (!draftLoaded) {
+    return (
+      <div className="flex min-h-[320px] items-center justify-center rounded-2xl border border-slate-200 bg-white">
+        <div className="flex items-center gap-3 text-slate-600">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          <span className="text-sm">Đang tải dữ liệu nháp…</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-5">
-      {displayMetrics && (
-        <AdPerformanceHero
-          status={displayMetrics.status}
-          profitAfterAds={displayMetrics.profitAfterAds}
-        />
-      )}
+    <div className="space-y-6">
+      <AdPerformanceFacebookConnect
+        onImportCampaigns={handleImportFacebookCampaigns}
+        oauthMessage={oauthMessage}
+      />
 
-      <div className="rounded-xl border border-white/10 bg-white shadow-sm overflow-hidden">
-        <div className="border-b bg-slate-100 px-4 py-3">
-          <h2 className="font-semibold text-slate-900">Bảng nhập liệu chiến dịch quảng cáo</h2>
-          <p className="text-xs text-slate-600 mt-0.5">
-            Ô vàng là dữ liệu nhập — ô xám là kết quả tự tính
-          </p>
+      {!metrics.hasInput && <EmptyState onSample={handleSample} />}
+
+      {metrics.hasInput && <AdPerformanceKpiSection metrics={metrics} />}
+
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b bg-slate-50 px-4 py-3">
+          <h2 className="font-semibold text-slate-900">Chiến dịch quảng cáo</h2>
+          <p className="mt-0.5 text-xs text-slate-600">Ô vàng = nhập liệu · Ô xám = tự tính</p>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[1100px] text-sm">
+        <div className="p-2 sm:p-3">
+          <table className="w-full table-fixed text-xs md:text-sm">
+            <colgroup>
+              <col className="w-[15%]" />
+              <col className="w-[13%]" />
+              <col className="w-[10%]" />
+              <col className="w-[9%]" />
+              <col className="w-[8%]" />
+              <col className="w-[7%]" />
+              <col className="w-[8%]" />
+              <col className="w-[9%]" />
+              <col className="w-[9%]" />
+              <col className="w-[9%]" />
+              <col className="w-[3%]" />
+            </colgroup>
             <thead>
-              <tr className="bg-slate-800 text-white text-left">
-                <th className="px-3 py-2.5 font-medium whitespace-nowrap">Tên chiến dịch</th>
-                <th className="px-3 py-2.5 font-medium whitespace-nowrap">Loại chiến dịch</th>
-                <th className="px-3 py-2.5 font-medium whitespace-nowrap">Ngân sách</th>
-                <th className="px-3 py-2.5 font-medium whitespace-nowrap">Giá/CPM</th>
-                <th className="px-3 py-2.5 font-medium whitespace-nowrap">Tỷ lệ kết quả</th>
-                <th className="px-3 py-2.5 font-medium whitespace-nowrap">Tần suất</th>
-                <th className="px-3 py-2.5 font-medium whitespace-nowrap">Kết quả</th>
-                <th className="px-3 py-2.5 font-medium whitespace-nowrap">Lượt hiển thị</th>
-                <th className="px-3 py-2.5 font-medium whitespace-nowrap">Chi phí/kết quả</th>
-                <th className="px-3 py-2.5 font-medium whitespace-nowrap">Số người tiếp cận</th>
-                <th className="px-3 py-2.5 font-medium w-12" />
+              <tr className="bg-slate-800 text-left text-white">
+                <th className="px-1.5 py-2 font-medium md:px-2">Tên chiến dịch</th>
+                <th className="px-1.5 py-2 font-medium md:px-2">Loại</th>
+                <th className="px-1.5 py-2 font-medium md:px-2">Ngân sách</th>
+                <th className="px-1.5 py-2 font-medium md:px-2">CPM</th>
+                <th className="px-1.5 py-2 font-medium md:px-2">Tỷ lệ KQ</th>
+                <th className="px-1.5 py-2 font-medium md:px-2">Tần suất</th>
+                <th className="px-1.5 py-2 font-medium md:px-2">Kết quả</th>
+                <th className="px-1.5 py-2 font-medium md:px-2">Hiển thị</th>
+                <th className="px-1.5 py-2 font-medium md:px-2">CP/KQ</th>
+                <th className="px-1.5 py-2 font-medium md:px-2">Tiếp cận</th>
+                <th className="px-1 py-2" />
               </tr>
             </thead>
             <tbody>
               {formState.campaigns.map((row, index) => {
-                const calc = displayMetrics?.campaigns[index]?.calculated;
+                const calc = metrics.campaigns[index]?.calculated;
                 return (
-                  <tr key={row.id} className="border-b border-slate-200">
-                    <td className="p-2 min-w-[160px]">
+                  <tr key={row.id} className="border-b border-slate-100">
+                    <td className="p-1 md:p-1.5">
                       <Input
                         value={row.name}
                         placeholder="Ví dụ: Quảng cáo bán hàng"
-                        className={INPUT_CELL}
+                        className={cn(INPUT_CELL, 'min-w-0')}
                         onChange={(e) => updateCampaign(index, { name: e.target.value })}
                       />
                     </td>
-                    <td className="p-2 min-w-[180px]">
+                    <td className="p-1 md:p-1.5">
                       <Select
                         value={row.campaignType}
                         onValueChange={(v) =>
@@ -223,7 +245,7 @@ export function AdPerformancePanel() {
                           })
                         }
                       >
-                        <SelectTrigger className={INPUT_CELL}>
+                        <SelectTrigger className={cn(INPUT_CELL, 'min-w-0 w-full truncate')}>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -235,39 +257,39 @@ export function AdPerformancePanel() {
                         </SelectContent>
                       </Select>
                     </td>
-                    <td className="p-2 min-w-[140px]">
+                    <td className="p-1 md:p-1.5">
                       <MoneyInput
                         value={row.adBudget}
-                        placeholder="Ví dụ: 150.000.000"
-                        className={INPUT_CELL}
+                        placeholder="150.000.000"
+                        className={cn(INPUT_CELL, 'min-w-0')}
                         onChange={(v) => updateCampaign(index, { adBudget: v })}
                       />
                     </td>
-                    <td className="p-2 min-w-[130px]">
+                    <td className="p-1 md:p-1.5">
                       <MoneyInput
                         value={row.cpm}
-                        placeholder="Ví dụ: 20.000"
-                        className={INPUT_CELL}
+                        placeholder="20.000"
+                        className={cn(INPUT_CELL, 'min-w-0')}
                         onChange={(v) => updateCampaign(index, { cpm: v })}
                       />
                     </td>
-                    <td className="p-2 min-w-[120px]">
+                    <td className="p-1 md:p-1.5">
                       <PercentInput
                         value={row.resultRate}
                         max={100}
-                        placeholder="Ví dụ: 30"
-                        className={INPUT_CELL}
+                        placeholder="30"
+                        className={cn(INPUT_CELL, 'min-w-0')}
                         onChange={(v) => updateCampaign(index, { resultRate: v })}
                       />
                     </td>
-                    <td className="p-2 min-w-[100px]">
+                    <td className="p-1 md:p-1.5">
                       <Input
                         type="number"
                         min={0}
                         step="0.01"
                         value={row.frequency || ''}
-                        placeholder="Ví dụ: 1.5"
-                        className={INPUT_CELL}
+                        placeholder="1.5"
+                        className={cn(INPUT_CELL, 'min-w-0')}
                         onChange={(e) => {
                           const parsed = parseFloat(e.target.value);
                           updateCampaign(index, {
@@ -276,28 +298,28 @@ export function AdPerformancePanel() {
                         }}
                       />
                     </td>
-                    <td className={cn('p-2 whitespace-nowrap', RESULT_CELL)}>
-                      {calc ? formatCount(calc.resultCount) : '—'}
+                    <td className={cn('truncate p-1 md:p-1.5', RESULT_CELL)}>
+                      {formatCount(calc?.resultCount ?? 0)}
                     </td>
-                    <td className={cn('p-2 whitespace-nowrap', RESULT_CELL)}>
-                      {calc ? formatCount(calc.impressions) : '—'}
+                    <td className={cn('truncate p-1 md:p-1.5', RESULT_CELL)}>
+                      {formatCount(calc?.impressions ?? 0)}
                     </td>
-                    <td className={cn('p-2 whitespace-nowrap', RESULT_CELL)}>
-                      {calc ? formatVnd(calc.costPerResult) : '—'}
+                    <td className={cn('truncate p-1 md:p-1.5', RESULT_CELL)}>
+                      {calc && calc.costPerResult > 0 ? formatVnd(calc.costPerResult) : '—'}
                     </td>
-                    <td className={cn('p-2 whitespace-nowrap', RESULT_CELL)}>
-                      {calc ? formatCount(calc.reachPeople) : '—'}
+                    <td className={cn('truncate p-1 md:p-1.5', RESULT_CELL)}>
+                      {formatCount(calc?.reachPeople ?? 0)}
                     </td>
-                    <td className="p-2">
+                    <td className="p-0.5">
                       <Button
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        className="h-8 w-8 text-red-600 hover:bg-red-50 hover:text-red-700"
                         onClick={() => removeCampaign(index)}
                         aria-label="Xóa dòng"
                       >
-                        <Trash2 className="h-4 w-4" />
+                        <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </td>
                   </tr>
@@ -306,255 +328,141 @@ export function AdPerformancePanel() {
             </tbody>
           </table>
         </div>
-        <div className="px-4 py-3 border-t bg-slate-50">
+        <div className="border-t bg-slate-50 px-4 py-3">
           <Button type="button" variant="outline" size="sm" onClick={addCampaign}>
-            <Plus className="h-4 w-4 mr-1.5" />
+            <Plus className="mr-1.5 h-4 w-4" />
             Thêm chiến dịch
           </Button>
         </div>
       </div>
 
-      <div className="rounded-xl border border-white/10 bg-white shadow-sm overflow-hidden">
-        <div className="border-b bg-slate-100 px-4 py-3">
-          <h2 className="font-semibold text-slate-900">Bảng kết quả kinh doanh</h2>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b bg-slate-50 px-4 py-3">
+            <h2 className="font-semibold text-slate-900">Dữ liệu kinh doanh</h2>
+            <p className="mt-0.5 text-xs text-slate-600">
+              Nhập giá trị đơn, tỷ suất lợi nhuận và số đơn thực tế
+            </p>
+          </div>
+          <div className="grid gap-4 p-4">
+            <div className="space-y-1.5">
+              <Label className="text-slate-700">Giá trị trung bình/đơn hàng</Label>
+              <MoneyInput
+                value={formState.business.averageOrderValue}
+                placeholder="Ví dụ: 2.000.000"
+                className={INPUT_CELL}
+                onChange={(v) => updateBusiness({ averageOrderValue: v })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-slate-700">Tỷ suất lợi nhuận gộp</Label>
+              <PercentInput
+                value={formState.business.grossProfitRate}
+                placeholder="Ví dụ: 50"
+                className={INPUT_CELL}
+                onChange={(v) => updateBusiness({ grossProfitRate: v })}
+              />
+              <p className="text-xs text-slate-500">
+                % lãi gộp trên doanh thu mỗi đơn sau khi trừ giá vốn hàng/dịch vụ.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-2">
+                <input
+                  id="manual-orders"
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-slate-300"
+                  checked={formState.business.useManualOrderCount}
+                  onChange={(e) => updateBusiness({ useManualOrderCount: e.target.checked })}
+                />
+                <Label htmlFor="manual-orders" className="text-slate-700">
+                  Số đơn hàng thực tế (nhập tay)
+                </Label>
+              </div>
+              <CountInput
+                value={formState.business.manualOrderCount}
+                placeholder="Ví dụ: 1.598"
+                disabled={!formState.business.useManualOrderCount}
+                className={cn(INPUT_CELL, !formState.business.useManualOrderCount && 'opacity-50')}
+                onChange={(v) => updateBusiness({ manualOrderCount: v })}
+              />
+              <p className="text-xs text-slate-500">
+                Bỏ chọn để lấy từ chiến dịch &quot;Quảng cáo bán hàng&quot; hoặc lead × tỷ lệ chốt
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-slate-700">Tỷ lệ chốt lead (nếu có)</Label>
+              <PercentInput
+                value={formState.business.leadCloseRate}
+                placeholder="Ví dụ: 20"
+                className={INPUT_CELL}
+                onChange={(v) => updateBusiness({ leadCloseRate: v })}
+              />
+              <p className="text-xs text-slate-500">
+                % lead/inbox được chốt thành đơn hàng — dùng khi chưa có chiến dịch bán hàng.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-slate-700">Chi phí khác (nếu có)</Label>
+              <MoneyInput
+                value={formState.business.otherCost}
+                placeholder="Ví dụ: 5.000.000"
+                className={INPUT_CELL}
+                onChange={(v) => updateBusiness({ otherCost: v })}
+              />
+              <p className="text-xs text-slate-500">
+                Chi phí ngoài quảng cáo: lương sale, thuê mặt bằng, vật tư, phần mềm… trong kỳ tính.
+              </p>
+            </div>
+          </div>
+
+          {metrics.hasInput && (
+            <div className="border-t bg-slate-50 px-4 py-3 text-sm text-slate-600">
+              Số đơn dùng tính:{' '}
+              <span className="font-semibold text-slate-900 tabular-nums">
+                {new Intl.NumberFormat('vi-VN').format(metrics.totalOrders)}
+              </span>
+              {' · '}
+              Lãi/đơn:{' '}
+              <span className="font-semibold text-slate-900 tabular-nums">
+                {formatVnd(metrics.profitPerOrder)}
+              </span>
+            </div>
+          )}
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-sm">
-            <tbody>
-              <tr className="border-b">
-                <td className="p-3 font-medium text-slate-700 w-1/2">Giá/đơn hàng</td>
-                <td className="p-2 w-1/2">
-                  <MoneyInput
-                    value={formState.business.averageOrderValue}
-                    placeholder="Ví dụ: 2.000.000"
-                    className={INPUT_CELL}
-                    onChange={(v) => {
-                      setFormState((prev) => ({
-                        ...prev,
-                        business: { ...prev.business, averageOrderValue: v },
-                      }));
-                      setCalculated(false);
-                    }}
-                  />
-                </td>
-              </tr>
-              <tr className="border-b">
-                <td className="p-3 font-medium text-slate-700">Tỷ suất lợi nhuận gộp</td>
-                <td className="p-2">
-                  <PercentInput
-                    value={formState.business.grossProfitRate}
-                    placeholder="Ví dụ: 50"
-                    className={INPUT_CELL}
-                    onChange={(v) => {
-                      setFormState((prev) => ({
-                        ...prev,
-                        business: { ...prev.business, grossProfitRate: v },
-                      }));
-                      setCalculated(false);
-                    }}
-                  />
-                </td>
-              </tr>
-              <tr className="border-b">
-                <td className="p-3 font-medium text-slate-700">
-                  <div className="flex items-center gap-2">
-                    <input
-                      id="manual-orders"
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-slate-300"
-                      checked={formState.business.useManualOrderCount}
-                      onChange={(e) => {
-                        setFormState((prev) => ({
-                          ...prev,
-                          business: {
-                            ...prev.business,
-                            useManualOrderCount: e.target.checked,
-                          },
-                        }));
-                        setCalculated(false);
-                      }}
-                    />
-                    <Label htmlFor="manual-orders" className="font-medium text-slate-700">
-                      Số đơn hàng (nhập thủ công)
-                    </Label>
-                  </div>
-                  <p className="text-xs text-slate-500 mt-1 font-normal">
-                    Bỏ chọn để tự lấy từ chiến dịch &quot;Quảng cáo bán hàng&quot;
-                  </p>
-                </td>
-                <td className="p-2">
-                  <CountInput
-                    value={formState.business.manualOrderCount}
-                    placeholder="Ví dụ: 1.598"
-                    disabled={!formState.business.useManualOrderCount}
-                    className={cn(
-                      INPUT_CELL,
-                      !formState.business.useManualOrderCount && 'opacity-50',
-                    )}
-                    onChange={(v) => {
-                      setFormState((prev) => ({
-                        ...prev,
-                        business: { ...prev.business, manualOrderCount: v },
-                      }));
-                      setCalculated(false);
-                    }}
-                  />
-                </td>
-              </tr>
-              <tr className="border-b">
-                <td className="p-3 font-medium text-slate-700">
-                  <div className="flex items-center gap-2">
-                    <input
-                      id="manual-ad-spend"
-                      type="checkbox"
-                      className="h-4 w-4 rounded border-slate-300"
-                      checked={formState.business.useManualTotalAdSpend}
-                      onChange={(e) => {
-                        setFormState((prev) => ({
-                          ...prev,
-                          business: {
-                            ...prev.business,
-                            useManualTotalAdSpend: e.target.checked,
-                          },
-                        }));
-                        setCalculated(false);
-                      }}
-                    />
-                    <Label htmlFor="manual-ad-spend" className="font-medium text-slate-700">
-                      Tổng tiền quảng cáo (nhập thủ công)
-                    </Label>
-                  </div>
-                </td>
-                <td className="p-2">
-                  <MoneyInput
-                    value={formState.business.manualTotalAdSpend}
-                    placeholder="Tự tính từ ngân sách"
-                    disabled={!formState.business.useManualTotalAdSpend}
-                    className={cn(
-                      INPUT_CELL,
-                      !formState.business.useManualTotalAdSpend && 'opacity-50',
-                    )}
-                    onChange={(v) => {
-                      setFormState((prev) => ({
-                        ...prev,
-                        business: { ...prev.business, manualTotalAdSpend: v },
-                      }));
-                      setCalculated(false);
-                    }}
-                  />
-                </td>
-              </tr>
-              {displayMetrics && (
-                <>
-                  <tr className="border-b">
-                    <td className="p-3 text-slate-700">Số đơn hàng (dùng tính)</td>
-                    <td className={cn('p-3', RESULT_CELL)}>
-                      {formatCount(displayMetrics.totalOrders)}
-                    </td>
-                  </tr>
-                  <tr className="border-b">
-                    <td className="p-3 text-slate-700">Doanh thu</td>
-                    <td className={cn('p-3', RESULT_CELL)}>{formatVnd(displayMetrics.revenue)}</td>
-                  </tr>
-                  <tr className="border-b">
-                    <td className="p-3 text-slate-700">Vốn nhập hàng / giá vốn</td>
-                    <td className={cn('p-3', RESULT_CELL)}>
-                      {formatVnd(displayMetrics.costOfGoods)}
-                    </td>
-                  </tr>
-                  <tr className="border-b">
-                    <td className="p-3 text-slate-700">Lãi/đơn</td>
-                    <td className={cn('p-3', RESULT_CELL)}>
-                      {formatVnd(displayMetrics.profitPerOrder)}
-                    </td>
-                  </tr>
-                  <tr className="border-b">
-                    <td className="p-3 text-slate-700">Tiền quảng cáo</td>
-                    <td className={cn('p-3', RESULT_CELL)}>
-                      {formatVnd(displayMetrics.totalAdSpend)}
-                    </td>
-                  </tr>
-                  <tr className="border-b">
-                    <td className="p-3 text-slate-700">Tỷ lệ chi quảng cáo</td>
-                    <td className={cn('p-3', RESULT_CELL)}>
-                      {formatPercent(displayMetrics.adCostRate)}
-                    </td>
-                  </tr>
-                  <tr className="border-b">
-                    <td className="p-3 text-slate-700">Chi phí quảng cáo / đơn hàng</td>
-                    <td className={cn('p-3', RESULT_CELL)}>
-                      {formatVnd(displayMetrics.costPerOrder)}
-                    </td>
-                  </tr>
-                  <tr className="border-b">
-                    <td className="p-3 text-slate-700">Lãi trước quảng cáo</td>
-                    <td className={cn('p-3', RESULT_CELL)}>
-                      {formatVnd(displayMetrics.profitBeforeAds)}
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="p-3 text-slate-700 font-semibold">Lãi trừ quảng cáo</td>
-                    <td className={cn('p-3 font-semibold', RESULT_CELL)}>
-                      {formatVnd(displayMetrics.profitAfterAds)}
-                    </td>
-                  </tr>
-                </>
-              )}
-            </tbody>
-          </table>
+
+        <div className="min-w-0">
+          {metrics.hasInput ? (
+            <AdPerformanceInsightsSidebar metrics={metrics} />
+          ) : (
+            <div className="flex h-full min-h-[280px] items-center justify-center rounded-xl border border-slate-200 bg-white p-6 text-center text-sm text-slate-500 shadow-sm">
+              Nhập dữ liệu hoặc dùng mẫu để xem insight và cảnh báo chiến dịch.
+            </div>
+          )}
         </div>
       </div>
 
-      {displayMetrics && displayMetrics.warnings.length > 0 && (
-        <div className="space-y-2">
-          {displayMetrics.warnings.map((w) => (
-            <div
-              key={w.id}
-              className={cn(
-                'flex items-start gap-2 rounded-lg border px-4 py-3 text-sm',
-                w.tone === 'success' && 'border-emerald-200 bg-emerald-50 text-emerald-900',
-                w.tone === 'warning' && 'border-amber-200 bg-amber-50 text-amber-900',
-                w.tone === 'danger' && 'border-red-200 bg-red-50 text-red-900',
-              )}
-            >
-              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-              <span>{w.message}</span>
-            </div>
-          ))}
+      {Object.keys(errors).length > 0 && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {Object.values(errors).filter(Boolean).join(' · ')}
         </div>
       )}
 
-      {Object.keys(errors).length > 0 && (
-        <p className="text-sm text-red-300">{Object.values(errors).filter(Boolean).join(' · ')}</p>
-      )}
-
       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-        <Button onClick={handleCalculate} className="sm:flex-1">
-          <Calculator className="h-4 w-4 mr-2" />
+        <Button type="button" onClick={handleCalculate} className="sm:flex-1">
+          <Calculator className="mr-2 h-4 w-4" />
           Tính toán
         </Button>
-        <Button
-          variant="outline"
-          onClick={handleReset}
-          className="border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white"
-        >
-          <RefreshCw className="h-4 w-4 mr-2" />
+        <Button type="button" variant="outline" onClick={handleReset}>
+          <RefreshCw className="mr-2 h-4 w-4" />
           Reset
         </Button>
-        <Button
-          variant="outline"
-          onClick={handleSaveDraft}
-          className="border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white"
-        >
-          <Save className="h-4 w-4 mr-2" />
+        <Button type="button" variant="outline" onClick={handleSaveDraft}>
+          <Save className="mr-2 h-4 w-4" />
           {draftSaved ? 'Đã lưu nháp!' : 'Lưu nháp'}
         </Button>
-        <Button
-          variant="secondary"
-          onClick={handleSample}
-          className="bg-white/15 text-white hover:bg-white/20"
-        >
-          <Sparkles className="h-4 w-4 mr-2" />
+        <Button type="button" variant="secondary" onClick={handleSample}>
+          <Sparkles className="mr-2 h-4 w-4" />
           Dùng dữ liệu mẫu
         </Button>
       </div>

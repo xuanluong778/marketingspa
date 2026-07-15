@@ -22,8 +22,9 @@ services:
     image: redis:7-alpine
     container_name: marketingspa-redis-dev
     restart: unless-stopped
+    # Ưu tiên 6379; nếu cổng bị chiếm (app khác), map sang 6380 và set REDIS_URL=redis://localhost:6380
     ports:
-      - '6379:6379'
+      - '${REDIS_HOST_PORT:-6379}:6379'
 
 volumes:
   marketingspa_postgres_dev:

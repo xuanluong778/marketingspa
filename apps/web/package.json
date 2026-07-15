@@ -3,8 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --port 3000",
-    "dev:clean": "node -e \"require('fs').rmSync('.next',{recursive:true,force:true})\" && next dev --port 3000",
+    "dev": "node ../../scripts/ensure-api-dev.cjs && next dev --port 3000",
+    "dev:web-only": "next dev --port 3000",
+    "dev:clean": "node ../../scripts/restart-web-dev.cjs",
+    "prebuild": "node ../../scripts/guard-web-build.cjs",
     "build": "next build",
     "start": "next start --port 3000",
     "lint": "next lint"

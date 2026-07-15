@@ -8,14 +8,20 @@ import { PrismaService } from '../prisma/prisma.service';
 import { REDIS_CLIENT } from '../redis/redis.constants';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
-import { DEFAULT_ROLE_SEEDS, SYSTEM_ROLES } from '../common/constants/roles';
+import { DEFAULT_ROLE_SEEDS, SYSTEM_ROLES, ALL_PERMISSION_DEFS, defaultPermissionCodesForRole } from '../common/constants/roles';
 import { slugify } from '../common/utils/slug.util';
 
 const BCRYPT_ROUNDS = 12;
 const REFRESH_PREFIX = 'refresh:';
 
+type MemoryRefreshEntry = { userId: string; expiresAt: number };
+
 @Injectable()
 export class AuthService {
+  /** Fallback khi Redis chưa chạy (dev local không docker) */
+  private readonly memoryRefresh = new Map<string, MemoryRefreshEntry>();
+  private redisUnavailableLogged = false;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
@@ -59,6 +65,28 @@ export class AuthService {
         ),
       );
 
+      const permissionRows = await Promise.all(
+        ALL_PERMISSION_DEFS.map((p) =>
+          tx.permission.upsert({
+            where: { code: p.code },
+            update: { name: p.name, module: p.module },
+            create: { code: p.code, name: p.name, module: p.module },
+          }),
+        ),
+      );
+      const permissionByCode = new Map(permissionRows.map((p) => [p.code, p]));
+
+      for (const role of roles) {
+        const codes = defaultPermissionCodesForRole(role.code);
+        const links = codes
+          .map((code) => permissionByCode.get(code))
+          .filter((p): p is (typeof permissionRows)[number] => !!p)
+          .map((p) => ({ roleId: role.id, permissionId: p.id }));
+        if (links.length) {
+          await tx.rolePermission.createMany({ data: links, skipDuplicates: true });
+        }
+      }
+
       const ownerRole = roles.find((r) => r.code === SYSTEM_ROLES.OWNER)!;
 
       const user = await tx.user.create({
@@ -82,7 +110,7 @@ export class AuthService {
     const tokens = await this.issueTokens(result);
     return {
       ...tokens,
-      user: this.mapUserResponse(result),
+      user: await this.getCurrentUser(result.id),
     };
   }
 
@@ -109,7 +137,7 @@ export class AuthService {
     const tokens = await this.issueTokens(user);
     return {
       ...tokens,
-      user: this.mapUserResponse(user),
+      user: await this.getCurrentUser(user.id),
     };
   }
 
@@ -131,7 +159,7 @@ export class AuthService {
       throw new UnauthorizedException('Refresh token không hợp lệ');
     }
 
-    const stored = await this.redis.get(`${REFRESH_PREFIX}${payload.jti}`);
+    const stored = await this.getRefreshTokenUserId(payload.jti);
     if (!stored || stored !== payload.sub) {
       throw new UnauthorizedException('Refresh token đã hết hạn hoặc bị thu hồi');
     }
@@ -146,11 +174,11 @@ export class AuthService {
     }
 
     // Rotate refresh token
-    await this.redis.del(`${REFRESH_PREFIX}${payload.jti}`);
+    await this.deleteRefreshToken(payload.jti);
     const tokens = await this.issueTokens(user);
     return {
       ...tokens,
-      user: this.mapUserResponse(user),
+      user: await this.getCurrentUser(user.id),
     };
   }
 
@@ -161,7 +189,7 @@ export class AuthService {
           secret: this.config.get<string>('JWT_REFRESH_SECRET'),
         });
         if (payload.jti) {
-          await this.redis.del(`${REFRESH_PREFIX}${payload.jti}`);
+          await this.deleteRefreshToken(payload.jti);
         }
       } catch {
         // ignore invalid token on logout
@@ -173,7 +201,14 @@ export class AuthService {
   async validateUser(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: { role: { select: { code: true } } },
+      include: {
+        role: {
+          select: {
+            code: true,
+            permissions: { select: { permission: { select: { code: true } } } },
+          },
+        },
+      },
     });
     if (!user || !user.isActive) return null;
     return {
@@ -182,13 +217,23 @@ export class AuthService {
       name: user.name,
       role: user.role.code,
       organizationId: user.organizationId,
+      employeeId: user.employeeId,
+      permissions: user.role.permissions.map((rp) => rp.permission.code),
     };
   }
 
   async getCurrentUser(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: { organization: true, role: true, employee: true },
+      include: {
+        organization: true,
+        role: {
+          include: {
+            permissions: { select: { permission: { select: { code: true } } } },
+          },
+        },
+        employee: true,
+      },
     });
     if (!user) throw new UnauthorizedException();
     return this.mapUserResponse(user);
@@ -225,9 +270,71 @@ export class AuthService {
     );
 
     const refreshTtl = 7 * 24 * 60 * 60;
-    await this.redis.setex(`${REFRESH_PREFIX}${jti}`, refreshTtl, user.id);
+    await this.storeRefreshToken(jti, user.id, refreshTtl);
 
     return { accessToken, refreshToken };
+  }
+
+  private async storeRefreshToken(jti: string, userId: string, ttlSeconds: number): Promise<void> {
+    const stored = await this.tryRedis(async () => {
+      await this.redis.setex(`${REFRESH_PREFIX}${jti}`, ttlSeconds, userId);
+    });
+    if (stored) return;
+
+    this.logRedisFallback();
+    this.memoryRefresh.set(jti, {
+      userId,
+      expiresAt: Date.now() + ttlSeconds * 1000,
+    });
+  }
+
+  private async getRefreshTokenUserId(jti: string): Promise<string | null> {
+    const fromRedis = await this.tryRedis(() =>
+      this.redis.get(`${REFRESH_PREFIX}${jti}`),
+    );
+    if (fromRedis !== undefined) return fromRedis;
+
+    this.logRedisFallback();
+    const row = this.memoryRefresh.get(jti);
+    if (!row || row.expiresAt < Date.now()) {
+      this.memoryRefresh.delete(jti);
+      return null;
+    }
+    return row.userId;
+  }
+
+  private async deleteRefreshToken(jti: string): Promise<void> {
+    const deleted = await this.tryRedis(async () => {
+      await this.redis.del(`${REFRESH_PREFIX}${jti}`);
+    });
+    if (deleted) return;
+
+    this.logRedisFallback();
+    this.memoryRefresh.delete(jti);
+  }
+
+  /** Trả undefined nếu Redis không sẵn sàng — dùng memory fallback */
+  private async tryRedis<T>(fn: () => Promise<T>): Promise<T | undefined> {
+    if (this.redis.status !== 'ready') return undefined;
+    try {
+      return await Promise.race([
+        fn(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Redis timeout')), 1_500),
+        ),
+      ]);
+    } catch {
+      return undefined;
+    }
+  }
+
+  private logRedisFallback(): void {
+    if (!this.redisUnavailableLogged) {
+      this.redisUnavailableLogged = true;
+      console.warn(
+        '[auth] Redis không khả dụng — dùng bộ nhớ tạm cho refresh token (dev). Chạy `pnpm dev:infra` để bật Redis.',
+      );
+    }
   }
 
   private mapUserResponse(user: {
@@ -235,7 +342,12 @@ export class AuthService {
     email: string;
     name: string;
     organizationId: string;
-    role: { code: string; name: string };
+    employeeId?: string | null;
+    role: {
+      code: string;
+      name: string;
+      permissions?: { permission: { code: string } }[];
+    };
     organization: { id: string; name: string; slug: string };
     employee?: { id: string; name: string } | null;
   }) {
@@ -246,6 +358,8 @@ export class AuthService {
       role: user.role.code,
       roleName: user.role.name,
       organizationId: user.organizationId,
+      employeeId: user.employeeId ?? user.employee?.id ?? null,
+      permissions: (user.role.permissions ?? []).map((rp) => rp.permission.code),
       organization: {
         id: user.organization.id,
         name: user.organization.name,

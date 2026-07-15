@@ -6,6 +6,8 @@ export const QUEUE_NAMES = {
   AUTOMATION_MESSAGE: 'automation-message-queue',
   DAILY_REPORT: 'daily-report-queue',
   BACKUP: 'backup-queue',
+  AUTO_POST_PUBLISH: 'auto-post-publish-queue',
+  HRM_ATTENDANCE_REBUILD: 'hrm-attendance-rebuild-queue',
 } as const;
 
 /** Redis pub/sub channel — worker publishes, API forwards to Socket.IO */
@@ -31,12 +33,21 @@ export const CAMPAIGN_STATUS = {
   CANCELLED: 'CANCELLED',
 } as const;
 
-/** User roles within a spa organization */
+/** User roles within a spa organization (Phase 0 canonical) */
 export const USER_ROLE = {
   OWNER: 'OWNER',
-  ADMIN: 'ADMIN',
-  MARKETER: 'MARKETER',
-  STAFF: 'STAFF',
+  MANAGER: 'MANAGER',
+  MARKETING: 'MARKETING',
+  SALE: 'SALE',
+  TECHNICIAN: 'TECHNICIAN',
+  HR: 'HR',
+} as const;
+
+/** Legacy aliases kept for migration/readers */
+export const USER_ROLE_ALIASES = {
+  ADMIN: 'MANAGER',
+  MARKETER: 'MARKETING',
+  STAFF: 'TECHNICIAN',
 } as const;
 
 export type CampaignStatus = (typeof CAMPAIGN_STATUS)[keyof typeof CAMPAIGN_STATUS];

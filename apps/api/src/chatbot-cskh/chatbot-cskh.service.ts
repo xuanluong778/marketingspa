@@ -1,7 +1,9 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   NotFoundException,
+  forwardRef,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ChatbotBotStatus, Prisma } from '@marketingspa/database';
@@ -17,6 +19,7 @@ import {
   UpdateSettingsDto,
 } from './dto/chatbot-cskh.dto';
 import { buildEmbedCode, defaultGreeting, resolveEmbedApiUrl } from './utils/chatbot-constants';
+import { ChatbotFacebookWebhookService } from './chatbot-facebook-webhook.service';
 
 const MAX_BOTS = 10;
 const MAX_SOURCES = 50;
@@ -27,6 +30,8 @@ export class ChatbotCskhService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    @Inject(forwardRef(() => ChatbotFacebookWebhookService))
+    private readonly facebookWebhook: ChatbotFacebookWebhookService,
   ) {}
 
   private appBaseUrl(): string {
@@ -299,6 +304,11 @@ export class ChatbotCskhService {
 
   async connectFacebookPage(organizationId: string, dto: ConnectFacebookPageDto) {
     await this.findBotOrThrow(organizationId, dto.botId);
+    const subscribed = await this.facebookWebhook.subscribePageWebhook(
+      dto.pageId,
+      dto.pageAccessToken,
+    );
+
     return this.prisma.chatbotFacebookPage.upsert({
       where: { pageId: dto.pageId },
       create: {
@@ -309,6 +319,7 @@ export class ChatbotCskhService {
         pageAccessTokenEncrypted: Buffer.from(dto.pageAccessToken).toString('base64'),
         aiEnabled: dto.aiEnabled ?? true,
         status: 'connected',
+        webhookSubscribed: subscribed,
       },
       update: {
         botId: dto.botId,
@@ -316,6 +327,7 @@ export class ChatbotCskhService {
         pageAccessTokenEncrypted: Buffer.from(dto.pageAccessToken).toString('base64'),
         aiEnabled: dto.aiEnabled ?? true,
         status: 'connected',
+        webhookSubscribed: subscribed,
       },
       include: { bot: { select: { id: true, botName: true } } },
     });

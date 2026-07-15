@@ -5,4 +5,7 @@ export interface AuthUser {
   name: string;
   role: string;
   organizationId: string;
+  employeeId?: string | null;
+  /** RolePermission codes; thiếu thì PermissionsGuard coi như [] (OWNER vẫn bypass) */
+  permissions?: string[];
 }

@@ -2,6 +2,7 @@
 
 import dynamic from 'next/dynamic';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   Calculator,
   Calendar,
@@ -85,6 +86,15 @@ function currentMonthLabel(): string {
 }
 
 export default function BusinessGoalsPage() {
+  const searchParams = useSearchParams();
+  const [activeTab, setActiveTab] = useState('goals');
+
+  useEffect(() => {
+    if (searchParams.get('tab') === 'ad-performance') {
+      setActiveTab('ad-performance');
+    }
+  }, [searchParams]);
+
   const [formState, setFormState] = useState<BusinessGoalFormState>(defaultBusinessGoalFormState);
   const [inputMode, setInputMode] = useState<'quick' | 'detailed'>('quick');
   const [calculated, setCalculated] = useState(true);
@@ -196,7 +206,7 @@ export default function BusinessGoalsPage() {
         </div>
       </div>
 
-      <Tabs defaultValue="goals" className="space-y-5">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-5">
         <TabsList className="grid w-full max-w-md grid-cols-2">
           <TabsTrigger value="goals">Tính mục tiêu</TabsTrigger>
           <TabsTrigger value="ad-performance">Hiệu quả quảng cáo</TabsTrigger>

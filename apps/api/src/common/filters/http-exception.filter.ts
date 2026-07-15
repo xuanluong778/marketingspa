@@ -9,6 +9,26 @@ import {
 import type { Response } from 'express';
 import { captureException } from '../../sentry';
 
+function isInfrastructureError(exception: unknown): boolean {
+  if (!(exception instanceof Error)) return false;
+  const msg = exception.message.toLowerCase();
+  const name = exception.name.toLowerCase();
+  return (
+    name.includes('prismaclientinitialization') ||
+    name.includes('prismaclientknownrequest') ||
+    msg.includes("can't reach database server") ||
+    msg.includes('cannot reach database server') ||
+    msg.includes('database server is not reachable') ||
+    msg.includes('econnrefused') ||
+    msg.includes('connection refused') ||
+    msg.includes('timed out fetching a new connection from the connection pool') ||
+    msg.includes('server has closed the connection') ||
+    msg.includes('p1001') ||
+    msg.includes('p1002') ||
+    msg.includes('p1017')
+  );
+}
+
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
   private readonly logger = new Logger(GlobalExceptionFilter.name);
@@ -34,6 +54,15 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           message = 'Validation failed';
         }
       }
+    } else if (isInfrastructureError(exception)) {
+      status = HttpStatus.SERVICE_UNAVAILABLE;
+      message =
+        'Không kết nối được database. Chạy `pnpm dev:infra` (Docker Postgres/Redis) rồi thử lại.';
+      this.logger.error(
+        exception instanceof Error ? exception.message : String(exception),
+        exception instanceof Error ? exception.stack : undefined,
+      );
+      captureException(exception, 'GlobalExceptionFilter');
     } else if (exception instanceof Error) {
       this.logger.error(exception.message, exception.stack);
       captureException(exception, 'GlobalExceptionFilter');

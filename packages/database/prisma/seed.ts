@@ -72,7 +72,7 @@ function daysFromNow(n: number): Date {
 async function main() {
   console.log('🌱 Seeding database (multi-tenant full schema)...');
 
-  // --- Global permissions ---
+  // --- Global permissions (CRM + HRM Phase 0) ---
   const permissionDefs = [
     { code: 'customer.read', name: 'Xem khách hàng', module: 'crm' },
     { code: 'customer.write', name: 'Sửa khách hàng', module: 'crm' },
@@ -83,17 +83,72 @@ async function main() {
     { code: 'expense.write', name: 'Ghi chi phí', module: 'finance' },
     { code: 'report.view', name: 'Xem báo cáo', module: 'analytics' },
     { code: 'settings.manage', name: 'Quản lý cài đặt', module: 'admin' },
+    { code: 'hrm.employee.read', name: 'Xem nhân viên', module: 'hrm' },
+    { code: 'hrm.employee.write', name: 'Sửa nhân viên', module: 'hrm' },
+    { code: 'hrm.contract.read', name: 'Xem hợp đồng', module: 'hrm' },
+    { code: 'hrm.contract.write', name: 'Sửa hợp đồng', module: 'hrm' },
+    { code: 'hrm.document.read', name: 'Xem tài liệu HR', module: 'hrm' },
+    { code: 'hrm.document.write', name: 'Sửa tài liệu HR', module: 'hrm' },
+    { code: 'hrm.account.manage', name: 'Quản lý tài khoản NV', module: 'hrm' },
+    { code: 'hrm.audit.read', name: 'Xem audit HR', module: 'hrm' },
+    { code: 'hrm.attendance.read', name: 'Xem chấm công', module: 'hrm' },
+    { code: 'hrm.attendance.write', name: 'Chấm công / phân ca', module: 'hrm' },
+    { code: 'hrm.attendance.lock', name: 'Khóa bảng công', module: 'hrm' },
+    { code: 'hrm.leave.read', name: 'Xem phép / OT', module: 'hrm' },
+    { code: 'hrm.leave.write', name: 'Tạo phép / OT', module: 'hrm' },
+    { code: 'hrm.leave.approve', name: 'Duyệt phép / OT', module: 'hrm' },
   ];
 
   const permissions = await Promise.all(
     permissionDefs.map((p) =>
       prisma.permission.upsert({
         where: { code: p.code },
-        update: {},
+        update: { name: p.name, module: p.module },
         create: p,
       }),
     ),
   );
+  const permissionByCode = new Map(permissions.map((p) => [p.code, p]));
+
+  const rolePermissionCodes: Record<string, string[]> = {
+    OWNER: permissionDefs.map((p) => p.code),
+    MANAGER: permissionDefs.filter((p) => p.code !== 'settings.manage').map((p) => p.code),
+    MARKETING: [
+      'customer.read',
+      'lead.read',
+      'lead.write',
+      'campaign.send',
+      'report.view',
+      'hrm.employee.read',
+    ],
+    SALE: ['customer.read', 'customer.write', 'lead.read', 'lead.write', 'order.read', 'report.view', 'hrm.employee.read'],
+    TECHNICIAN: [
+      'hrm.employee.read',
+      'hrm.attendance.read',
+      'hrm.leave.read',
+      'hrm.leave.write',
+      'lead.read',
+      'customer.read',
+    ],
+    HR: [
+      'hrm.employee.read',
+      'hrm.employee.write',
+      'hrm.contract.read',
+      'hrm.contract.write',
+      'hrm.document.read',
+      'hrm.document.write',
+      'hrm.account.manage',
+      'hrm.audit.read',
+      'hrm.attendance.read',
+      'hrm.attendance.write',
+      'hrm.attendance.lock',
+      'hrm.leave.read',
+      'hrm.leave.write',
+      'hrm.leave.approve',
+      'report.view',
+      'customer.read',
+    ],
+  };
 
   // --- Subscription plans ---
   const starterPlan = await prisma.subscriptionPlan.upsert({
@@ -134,51 +189,66 @@ async function main() {
     },
   });
 
-  // --- Roles & permissions ---
-  const ownerRole = await prisma.role.upsert({
-    where: { organizationId_code: { organizationId: org.id, code: 'OWNER' } },
-    update: {},
-    create: {
-      organizationId: org.id,
-      code: 'OWNER',
-      name: 'Chủ spa',
-      isSystem: true,
-    },
-  });
+  // --- Roles & permissions (canonical Phase 0) ---
+  const roleSeeds = [
+    { code: 'OWNER', name: 'Chủ spa' },
+    { code: 'MANAGER', name: 'Quản lý' },
+    { code: 'MARKETING', name: 'Marketing' },
+    { code: 'SALE', name: 'Sale' },
+    { code: 'TECHNICIAN', name: 'Kỹ thuật viên' },
+    { code: 'HR', name: 'Nhân sự' },
+  ] as const;
 
-  const marketerRole = await prisma.role.upsert({
-    where: { organizationId_code: { organizationId: org.id, code: 'MARKETER' } },
-    update: {},
-    create: {
-      organizationId: org.id,
-      code: 'MARKETER',
-      name: 'Marketing',
-      isSystem: true,
-    },
-  });
+  const rolesByCode: Record<string, { id: string; code: string }> = {};
+  for (const r of roleSeeds) {
+    const role = await prisma.role.upsert({
+      where: { organizationId_code: { organizationId: org.id, code: r.code } },
+      update: { name: r.name, isSystem: true },
+      create: {
+        organizationId: org.id,
+        code: r.code,
+        name: r.name,
+        isSystem: true,
+      },
+    });
+    rolesByCode[r.code] = role;
+  }
 
-  const staffRole = await prisma.role.upsert({
-    where: { organizationId_code: { organizationId: org.id, code: 'STAFF' } },
-    update: {},
-    create: {
-      organizationId: org.id,
-      code: 'STAFF',
-      name: 'Nhân viên',
-      isSystem: true,
-    },
-  });
+  // Remap alias roles MARKETER→MARKETING, STAFF→TECHNICIAN, ADMIN→MANAGER
+  const aliasMap: Array<[string, string]> = [
+    ['MARKETER', 'MARKETING'],
+    ['STAFF', 'TECHNICIAN'],
+    ['ADMIN', 'MANAGER'],
+  ];
+  for (const [fromCode, toCode] of aliasMap) {
+    const legacy = await prisma.role.findUnique({
+      where: { organizationId_code: { organizationId: org.id, code: fromCode } },
+    });
+    const target = rolesByCode[toCode];
+    if (legacy && target) {
+      await prisma.user.updateMany({
+        where: { organizationId: org.id, roleId: legacy.id },
+        data: { roleId: target.id },
+      });
+      await prisma.rolePermission.deleteMany({ where: { roleId: legacy.id } });
+      await prisma.role.delete({ where: { id: legacy.id } });
+    }
+  }
 
-  await prisma.rolePermission.createMany({
-    data: permissions.map((p) => ({ roleId: ownerRole.id, permissionId: p.id })),
-    skipDuplicates: true,
-  });
+  for (const [code, role] of Object.entries(rolesByCode)) {
+    const codes = rolePermissionCodes[code] ?? [];
+    const links = codes
+      .map((c) => permissionByCode.get(c))
+      .filter((p): p is (typeof permissions)[number] => !!p)
+      .map((p) => ({ roleId: role.id, permissionId: p.id }));
+    if (links.length) {
+      await prisma.rolePermission.createMany({ data: links, skipDuplicates: true });
+    }
+  }
 
-  await prisma.rolePermission.createMany({
-    data: permissions
-      .filter((p) => p.module !== 'admin')
-      .map((p) => ({ roleId: marketerRole.id, permissionId: p.id })),
-    skipDuplicates: true,
-  });
+  const ownerRole = rolesByCode.OWNER!;
+  const marketingRole = rolesByCode.MARKETING!;
+  const technicianRole = rolesByCode.TECHNICIAN!;
 
   // --- Employees (3 nhân viên) ---
   const employeeData = [
@@ -224,26 +294,26 @@ async function main() {
 
   await prisma.user.upsert({
     where: { email: 'marketer@demo-spa.com' },
-    update: {},
+    update: { roleId: marketingRole.id, employeeId: employees[1]!.id },
     create: {
       email: 'marketer@demo-spa.com',
       passwordHash,
       name: 'Marketing Demo',
       organizationId: org.id,
-      roleId: marketerRole.id,
+      roleId: marketingRole.id,
       employeeId: employees[1]!.id,
     },
   });
 
   await prisma.user.upsert({
     where: { email: 'staff@demo-spa.com' },
-    update: {},
+    update: { roleId: technicianRole.id, employeeId: employees[2]!.id },
     create: {
       email: 'staff@demo-spa.com',
       passwordHash,
       name: 'Staff Demo',
       organizationId: org.id,
-      roleId: staffRole.id,
+      roleId: technicianRole.id,
       employeeId: employees[2]!.id,
     },
   });

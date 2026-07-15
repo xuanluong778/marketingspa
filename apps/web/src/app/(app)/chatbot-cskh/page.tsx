@@ -37,6 +37,7 @@ import {
   useChatbotSettings,
   useChatbotOpenAiStatus,
   useChatbotFacebookPages,
+  useChatbotFacebookWebhookStatus,
   useCreateChatbotBot,
   useUpdateChatbotBot,
   useDeleteChatbotBot,
@@ -104,6 +105,7 @@ export default function ChatbotCskhPage() {
   const settings = useChatbotSettings();
   const openAiStatus = useChatbotOpenAiStatus(testOpenAi);
   const facebook = useChatbotFacebookPages();
+  const fbWebhook = useChatbotFacebookWebhookStatus();
   const embed = useChatbotEmbed(selectedBotId);
 
   const createBot = useCreateChatbotBot();
@@ -371,6 +373,16 @@ export default function ChatbotCskhPage() {
             <h3 className="font-semibold flex items-center gap-2">
               <Facebook className="h-4 w-4" /> Kết nối Facebook Fanpage
             </h3>
+            {fbWebhook.data?.webhookUrl && (
+              <div className="rounded-md bg-muted/50 p-3 text-xs space-y-1">
+                <p className="font-medium">Webhook Messenger (VPS HTTPS)</p>
+                <code className="break-all block">{fbWebhook.data.webhookUrl}</code>
+                <p className="text-muted-foreground">
+                  Chỉ cần Page Access Token bên dưới — không cần META_APP_ID.
+                  Verify Token (nếu Meta hỏi): {fbWebhook.data.verifyTokenHint}
+                </p>
+              </div>
+            )}
             <Input
               placeholder="Page ID"
               value={fbForm.pageId}
@@ -383,7 +395,7 @@ export default function ChatbotCskhPage() {
             />
             <Input
               type="password"
-              placeholder="Page Access Token"
+              placeholder="Page Access Token (Messenger)"
               value={fbForm.pageAccessToken}
               onChange={(e) => setFbForm({ ...fbForm, pageAccessToken: e.target.value })}
             />
@@ -403,6 +415,12 @@ export default function ChatbotCskhPage() {
               <div key={p.id} className="flex justify-between items-center text-sm border-t pt-2">
                 <span>
                   {p.pageName} ({p.pageId})
+                  {p.webhookSubscribed === false && (
+                    <span className="ml-2 text-amber-600">· webhook chưa subscribe</span>
+                  )}
+                  {p.webhookSubscribed && (
+                    <span className="ml-2 text-emerald-700">· webhook OK</span>
+                  )}
                 </span>
                 <Button size="sm" variant="ghost" onClick={() => disconnectFb.mutate(p.id)}>
                   Ngắt

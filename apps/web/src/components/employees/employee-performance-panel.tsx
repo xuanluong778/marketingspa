@@ -14,7 +14,7 @@ interface EmployeePerformancePanelProps {
 }
 
 export function EmployeePerformancePanel({ employee }: EmployeePerformancePanelProps) {
-  const [range, setRange] = useState(defaultPerformanceRange);
+  const [range, setRange] = useState(() => defaultPerformanceRange());
   const { data, isLoading } = useEmployeePerformance(employee.id, range, true);
 
   const kpis = data

@@ -32,28 +32,28 @@ export function Topbar({ onMenuClick }: TopbarProps) {
     .toUpperCase();
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b bg-background px-4">
-      <Button variant="ghost" size="icon" className="lg:hidden" onClick={onMenuClick}>
+    <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b border-white/10 bg-[#0A3D30] px-4 text-white">
+      <Button variant="ghost" size="icon" className="lg:hidden text-white hover:bg-white/10 hover:text-white" onClick={onMenuClick}>
         <Menu className="h-5 w-5" />
       </Button>
 
-      <div className="flex items-center gap-1 text-sm text-muted-foreground min-w-0">
+      <div className="flex items-center gap-1 text-sm text-white/70 min-w-0">
         <span className="hidden sm:inline">MarketingSpa</span>
         <ChevronRight className="h-4 w-4 hidden sm:inline shrink-0" />
-        <span className="font-medium text-foreground truncate">{getPageTitle(pathname)}</span>
+        <span className="font-medium text-[hsl(var(--heading))] truncate">{getPageTitle(pathname)}</span>
       </div>
 
       <div className="ml-auto flex items-center gap-2">
         {user?.organization && (
-          <span className="hidden md:inline text-xs text-muted-foreground truncate max-w-[160px]">
+          <span className="hidden md:inline text-xs text-white/70 truncate max-w-[160px]">
             {user.organization.name}
           </span>
         )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="relative h-9 w-9 rounded-full">
+            <Button variant="ghost" className="relative h-9 w-9 rounded-full text-white hover:bg-white/10 hover:text-white">
               <Avatar className="h-9 w-9">
-                <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                <AvatarFallback className="bg-primary text-primary-foreground text-xs">
                   {initials ?? 'U'}
                 </AvatarFallback>
               </Avatar>

@@ -18,6 +18,11 @@ import {
   processDailyReport,
   processLeadAlertScan,
 } from './processors/jobs';
+import {
+  processAutoPostPublish,
+  processAutoPostScheduledScan,
+} from './processors/auto-post';
+import { processHrmAttendanceRebuild } from './processors/hrm-attendance';
 
 initSentry();
 
@@ -59,6 +64,21 @@ async function start() {
       concurrency: 1,
     }),
     new Worker(QUEUE_NAMES.BACKUP, () => processBackup(), { ...opts, concurrency: 1 }),
+    new Worker(QUEUE_NAMES.AUTO_POST_PUBLISH, (job) => {
+      if (job.name === 'scan-due-scheduled') return processAutoPostScheduledScan();
+      // Job chuẩn bị cho lịch đăng env-token Fanpage — chưa bật processor publish.
+      if (job.name === 'meta-fanpage-publish') {
+        console.warn(
+          '[auto-post] meta-fanpage-publish nhận job nhưng chưa kích hoạt schedule processor — bỏ qua.',
+        );
+        return { skipped: true, reason: 'meta_fanpage_schedule_not_enabled' };
+      }
+      return processAutoPostPublish(job);
+    }, opts),
+    new Worker(QUEUE_NAMES.HRM_ATTENDANCE_REBUILD, (job) => processHrmAttendanceRebuild(job), {
+      ...opts,
+      concurrency: 2,
+    }),
   );
 
   for (const w of workers) {

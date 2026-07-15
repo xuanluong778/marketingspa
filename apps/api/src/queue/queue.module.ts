@@ -5,9 +5,11 @@ import { QUEUE_NAMES } from '@marketingspa/shared';
 import {
   AUTOMATION_MESSAGE_QUEUE,
   APPOINTMENT_REMINDER_QUEUE,
+  AUTO_POST_QUEUE,
   BACKUP_QUEUE,
   CAMPAIGN_QUEUE,
   DAILY_REPORT_QUEUE,
+  HRM_ATTENDANCE_REBUILD_QUEUE,
   LEAD_ALERT_QUEUE,
 } from './queue.constants';
 
@@ -35,6 +37,8 @@ function createQueueProvider(token: string, queueName: string) {
     createQueueProvider(AUTOMATION_MESSAGE_QUEUE, QUEUE_NAMES.AUTOMATION_MESSAGE),
     createQueueProvider(DAILY_REPORT_QUEUE, QUEUE_NAMES.DAILY_REPORT),
     createQueueProvider(BACKUP_QUEUE, QUEUE_NAMES.BACKUP),
+    createQueueProvider(AUTO_POST_QUEUE, QUEUE_NAMES.AUTO_POST_PUBLISH),
+    createQueueProvider(HRM_ATTENDANCE_REBUILD_QUEUE, QUEUE_NAMES.HRM_ATTENDANCE_REBUILD),
   ],
   exports: [
     CAMPAIGN_QUEUE,
@@ -43,6 +47,8 @@ function createQueueProvider(token: string, queueName: string) {
     AUTOMATION_MESSAGE_QUEUE,
     DAILY_REPORT_QUEUE,
     BACKUP_QUEUE,
+    AUTO_POST_QUEUE,
+    HRM_ATTENDANCE_REBUILD_QUEUE,
   ],
 })
 export class QueueModule {}

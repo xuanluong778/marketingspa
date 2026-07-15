@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { ChatbotCskhService } from './chatbot-cskh.service';
 import { ChatbotSuggestService } from './chatbot-suggest.service';
+import { ChatbotFacebookWebhookService } from './chatbot-facebook-webhook.service';
 import { OpenAiService } from '../openai/openai.service';
 import { JwtAuthGuard } from '../common/guards/auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
@@ -33,6 +34,7 @@ export class ChatbotCskhController {
     private readonly service: ChatbotCskhService,
     private readonly suggestService: ChatbotSuggestService,
     private readonly openAi: OpenAiService,
+    private readonly facebookWebhook: ChatbotFacebookWebhookService,
   ) {}
 
   @Get('options')
@@ -147,6 +149,17 @@ export class ChatbotCskhController {
   @Get('facebook/pages')
   listFacebook(@CurrentUser() user: AuthUser) {
     return this.service.listFacebookPages(user.organizationId);
+  }
+
+  @Get('facebook/webhook-status')
+  facebookWebhookStatus() {
+    return {
+      ok: true,
+      webhookPath: this.facebookWebhook.getWebhookPath(),
+      webhookUrl: this.facebookWebhook.getWebhookUrl(),
+      verifyTokenHint: 'CSKH_FB_WEBHOOK_VERIFY_TOKEN',
+      mode: 'page_token_only',
+    };
   }
 
   @Post('facebook/pages')

@@ -88,6 +88,19 @@ export function useChatbotFacebookPages() {
   });
 }
 
+export function useChatbotFacebookWebhookStatus() {
+  return useQuery({
+    queryKey: [...KEY, 'facebook-webhook-status'],
+    queryFn: () =>
+      apiClient<{
+        ok: boolean;
+        webhookPath: string;
+        webhookUrl: string;
+        verifyTokenHint: string;
+      }>('/chatbot-cskh/facebook/webhook-status'),
+  });
+}
+
 export function useCreateChatbotBot() {
   const qc = useQueryClient();
   return useMutation({

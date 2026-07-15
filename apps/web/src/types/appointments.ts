@@ -64,6 +64,21 @@ export const ROLE_OPTIONS = [
   { value: 'MARKETING', label: 'Marketing' },
   { value: 'SALE', label: 'Tư vấn bán hàng' },
   { value: 'TECHNICIAN', label: 'Kỹ thuật viên' },
+  { value: 'HR', label: 'Nhân sự' },
+] as const;
+
+export const EMPLOYEE_POSITION_OPTIONS = [
+  'Quản lý spa',
+  'Phó quản lý',
+  'Lễ tân',
+  'Tư vấn viên',
+  'Kỹ thuật viên',
+  'Chuyên viên chăm sóc da',
+  'Chuyên viên massage',
+  'Bác sĩ da liễu',
+  'Marketing',
+  'Kế toán',
+  'Admin',
 ] as const;
 
 export interface EmployeeDetail {

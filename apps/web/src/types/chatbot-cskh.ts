@@ -109,6 +109,7 @@ export interface ChatbotFacebookPage {
   pageName: string;
   aiEnabled: boolean;
   status: string;
+  webhookSubscribed?: boolean;
   bot?: { id: string; botName: string };
 }
 
