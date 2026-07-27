@@ -4,10 +4,10 @@ import type {
   AutoPostFacebookStatus,
   AutoPostFormState,
   AutoPostItem,
+  AutoPostOAuthPagesResponse,
   AutoPostStatus,
   AutoPostType,
 } from '@/types/auto-post';
-import type { AutoPostFacebookPage } from '@/types/auto-post';
 
 const BASE = '/auto-post';
 
@@ -38,7 +38,7 @@ export function useAutoPostOauthPages(enabled = false) {
   return useQuery({
     queryKey: ['auto-post', 'facebook', 'oauth', 'pages'],
     queryFn: () =>
-      apiClient<Array<AutoPostFacebookPage>>(`${BASE}/facebook/oauth/pages`),
+      apiClient<AutoPostOAuthPagesResponse>(`${BASE}/facebook/oauth/pages`),
     enabled,
   });
 }

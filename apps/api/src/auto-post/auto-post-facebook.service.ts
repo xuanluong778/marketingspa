@@ -18,6 +18,11 @@ import { encryptSecret, decryptSecret } from '../common/utils/encryption.util';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { AUTO_POST_QUEUE } from '../queue/queue.constants';
 import { AutoPostMetaService } from './auto-post-meta.service';
+import {
+  buildOAuthPagesListResult,
+  missingRequiredPageScopes,
+  type OAuthPagesListResult,
+} from './auto-post-meta-pages.util';
 import { MetaFanpageService } from '../meta-fanpage/meta-fanpage.service';
 import { ChannelConnectionsService } from '../messaging/channel-connections.service';
 import {
@@ -193,6 +198,22 @@ export class AutoPostFacebookService {
       const longLived = await this.meta.exchangeForLongLivedToken(short.access_token);
       const accessToken = longLived.access_token;
       const me = await this.meta.getMe(accessToken);
+      const grantedScopes = await this.meta.resolveGrantedScopes(accessToken);
+      const missingPageScopes = missingRequiredPageScopes(grantedScopes);
+
+      if (missingPageScopes.length > 0) {
+        const configId = this.meta.loginConfigId ?? 'META_LOGIN_CONFIG_ID';
+        const hint =
+          `Facebook (${me.name ?? me.id}) chưa cấp quyền Fanpage. ` +
+          `Hiện có: ${grantedScopes.join(', ') || 'public_profile'}. ` +
+          `Thiếu: ${missingPageScopes.join(', ')}. ` +
+          `Cập nhật Login Configuration ${configId} trên Meta Developer (thêm pages_show_list, pages_read_engagement, pages_manage_posts) rồi bấm Kết nối lại trên MarketingAutoAZ.`;
+        await this.prisma.autoPostFacebookOAuthPendingConnection.deleteMany({
+          where: { userId, organizationId },
+        });
+        return { redirectUrl: `${base}error&message=${encodeURIComponent(hint)}` };
+      }
+
       const expiresAt = longLived.expires_in
         ? new Date(Date.now() + longLived.expires_in * 1000)
         : null;
@@ -213,7 +234,7 @@ export class AutoPostFacebookService {
           tokenExpiresAt: expiresAt,
           facebookUserId: me.id,
           facebookUserName: me.name ?? null,
-          scopes: this.meta.getOAuthScopes(),
+          scopes: grantedScopes,
           lastError: null,
         },
         update: {
@@ -221,7 +242,7 @@ export class AutoPostFacebookService {
           tokenExpiresAt: expiresAt,
           facebookUserId: me.id,
           facebookUserName: me.name ?? null,
-          scopes: this.meta.getOAuthScopes(),
+          scopes: grantedScopes,
           lastError: null,
         },
       });
@@ -318,21 +339,89 @@ export class AutoPostFacebookService {
     };
   }
 
-  /** OAuth (Login for Business) — chỉ dùng để liệt kê pages để người dùng chọn. */
-  async listOAuthManagedPages(userId: string, organizationId: string) {
-    const pending = await this.requireOAuthPending(userId, organizationId);
+  /** OAuth (Login for Business) — liệt kê Fanpage từ user token OAuth mới (không dùng ENV token). */
+  async listOAuthManagedPages(
+    userId: string,
+    organizationId: string,
+  ): Promise<OAuthPagesListResult> {
+    const pending = await this.prisma.autoPostFacebookOAuthPendingConnection.findUnique({
+      where: { userId_organizationId: { userId, organizationId } },
+    });
+
+    if (!pending) {
+      return buildOAuthPagesListResult({
+        status: 'NO_PENDING_OAUTH',
+        message: 'Chưa có phiên OAuth — bấm Kết nối Facebook OAuth trên MarketingAutoAZ.',
+      });
+    }
+
     if (pending.tokenExpiresAt && pending.tokenExpiresAt.getTime() < Date.now()) {
-      throw new UnauthorizedException('Token Facebook đã hết hạn — vui lòng kết nối lại');
+      return buildOAuthPagesListResult({
+        status: 'TOKEN_EXPIRED',
+        facebookUserName: pending.facebookUserName,
+        grantedScopes: pending.scopes ?? [],
+        message: 'Token Facebook đã hết hạn — bấm Kết nối lại để cấp quyền mới.',
+      });
     }
 
     const accessToken = decryptSecret(pending.encryptedAccessToken, this.getEncryptionKey());
-    const pages = await this.meta.getManagedPages(accessToken);
-    return pages.map((p) => ({
-      id: p.id,
-      pageId: p.id,
-      pageName: p.name,
-      pagePictureUrl: p.picture?.data?.url ?? null,
-    }));
+
+    let grantedScopes: string[];
+    try {
+      grantedScopes = await this.meta.resolveGrantedScopes(accessToken);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'meta_api_error';
+      return buildOAuthPagesListResult({
+        status: 'META_API_ERROR',
+        facebookUserName: pending.facebookUserName,
+        message: msg.slice(0, 300),
+      });
+    }
+
+    const missingScopes = missingRequiredPageScopes(grantedScopes);
+    if (missingScopes.length > 0) {
+      return buildOAuthPagesListResult({
+        status: 'MISSING_PERMISSION',
+        facebookUserName: pending.facebookUserName,
+        grantedScopes,
+        missingScopes,
+        message:
+          `Facebook chưa cấp quyền liệt kê Fanpage. Thiếu: ${missingScopes.join(', ')}. ` +
+          `Bấm Kết nối lại và chấp thuận đủ quyền trên Meta.`,
+      });
+    }
+
+    let pages;
+    try {
+      pages = await this.meta.getManagedPages(accessToken);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'meta_api_error';
+      return buildOAuthPagesListResult({
+        status: 'META_API_ERROR',
+        facebookUserName: pending.facebookUserName,
+        grantedScopes,
+        message: msg.slice(0, 300),
+      });
+    }
+
+    if (pages.length === 0) {
+      return buildOAuthPagesListResult({
+        status: 'NO_PAGES',
+        facebookUserName: pending.facebookUserName,
+        grantedScopes,
+        message:
+          `Tài khoản "${pending.facebookUserName ?? pending.facebookUserId}" không có Fanpage nào ` +
+          `hoặc bạn chưa được Meta cấp quyền quản trị Page.`,
+      });
+    }
+
+    return buildOAuthPagesListResult({
+      status: 'OK',
+      facebookUserName: pending.facebookUserName,
+      grantedScopes,
+      pages,
+      message: null,
+    });
   }
 
   /** OAuth — chọn nhiều Fanpage: verify ownership + pages_manage_posts, upsert, không xóa page vẫn giữ. */
@@ -384,6 +473,10 @@ export class AutoPostFacebookService {
         }
         if (!grantedScopes.includes('pages_manage_posts')) {
           failed.push({ pageId, reason: 'MISSING_PERMISSION: pages_manage_posts' });
+          continue;
+        }
+        if (!chosen.access_token?.trim()) {
+          failed.push({ pageId, reason: 'Fanpage không có page access token — thử Kết nối lại' });
           continue;
         }
 

@@ -16,6 +16,6 @@ import { MessagingModule } from '../messaging/messaging.module';
     AutoPostMetaService,
     AutoPostMetaComplianceService,
   ],
-  exports: [AutoPostService, AutoPostMetaComplianceService],
+  exports: [AutoPostService, AutoPostFacebookService, AutoPostMetaComplianceService],
 })
 export class AutoPostModule {}

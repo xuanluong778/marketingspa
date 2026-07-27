@@ -1,18 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  fetchAllManagedPages,
+  mergeGrantedScopes,
+  type MetaPageAccountParsed,
+} from './auto-post-meta-pages.util';
+import {
   resolveAutoPostMetaScopes,
   resolveMetaAppId,
   resolveMetaAppSecret,
   resolveMetaLoginConfigId,
+  resolveMetaOAuthRedirectUri,
 } from './auto-post-config';
 
-export interface MetaPageAccount {
-  id: string;
-  name: string;
-  access_token: string;
-  picture?: { data?: { url?: string } };
-}
+export type { MetaPageAccountParsed as MetaPageAccount };
 
 export interface MetaPublishResult {
   id: string;
@@ -49,9 +50,9 @@ export class AutoPostMetaService {
   }
 
   get redirectUri(): string {
-    return (
-      this.env('META_AUTO_POST_REDIRECT_URI') ??
-      `${this.env('API_URL') ?? 'http://localhost:4000'}/api/v1/auto-post/facebook/oauth/callback`
+    return resolveMetaOAuthRedirectUri(
+      (k) => this.env(k),
+      '/api/v1/auto-post/facebook/oauth/callback',
     );
   }
 
@@ -60,8 +61,8 @@ export class AutoPostMetaService {
   }
 
   /**
-   * App Business (seoauto) dùng Facebook Login for Business → bắt buộc config_id.
-   * Truyền pages_* qua scope sẽ bị Meta trả "Invalid Scopes".
+   * Facebook Login for Business (app Business) — dùng config_id.
+   * Bổ sung scope + auth_type=rerequest để Meta hiển thị quyền Pages khi Configuration cho phép.
    */
   buildOAuthUrl(state: string): string {
     const params = new URLSearchParams({
@@ -69,12 +70,26 @@ export class AutoPostMetaService {
       redirect_uri: this.redirectUri,
       state,
       response_type: 'code',
+      display: 'page',
+      auth_type: 'rerequest',
+      return_scopes: 'true',
     });
 
     const configId = this.loginConfigId;
     if (configId) {
       params.set('config_id', configId);
-      params.set('override_default_response_type', 'true');
+      const overrideDefault =
+        (this.env('META_LOGIN_OVERRIDE_DEFAULT_RESPONSE_TYPE') ?? '')
+          .trim()
+          .toLowerCase() === 'true';
+      if (overrideDefault) {
+        params.set('override_default_response_type', 'true');
+      }
+      const appendScopes =
+        (this.env('META_OAUTH_APPEND_SCOPES') ?? 'true').trim().toLowerCase() === 'true';
+      if (appendScopes) {
+        params.set('scope', this.getOAuthScopes().join(','));
+      }
     } else {
       params.set('scope', this.getOAuthScopes().join(','));
     }
@@ -116,12 +131,30 @@ export class AutoPostMetaService {
     );
   }
 
-  async getManagedPages(accessToken: string): Promise<MetaPageAccount[]> {
-    const data = await this.getJson<{ data: MetaPageAccount[] }>(
-      `https://graph.facebook.com/${this.apiVersion}/me/accounts?fields=id,name,access_token,picture&limit=100`,
-      accessToken,
+  async getGrantedPermissions(accessToken: string): Promise<string[]> {
+    const data = await this.getJson<{
+      data: Array<{ permission?: string; status?: string }>;
+    }>(`https://graph.facebook.com/${this.apiVersion}/me/permissions`, accessToken);
+    return (data.data ?? [])
+      .filter((row) => row.status === 'granted' && row.permission)
+      .map((row) => row.permission!);
+  }
+
+  /** Quyền thực tế: union /me/permissions + debug_token.scopes. */
+  async resolveGrantedScopes(accessToken: string): Promise<string[]> {
+    const [fromPermissions, debug] = await Promise.all([
+      this.getGrantedPermissions(accessToken).catch(() => [] as string[]),
+      this.debugToken(accessToken).catch(() => ({ is_valid: false, scopes: [] as string[] })),
+    ]);
+    return mergeGrantedScopes(fromPermissions, debug.scopes);
+  }
+
+  /** Lấy toàn bộ Fanpage user quản trị — pagination, fields id/name/access_token/tasks. */
+  async getManagedPages(accessToken: string): Promise<MetaPageAccountParsed[]> {
+    return fetchAllManagedPages(
+      (url) => this.getJson(url, accessToken),
+      this.apiVersion,
     );
-    return data.data ?? [];
   }
 
   async publishPagePost(

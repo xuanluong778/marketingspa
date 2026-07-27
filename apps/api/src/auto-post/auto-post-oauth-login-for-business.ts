@@ -24,6 +24,7 @@ export type MetaPageAccount = {
   name: string;
   access_token: string;
   picture?: { data?: { url?: string } };
+  tasks?: string[];
 };
 
 export async function createOAuthStateRecord(
@@ -113,6 +114,8 @@ export async function oauthCallbackConnect(
       exchangeForLongLivedToken: (shortLivedToken: string) => Promise<{ access_token: string; expires_in?: number }>;
       getMe: (accessToken: string) => Promise<{ id: string; name?: string }>;
       getOAuthScopes: () => string[];
+      resolveGrantedScopes?: (accessToken: string) => Promise<string[]>;
+      getGrantedPermissions?: (accessToken: string) => Promise<string[]>;
     };
   },
 ): Promise<void> {
@@ -124,6 +127,11 @@ export async function oauthCallbackConnect(
     const longLived = await params.meta.exchangeForLongLivedToken(short.access_token);
     const accessToken = longLived.access_token;
     const me = await params.meta.getMe(accessToken);
+    const grantedScopes = params.meta.resolveGrantedScopes
+      ? await params.meta.resolveGrantedScopes(accessToken)
+      : params.meta.getGrantedPermissions
+        ? await params.meta.getGrantedPermissions(accessToken)
+        : params.meta.getOAuthScopes();
 
     const expiresAt = longLived.expires_in ? new Date(Date.now() + longLived.expires_in * 1000) : null;
     const encryptedAccessToken = encryptSecret(accessToken, encryptionKey);
@@ -138,7 +146,7 @@ export async function oauthCallbackConnect(
         tokenExpiresAt: expiresAt,
         facebookUserId: me.id,
         facebookUserName: me.name ?? null,
-        scopes: params.meta.getOAuthScopes(),
+        scopes: grantedScopes,
         lastError: null,
       },
       update: {
@@ -146,7 +154,7 @@ export async function oauthCallbackConnect(
         tokenExpiresAt: expiresAt,
         facebookUserId: me.id,
         facebookUserName: me.name ?? null,
-        scopes: params.meta.getOAuthScopes(),
+        scopes: grantedScopes,
         lastError: null,
       },
     });
@@ -256,6 +264,10 @@ export async function selectOAuthPages(
       }
       if (!grantedScopes.includes('pages_manage_posts')) {
         failed.push({ pageId, reason: 'MISSING_PERMISSION' });
+        continue;
+      }
+      if (!chosen.access_token?.trim()) {
+        failed.push({ pageId, reason: 'missing_page_access_token' });
         continue;
       }
 

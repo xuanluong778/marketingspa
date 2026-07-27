@@ -43,6 +43,26 @@ export interface AutoPostFacebookPage {
   pageId: string;
   pageName: string;
   pagePictureUrl: string | null;
+  tasks?: string[];
+  canManagePosts?: boolean;
+}
+
+export type OAuthPagesStatus =
+  | 'OK'
+  | 'MISSING_PERMISSION'
+  | 'NO_PAGES'
+  | 'TOKEN_EXPIRED'
+  | 'NO_PENDING_OAUTH'
+  | 'META_API_ERROR';
+
+export interface AutoPostOAuthPagesResponse {
+  status: OAuthPagesStatus;
+  facebookUserName: string | null;
+  grantedScopes: string[];
+  missingScopes: string[];
+  requiredScopes: string[];
+  pages: AutoPostFacebookPage[];
+  message: string | null;
 }
 
 export interface AutoPostFacebookStatus {

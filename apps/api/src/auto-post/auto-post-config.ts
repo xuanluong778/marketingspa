@@ -43,6 +43,58 @@ export function resolveMetaAppSecret(
   return getEnv('META_APP_SECRET')?.trim() || getEnv('FACEBOOK_APP_SECRET')?.trim() || undefined;
 }
 
+/**
+ * Auto Post OAuth state: userId:organizationId:ts:nonce:sig (5 segments).
+ * Ads OAuth state: userId:organizationId:returnTo:exp:nonce:sig (6 segments).
+ */
+export function isAutoPostOAuthState(state: string | undefined): boolean {
+  if (!state) return false;
+  try {
+    const decoded = Buffer.from(state, 'base64url').toString('utf8');
+    return decoded.split(':').length === 5;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * MarketingAutoAZ OAuth state (base64url): 5 segments = Auto Post, 6 = Ads.
+ * Relay partner state là JWT (có dấu chấm) — không trùng format này.
+ */
+export function isMarketingAutoazOAuthState(state: string | undefined): boolean {
+  if (!state || state.includes('.')) return false;
+  try {
+    const decoded = Buffer.from(state, 'base64url').toString('utf8');
+    const n = decoded.split(':').length;
+    return n === 5 || n === 6;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Redirect URI đã whitelist trên Meta App (META_FACEBOOK_OAUTH_REDIRECT_URI).
+ */
+export function resolveMetaOAuthRedirectUri(
+  getEnv: (key: string) => string | undefined,
+  fallbackPath: string,
+): string {
+  const whitelisted =
+    getEnv('META_FACEBOOK_OAUTH_REDIRECT_URI')?.trim() ||
+    getEnv('FACEBOOK_REDIRECT_URI')?.trim();
+  if (whitelisted) return whitelisted;
+
+  const shared = getEnv('META_REDIRECT_URI')?.trim();
+  const dedicated = getEnv('META_AUTO_POST_REDIRECT_URI')?.trim();
+  const useShared =
+    (getEnv('META_OAUTH_USE_SHARED_REDIRECT') ?? 'false').trim().toLowerCase() === 'true';
+
+  if (useShared && shared) return shared;
+  if (dedicated) return dedicated;
+  const apiUrl = getEnv('API_URL') ?? 'http://localhost:4000';
+  return `${apiUrl.replace(/\/$/, '')}${fallbackPath}`;
+}
+
 export function resolveAutoPostMetaScopes(
   getEnv: (key: string) => string | undefined,
 ): string[] {

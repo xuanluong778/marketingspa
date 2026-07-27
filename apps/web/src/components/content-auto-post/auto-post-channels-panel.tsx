@@ -55,14 +55,17 @@ export function AutoPostChannelsPanel() {
 
   const oauthPagesQuery = useAutoPostOauthPages(oauthPickOpen || needsOauthPageSelection);
 
+  const oauthPages = oauthPagesQuery.data?.pages ?? [];
+  const oauthPagesStatus = oauthPagesQuery.data?.status;
+
   useEffect(() => {
     if (!oauthPickOpen) return;
     const already = new Set((fbStatus?.pages ?? []).map((p) => p.pageId));
-    const fromList = (oauthPagesQuery.data ?? [])
+    const fromList = oauthPages
       .map((p) => p.pageId)
       .filter((id) => already.has(id));
     setSelectedPageIds(fromList);
-  }, [oauthPickOpen, oauthPagesQuery.data, fbStatus?.pages]);
+  }, [oauthPickOpen, oauthPages, fbStatus?.pages]);
 
   const togglePageId = useCallback((pageId: string, checked: boolean) => {
     setSelectedPageIds((prev) => {
@@ -372,26 +375,103 @@ export function AutoPostChannelsPanel() {
             </DialogHeader>
 
             {oauthPagesQuery.isLoading ? (
-              <LoadingState message="Đang tải danh sách Fanpage..." />
+              <LoadingState message="Đang tải danh sách Fanpage từ Facebook..." />
             ) : oauthPagesQuery.error ? (
               <ErrorState
-                message={
-                  oauthPagesQuery.error instanceof Error
-                    ? oauthPagesQuery.error.message
-                    : 'Không thể tải danh sách Fanpage'
-                }
+                message={formatMutationError(
+                  oauthPagesQuery.error,
+                  'Không thể tải danh sách Fanpage',
+                )}
                 onRetry={() => oauthPagesQuery.refetch()}
               />
+            ) : oauthPagesStatus === 'MISSING_PERMISSION' ? (
+              <div className="space-y-4">
+                <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900 space-y-2">
+                  <p className="font-medium">Thiếu quyền Fanpage trên Meta</p>
+                  <p>
+                    Tài khoản{' '}
+                    <strong>{oauthPagesQuery.data?.facebookUserName ?? 'Facebook'}</strong> chưa
+                    cấp đủ quyền để liệt kê Fanpage.
+                  </p>
+                  {oauthPagesQuery.data?.grantedScopes?.length ? (
+                    <p>Quyền hiện có: {oauthPagesQuery.data.grantedScopes.join(', ')}</p>
+                  ) : null}
+                  {oauthPagesQuery.data?.missingScopes?.length ? (
+                    <p>Cần thêm: {oauthPagesQuery.data.missingScopes.join(', ')}</p>
+                  ) : null}
+                  <p>{oauthPagesQuery.data?.message}</p>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => void handleConnectFacebook()}
+                  disabled={mutations.connectFacebook.isPending}
+                >
+                  Kết nối lại (xin cấp quyền)
+                </Button>
+              </div>
+            ) : oauthPagesStatus === 'TOKEN_EXPIRED' ? (
+              <div className="space-y-4">
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  Token Facebook đã hết hạn. Bấm <strong>Kết nối lại</strong> để đăng nhập và cấp
+                  quyền mới trên MarketingAutoAZ.
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => void handleConnectFacebook()}
+                  disabled={mutations.connectFacebook.isPending}
+                >
+                  Kết nối lại
+                </Button>
+              </div>
+            ) : oauthPagesStatus === 'META_API_ERROR' ? (
+              <ErrorState
+                message={oauthPagesQuery.data?.message ?? 'Meta Graph API lỗi — thử lại sau.'}
+                onRetry={() => oauthPagesQuery.refetch()}
+              />
+            ) : oauthPagesStatus === 'NO_PAGES' ? (
+              <div className="space-y-4">
+                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 space-y-2">
+                  <p>
+                    Không tìm thấy Fanpage nào thuộc tài khoản{' '}
+                    <strong>{oauthPagesQuery.data?.facebookUserName ?? 'Facebook'}</strong>.
+                  </p>
+                  <p>
+                    MarketingAutoAZ dùng tài khoản Facebook <strong>cá nhân</strong> của bạn để liệt
+                    kê Fanpage bạn quản trị — bạn tự chọn Page muốn đăng bài hoặc nhắn tin tự động.
+                  </p>
+                  <p>
+                    Nếu bạn chắc chắn có Fanpage: bấm <strong>Kết nối lại</strong> và chấp thuận
+                    đủ quyền trên Meta.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  onClick={() => void handleConnectFacebook()}
+                  disabled={mutations.connectFacebook.isPending}
+                >
+                  Kết nối lại
+                </Button>
+              </div>
             ) : (
               <div className="space-y-4">
                 <p className="text-sm text-muted-foreground">
-                  Chọn một hoặc nhiều Fanpage. Hệ thống xác minh quyền trên backend — không tin
-                  `pageId` từ trình duyệt. Page đang kết nối sẽ được giữ nếu bạn vẫn chọn.
+                  {oauthPagesQuery.data?.facebookUserName ? (
+                    <>
+                      Đăng nhập Facebook:{' '}
+                      <strong>{oauthPagesQuery.data.facebookUserName}</strong>. Chọn một hoặc
+                      nhiều Fanpage — hệ thống xác minh quyền trên backend.
+                    </>
+                  ) : (
+                    <>
+                      Chọn một hoặc nhiều Fanpage. Hệ thống xác minh quyền trên backend — không tin
+                      `pageId` từ trình duyệt.
+                    </>
+                  )}
                 </p>
 
-                {oauthPagesQuery.data?.length ? (
+                {oauthPages.length > 0 ? (
                   <div className="space-y-2 max-h-[50vh] overflow-auto pr-1">
-                    {oauthPagesQuery.data.map((p) => {
+                    {oauthPages.map((p) => {
                       const checked = selectedPageIds.includes(p.pageId);
                       return (
                         <label
@@ -401,7 +481,7 @@ export function AutoPostChannelsPanel() {
                           <Checkbox
                             checked={checked}
                             onCheckedChange={(v) => togglePageId(p.pageId, v === true)}
-                            disabled={mutations.selectOauthPages.isPending}
+                            disabled={mutations.selectOauthPages.isPending || p.canManagePosts === false}
                           />
                           {p.pagePictureUrl ? (
                             // eslint-disable-next-line @next/next/no-img-element
@@ -416,15 +496,14 @@ export function AutoPostChannelsPanel() {
                             </span>
                           )}
                           <span className="font-medium">{p.pageName}</span>
+                          {p.canManagePosts === false ? (
+                            <span className="text-xs text-amber-700">Thiếu quyền đăng bài</span>
+                          ) : null}
                         </label>
                       );
                     })}
                   </div>
-                ) : (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                    Không có Fanpage phù hợp hoặc OAuth thiếu quyền. Hãy kết nối lại.
-                  </div>
-                )}
+                ) : null}
 
                 <div className="flex flex-wrap gap-2">
                   <Button
@@ -440,7 +519,7 @@ export function AutoPostChannelsPanel() {
                   </Button>
                   <Button
                     variant="outline"
-                    onClick={() => setTimeout(() => handleConnectFacebook(), 0)}
+                    onClick={() => void handleConnectFacebook()}
                     disabled={mutations.connectFacebook.isPending}
                   >
                     Kết nối lại
