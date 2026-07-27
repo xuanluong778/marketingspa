@@ -5,7 +5,8 @@
  * - OAuth state valid/invalid/expired/replay
  * - callback success/failure
  * - list + select Fanpage (ownership verified on backend via Graph mock)
- * - fake pageId rejection
+ * - multi pageIds select + keep previously connected pages
+ * - fake pageId / MISSING_PERMISSION / partial failure
  * - duplicate page selection (unique constraint)
  * - tenant isolation
  * - token encryption (AES-GCM) at rest
@@ -23,6 +24,7 @@ import {
   listOAuthManagedPages,
   oauthCallbackConnect,
   selectOAuthPage,
+  selectOAuthPages,
 } from '../apps/api/src/auto-post/auto-post-oauth-login-for-business';
 
 const ENCRYPTION_KEY = 'test-encryption-key-32-chars-12345';
@@ -459,8 +461,8 @@ async function main() {
   });
   assert.ok(pendingStillThereAfterMissingPerm, 'pending must remain after missing permission');
 
-  // --- Success path: replace active connection/page in transaction ---
-  section('Select valid page with required permissions → replace active connection/page');
+  // --- Success path: upsert selected page, KEEP previously connected pages ---
+  section('Select valid page with required permissions → upsert + keep previous pages');
   debugScopes = ['pages_manage_posts'];
   await selectOAuthPage(prisma, {
     userId: userA.id,
@@ -475,12 +477,17 @@ async function main() {
   });
   assert.ok(pageRow, 'AutoPostFacebookPage row should be created for selected page');
 
+  const oldPageStillThere = await prisma.autoPostFacebookPage.findFirst({
+    where: { connectionId: oldConn.id, pageId: OLD_PAGE_ID },
+  });
+  assert.ok(oldPageStillThere, 'previously connected page must remain when still not disconnected');
+
   const pendingAfterSuccess = await prisma.autoPostFacebookOAuthPendingConnection.findUnique({
     where: { userId_organizationId: { userId: userA.id, organizationId: userA.organizationId } },
   });
   assert.equal(pendingAfterSuccess, null);
 
-  // Duplicate selection (idempotency) should still keep a single page row for that connection.
+  // Duplicate selection (idempotency) should upsert same pageId without creating a duplicate row.
   section('Duplicate page selection (idempotency)');
 
   // Phase 3: pending is consumed after a successful select, so we must create a fresh pending via callback.
@@ -503,8 +510,89 @@ async function main() {
     encryptionKey: ENCRYPTION_KEY,
     meta: metaStub as any,
   });
+  const selectedCount = await prisma.autoPostFacebookPage.count({
+    where: { connectionId: oldConn.id, pageId: selectedPageId },
+  });
+  assert.equal(selectedCount, 1);
   const pageRowsCount = await prisma.autoPostFacebookPage.count({ where: { connectionId: oldConn.id } });
-  assert.equal(pageRowsCount, 1);
+  assert.equal(pageRowsCount, 2); // old + selected
+
+  // --- Multi-select + partial failure ---
+  section('Multi-select pageIds + keep existing + reject fake + partial permission failure');
+  const { state: stateMulti } = await createOAuthStateRecord(prisma, {
+    userId: userA.id,
+    organizationId: userA.organizationId,
+    encryptionKey: ENCRYPTION_KEY,
+  });
+  await oauthCallbackConnect(prisma, {
+    code: FB_CODE_OK,
+    state: stateMulti,
+    encryptionKey: ENCRYPTION_KEY,
+    meta: metaStub as any,
+  });
+
+  // page-2 temporarily missing pages_manage_posts → partial
+  const originalDebug = metaStub.debugToken.bind(metaStub);
+  metaStub.debugToken = async (accessToken: string) => {
+    if (accessToken === 'PAGE_ACCESS_TOKEN_2') {
+      return { is_valid: true, expires_at: debugExpiresAtSeconds, scopes: [] };
+    }
+    return originalDebug(accessToken);
+  };
+
+  const partial = await selectOAuthPages(prisma, {
+    userId: userA.id,
+    organizationId: userA.organizationId,
+    pageIds: [pages[0].id, pages[1].id, 'page-fake'],
+    encryptionKey: ENCRYPTION_KEY,
+    meta: metaStub as any,
+  });
+  assert.deepEqual(partial.selected.sort(), [pages[0].id].sort());
+  assert.ok(partial.failed.some((f) => f.pageId === 'page-fake'));
+  assert.ok(partial.failed.some((f) => f.pageId === pages[1].id && f.reason === 'MISSING_PERMISSION'));
+
+  const afterPartial = await prisma.autoPostFacebookPage.findMany({
+    where: { connectionId: oldConn.id },
+    select: { pageId: true },
+  });
+  const afterPartialIds = afterPartial.map((p: { pageId: string }) => p.pageId).sort();
+  assert.deepEqual(afterPartialIds, [OLD_PAGE_ID, pages[0].id].sort());
+  assert.ok(!afterPartialIds.includes(pages[1].id));
+
+  // Restore debug + select both pages successfully
+  metaStub.debugToken = originalDebug;
+  const { state: stateBoth } = await createOAuthStateRecord(prisma, {
+    userId: userA.id,
+    organizationId: userA.organizationId,
+    encryptionKey: ENCRYPTION_KEY,
+  });
+  await oauthCallbackConnect(prisma, {
+    code: FB_CODE_OK,
+    state: stateBoth,
+    encryptionKey: ENCRYPTION_KEY,
+    meta: metaStub as any,
+  });
+  const both = await selectOAuthPages(prisma, {
+    userId: userA.id,
+    organizationId: userA.organizationId,
+    pageIds: [pages[0].id, pages[1].id],
+    encryptionKey: ENCRYPTION_KEY,
+    meta: metaStub as any,
+  });
+  assert.equal(both.selected.length, 2);
+  assert.equal(both.failed.length, 0);
+  const allPages = await prisma.autoPostFacebookPage.count({ where: { connectionId: oldConn.id } });
+  assert.equal(allPages, 3); // old + page-1 + page-2
+
+  // Tenant isolation: other org cannot see these pages via ownership query
+  section('Tenant isolation: pages scoped by connection organization');
+  const foreign = await prisma.autoPostFacebookPage.findMany({
+    where: {
+      pageId: { in: [pages[0].id, pages[1].id] },
+      connection: { organizationId: userB.organizationId },
+    },
+  });
+  assert.equal(foreign.length, 0);
 
   // Verify active connection encrypted oauth token replaced.
   const activeConnAfterSuccess = await prisma.autoPostFacebookConnection.findUnique({

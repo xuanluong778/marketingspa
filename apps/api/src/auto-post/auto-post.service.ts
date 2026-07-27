@@ -22,8 +22,13 @@ import {
   friendlyPublishError,
   isPermanentPublishError,
 } from './auto-post-publish-errors';
+import {
+  canUseServerEnvFanpage,
+  parseMetaFanpageAllowedOrgIds,
+} from '../meta-fanpage/meta-fanpage-access';
 import type {
   GenerateAutoPostDto,
+  PublishAutoPostDto,
   RewriteAutoPostDto,
   SaveAutoPostDraftDto,
   ScheduleAutoPostDto,
@@ -55,7 +60,7 @@ export class AutoPostService {
     private readonly queueEnqueue: QueueEnqueueService,
   ) {}
 
-  status() {
+  status(user?: AuthUser) {
     const metaConfigured = Boolean(
       (process.env.META_APP_ID || process.env.FACEBOOK_APP_ID) &&
         (process.env.META_APP_SECRET || process.env.FACEBOOK_APP_SECRET),
@@ -68,11 +73,26 @@ export class AutoPostService {
     const metaPageEnvConfigured = Boolean(
       process.env.META_PAGE_ID?.trim() && process.env.META_PAGE_ACCESS_TOKEN?.trim(),
     );
+
+    const allowedOrgIds = parseMetaFanpageAllowedOrgIds((k) => process.env[k]);
+    const canUseServerEnv = user
+      ? canUseServerEnvFanpage(
+          { role: user.role, organizationId: user.organizationId },
+          allowedOrgIds,
+        )
+      : false;
+
     return {
       aiConfigured: this.openai.isConfigured(),
       metaConfigured,
       metaLoginConfigId,
-      metaPageEnvConfigured,
+      // Chỉ báo env sẵn sàng cho admin/allowlist — SaaS không thấy SERVER_ENV UI
+      metaPageEnvConfigured: metaPageEnvConfigured && canUseServerEnv,
+      canUseServerEnv,
+      oauthConnectionEnabled:
+        (process.env.OAUTH_CONNECTION ?? '').trim().toLowerCase() === 'true',
+      oauthCanary:
+        (process.env.AUTO_POST_OAUTH_CANARY ?? '').trim().toLowerCase() === 'true',
     };
   }
 
@@ -147,11 +167,72 @@ export class AutoPostService {
   }
 
   /**
-   * Đăng ngay — idempotent:
-   * - Nếu đã PUBLISHED + facebookPostId → trả về bài hiện có (không tạo bài FB trùng)
-   * - Claim atomic status → PUBLISHING để chống double-click / race
+   * Đăng ngay — hỗ trợ nhiều Fanpage:
+   * - Mỗi fanpageId → 1 AutoPost riêng (jobId `auto-post-${postId}`, log, status, facebookPostId riêng)
+   * - Idempotent theo từng post/page
+   * - Không fallback SERVER_ENV
    */
-  async publishNow(userId: string, organizationId: string, postId: string) {
+  async publishNow(
+    userId: string,
+    organizationId: string,
+    dto: PublishAutoPostDto | string,
+  ) {
+    const postId = typeof dto === 'string' ? dto : dto.postId;
+    const fanpageIds = typeof dto === 'string' ? undefined : dto.fanpageIds;
+
+    const source = await this.requireOwnedPost(userId, organizationId, postId);
+    const targets = await this.resolvePublishTargets(
+      userId,
+      organizationId,
+      source.fanpageId,
+      fanpageIds,
+    );
+
+    const postIds = await this.ensurePostsForFanpages(
+      userId,
+      organizationId,
+      source,
+      targets,
+    );
+
+    const items = [];
+    for (const id of postIds) {
+      items.push(await this.publishSinglePost(userId, organizationId, id));
+    }
+    return items.length === 1 ? items[0] : { items };
+  }
+
+  async schedule(userId: string, organizationId: string, dto: ScheduleAutoPostDto) {
+    const scheduledAt = new Date(dto.scheduledAt);
+    if (Number.isNaN(scheduledAt.getTime())) {
+      throw new BadRequestException('Thời gian lên lịch không hợp lệ');
+    }
+    if (scheduledAt.getTime() <= Date.now()) {
+      throw new BadRequestException('Không thể lên lịch ở thời gian quá khứ');
+    }
+
+    const source = await this.requireOwnedPost(userId, organizationId, dto.postId);
+    const targets = await this.resolvePublishTargets(
+      userId,
+      organizationId,
+      source.fanpageId,
+      dto.fanpageIds,
+    );
+    const postIds = await this.ensurePostsForFanpages(
+      userId,
+      organizationId,
+      source,
+      targets,
+    );
+
+    const items = [];
+    for (const id of postIds) {
+      items.push(await this.scheduleSinglePost(userId, organizationId, id, scheduledAt));
+    }
+    return items.length === 1 ? items[0] : { items };
+  }
+
+  private async publishSinglePost(userId: string, organizationId: string, postId: string) {
     const post = await this.requireOwnedPost(userId, organizationId, postId);
 
     // Idempotent: đã đăng thành công thì trả về bài hiện có (không gọi Graph lại)
@@ -237,23 +318,20 @@ export class AutoPostService {
     }
   }
 
-  async schedule(userId: string, organizationId: string, dto: ScheduleAutoPostDto) {
-    const scheduledAt = new Date(dto.scheduledAt);
-    if (Number.isNaN(scheduledAt.getTime())) {
-      throw new BadRequestException('Thời gian lên lịch không hợp lệ');
-    }
-    if (scheduledAt.getTime() <= Date.now()) {
-      throw new BadRequestException('Không thể lên lịch ở thời gian quá khứ');
-    }
-
-    const post = await this.requireOwnedPost(userId, organizationId, dto.postId);
+  private async scheduleSinglePost(
+    userId: string,
+    organizationId: string,
+    postId: string,
+    scheduledAt: Date,
+  ) {
+    const post = await this.requireOwnedPost(userId, organizationId, postId);
     this.assertPublishable(post);
 
-    // Preflight quyền/token trước khi xếp lịch
+    // Preflight quyền/token trước khi xếp lịch — không fallback SERVER_ENV
     await this.facebook.assertCanPublish(userId, organizationId, post.fanpageId!);
 
     const updated = await this.prisma.autoPost.update({
-      where: { id: dto.postId },
+      where: { id: postId },
       data: {
         status: AutoPostStatus.SCHEDULED,
         scheduledAt,
@@ -266,9 +344,9 @@ export class AutoPostService {
     await this.queueEnqueue.add(
       this.autoPostQueue,
       'publish-scheduled',
-      { postId: dto.postId, userId, organizationId },
+      { postId, userId, organizationId },
       {
-        jobId: `auto-post-${dto.postId}`,
+        jobId: `auto-post-${postId}`,
         delay,
         removeOnComplete: true,
         attempts: 3,
@@ -279,13 +357,122 @@ export class AutoPostService {
     await this.prisma.autoPostPublishLog.create({
       data: {
         userId,
-        postId: dto.postId,
+        postId,
         action: 'scheduled',
         status: 'success',
       },
     });
 
     return this.serializePost(updated);
+  }
+
+  private async resolvePublishTargets(
+    userId: string,
+    organizationId: string,
+    existingFanpageId: string | null,
+    fanpageIds?: string[],
+  ) {
+    const ids = [
+      ...new Set(
+        (fanpageIds?.length ? fanpageIds : existingFanpageId ? [existingFanpageId] : [])
+          .map((id) => String(id || '').trim())
+          .filter(Boolean),
+      ),
+    ];
+    if (ids.length === 0) {
+      throw new BadRequestException('Vui lòng chọn ít nhất một Fanpage trước khi đăng');
+    }
+
+    const pages = await this.prisma.autoPostFacebookPage.findMany({
+      where: {
+        id: { in: ids },
+        userId,
+        connection: { organizationId },
+      },
+    });
+    if (pages.length !== ids.length) {
+      throw new NotFoundException('Một hoặc nhiều Fanpage không tồn tại hoặc không thuộc tổ chức của bạn');
+    }
+    // Preserve requested order
+    const byId = new Map(pages.map((p) => [p.id, p]));
+    return ids.map((id) => {
+      const p = byId.get(id)!;
+      return { id: p.id, pageId: p.pageId, pageName: p.pageName };
+    });
+  }
+
+  /** Clone AutoPost per Fanpage — mỗi page có postId / job / status / log riêng. */
+  private async ensurePostsForFanpages(
+    userId: string,
+    organizationId: string,
+    source: {
+      id: string;
+      fanpageId: string | null;
+      postType: string;
+      topic: string;
+      caption: string;
+      imageUrl: string | null;
+      linkUrl: string | null;
+      hashtags: string | null;
+      cta: string | null;
+      spaService: string | null;
+      targetAudience: string | null;
+      tone: string | null;
+      promotion: string | null;
+      status: AutoPostStatus;
+    },
+    targets: Array<{ id: string; pageId: string; pageName: string }>,
+  ): Promise<string[]> {
+    const postIds: string[] = [];
+
+    for (let i = 0; i < targets.length; i++) {
+      const target = targets[i]!;
+      const canReuseSource =
+        i === 0 &&
+        (!source.fanpageId || source.fanpageId === target.id) &&
+        source.status !== AutoPostStatus.PUBLISHED &&
+        source.status !== AutoPostStatus.PUBLISHING;
+
+      if (canReuseSource) {
+        await this.prisma.autoPost.update({
+          where: { id: source.id },
+          data: {
+            fanpageId: target.id,
+            fanpagePageId: target.pageId,
+            fanpageName: target.pageName,
+            status: AutoPostStatus.DRAFT,
+            errorMessage: null,
+          },
+        });
+        postIds.push(source.id);
+        continue;
+      }
+
+      const clone = await this.prisma.autoPost.create({
+        data: {
+          userId,
+          organizationId,
+          fanpageId: target.id,
+          fanpagePageId: target.pageId,
+          fanpageName: target.pageName,
+          postType: source.postType as any,
+          topic: source.topic,
+          caption: source.caption,
+          imageUrl: source.imageUrl,
+          linkUrl: source.linkUrl,
+          hashtags: source.hashtags,
+          cta: source.cta,
+          spaService: source.spaService,
+          targetAudience: source.targetAudience,
+          tone: source.tone,
+          promotion: source.promotion,
+          status: AutoPostStatus.DRAFT,
+        },
+      });
+      postIds.push(clone.id);
+    }
+
+    return postIds;
   }
 
   async cancelSchedule(userId: string, organizationId: string, postId: string) {

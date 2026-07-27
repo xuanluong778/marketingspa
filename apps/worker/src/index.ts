@@ -28,6 +28,9 @@ initSentry();
 
 const redis = createRedisPublisher();
 const workers: Worker[] = [];
+const WORKER_HEARTBEAT_KEY = 'marketingspa:worker:heartbeat';
+const HEARTBEAT_INTERVAL_MS = 30_000;
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
 function attachWorkerHandlers(worker: Worker, name: string) {
   worker.on('completed', (job) => {
@@ -37,6 +40,14 @@ function attachWorkerHandlers(worker: Worker, name: string) {
     console.error(`[worker:${name}] Job ${job?.id} failed:`, err.message);
     captureException(err, name);
   });
+}
+
+async function writeHeartbeat() {
+  try {
+    await redis.set(WORKER_HEARTBEAT_KEY, String(Date.now()), 'EX', 180);
+  } catch (err) {
+    console.error('[worker] heartbeat failed:', err instanceof Error ? err.message : err);
+  }
 }
 
 async function start() {
@@ -89,8 +100,14 @@ async function start() {
     attachWorkerHandlers(w, w.name);
   }
 
+  await writeHeartbeat();
+  heartbeatTimer = setInterval(() => {
+    void writeHeartbeat();
+  }, HEARTBEAT_INTERVAL_MS);
+
   console.log('🔄 Worker started — queues:');
   Object.values(QUEUE_NAMES).forEach((q) => console.log(`   • ${q}`));
+  console.log(`   • heartbeat → ${WORKER_HEARTBEAT_KEY}`);
 }
 
 start().catch((err) => {
@@ -99,6 +116,10 @@ start().catch((err) => {
 });
 
 async function shutdown() {
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = null;
+  }
   await Promise.all(workers.map((w) => w.close()));
   await redis.quit();
   await prisma.$disconnect();

@@ -29,6 +29,7 @@ import {
   RewriteAutoPostDto,
   SaveAutoPostDraftDto,
   ScheduleAutoPostDto,
+  SelectOAuthPagesDto,
   UpdateAutoPostDto,
 } from './dto/auto-post.dto';
 
@@ -46,8 +47,8 @@ export class AutoPostController {
 
   @Get('status')
   @UseGuards(JwtAuthGuard, TenantGuard)
-  status() {
-    return this.service.status();
+  status(@CurrentUser() user: AuthUser) {
+    return this.service.status(user);
   }
 
   @Post('ai/generate')
@@ -99,7 +100,7 @@ export class AutoPostController {
   @Post('publish')
   @UseGuards(JwtAuthGuard, TenantGuard)
   publishNow(@CurrentUser() user: AuthUser, @Body() dto: PublishAutoPostDto) {
-    return this.service.publishNow(user.id, user.organizationId, dto.postId);
+    return this.service.publishNow(user.id, user.organizationId, dto);
   }
 
   @Post('schedule')
@@ -134,6 +135,14 @@ export class AutoPostController {
     return this.facebook.getOAuthStartUrl(user);
   }
 
+  /** SUPER_ADMIN / org allowlist: đồng bộ Fanpage từ META_PAGE_* (không lộ token). */
+  @Post('facebook/connect/server-env')
+  @UseGuards(...FanpageGuards)
+  @RequirePermissions('automation.integration.manage')
+  facebookConnectServerEnv(@CurrentUser() user: AuthUser) {
+    return this.facebook.connectServerEnv(user);
+  }
+
   @Get('facebook/oauth/callback')
   async facebookOAuthCallback(
     @Query('code') code: string | undefined,
@@ -150,6 +159,16 @@ export class AutoPostController {
   @RequirePermissions('automation.integration.manage')
   facebookDisconnect(@CurrentUser() user: AuthUser) {
     return this.facebook.disconnect(user.id, user.organizationId);
+  }
+
+  @Delete('facebook/pages/:fanpageId')
+  @UseGuards(...FanpageGuards)
+  @RequirePermissions('automation.integration.manage')
+  facebookDisconnectPage(
+    @CurrentUser() user: AuthUser,
+    @Param('fanpageId') fanpageId: string,
+  ) {
+    return this.facebook.disconnectPage(user.id, user.organizationId, fanpageId);
   }
 
   @Post('facebook/pages/refresh')
@@ -170,12 +189,17 @@ export class AutoPostController {
   @Post('facebook/oauth/select')
   @UseGuards(...FanpageGuards)
   @RequirePermissions('automation.integration.manage')
-  oauthSelectPage(
-    @CurrentUser() user: AuthUser,
-    @Body() dto: { pageId?: string },
-  ) {
-    if (!dto?.pageId) throw new BadRequestException('pageId is required');
-    return this.facebook.selectOAuthPage(user.id, user.organizationId, dto.pageId);
+  oauthSelectPage(@CurrentUser() user: AuthUser, @Body() dto: SelectOAuthPagesDto & { pageId?: string }) {
+    const pageIds =
+      Array.isArray(dto?.pageIds) && dto.pageIds.length > 0
+        ? dto.pageIds
+        : dto?.pageId
+          ? [dto.pageId]
+          : [];
+    if (pageIds.length === 0) {
+      throw new BadRequestException('pageIds is required');
+    }
+    return this.facebook.selectOAuthPages(user.id, user.organizationId, pageIds);
   }
 
   /**

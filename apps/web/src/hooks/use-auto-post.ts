@@ -20,6 +20,9 @@ export function useAutoPostStatus() {
         metaConfigured: boolean;
         metaLoginConfigId?: boolean;
         metaPageEnvConfigured?: boolean;
+        canUseServerEnv?: boolean;
+        oauthConnectionEnabled?: boolean;
+        oauthCanary?: boolean;
       }>(`${BASE}/status`),
   });
 }
@@ -56,9 +59,25 @@ export function useAutoPostMutations() {
 
   const connectFacebook = useMutation({
     mutationFn: async () => {
-      const { url } = await apiClient<{ url: string }>(`${BASE}/facebook/oauth/start`);
+      const { url } = await apiClient<{ url: string; mode?: string }>(
+        `${BASE}/facebook/oauth/start`,
+      );
       window.location.href = url;
     },
+  });
+
+  const connectServerEnv = useMutation({
+    mutationFn: async () => {
+      const res = await apiClient<{ url: string; mode: string; connected?: boolean }>(
+        `${BASE}/facebook/connect/server-env`,
+        { method: 'POST' },
+      );
+      if (res.url) {
+        window.location.href = res.url;
+      }
+      return res;
+    },
+    onSuccess: invalidate,
   });
 
   const disconnectFacebook = useMutation({
@@ -73,12 +92,28 @@ export function useAutoPostMutations() {
     onSuccess: invalidate,
   });
 
+  const selectOauthPages = useMutation({
+    mutationFn: (pageIds: string[]) =>
+      apiClient(`${BASE}/facebook/oauth/select`, {
+        method: 'POST',
+        body: JSON.stringify({ pageIds }),
+      }),
+    onSuccess: invalidate,
+  });
+
+  /** @deprecated dùng selectOauthPages */
   const selectOauthPage = useMutation({
     mutationFn: (pageId: string) =>
       apiClient(`${BASE}/facebook/oauth/select`, {
         method: 'POST',
-        body: JSON.stringify({ pageId }),
+        body: JSON.stringify({ pageIds: [pageId] }),
       }),
+    onSuccess: invalidate,
+  });
+
+  const disconnectPage = useMutation({
+    mutationFn: (fanpageId: string) =>
+      apiClient(`${BASE}/facebook/pages/${fanpageId}`, { method: 'DELETE' }),
     onSuccess: invalidate,
   });
 
@@ -137,17 +172,20 @@ export function useAutoPostMutations() {
   });
 
   const publishNow = useMutation({
-    mutationFn: (postId: string) =>
-      apiClient<AutoPostItem>(`${BASE}/publish`, {
+    mutationFn: (body: string | { postId: string; fanpageIds?: string[] }) => {
+      const payload =
+        typeof body === 'string' ? { postId: body } : body;
+      return apiClient<AutoPostItem | { items: AutoPostItem[] }>(`${BASE}/publish`, {
         method: 'POST',
-        body: JSON.stringify({ postId }),
-      }),
+        body: JSON.stringify(payload),
+      });
+    },
     onSuccess: invalidate,
   });
 
   const schedule = useMutation({
-    mutationFn: (body: { postId: string; scheduledAt: string }) =>
-      apiClient<AutoPostItem>(`${BASE}/schedule`, {
+    mutationFn: (body: { postId: string; scheduledAt: string; fanpageIds?: string[] }) =>
+      apiClient<AutoPostItem | { items: AutoPostItem[] }>(`${BASE}/schedule`, {
         method: 'POST',
         body: JSON.stringify(body),
       }),
@@ -178,9 +216,12 @@ export function useAutoPostMutations() {
 
   return {
     connectFacebook,
+    connectServerEnv,
     disconnectFacebook,
+    disconnectPage,
     refreshPages,
     selectOauthPage,
+    selectOauthPages,
     generateAi,
     rewriteAi,
     saveDraft,

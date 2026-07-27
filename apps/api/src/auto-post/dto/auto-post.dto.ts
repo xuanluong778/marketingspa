@@ -1,4 +1,6 @@
 import {
+  IsArray,
+  ArrayMinSize,
   IsDateString,
   IsEnum,
   IsNotEmpty,
@@ -129,6 +131,13 @@ export class UpdateAutoPostDto extends SaveAutoPostDraftDto {
 export class PublishAutoPostDto {
   @IsUUID()
   postId!: string;
+
+  /** Đăng lên một hoặc nhiều Fanpage (DB row UUID). Mỗi page → 1 bài / job / log riêng. */
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsUUID('4', { each: true })
+  fanpageIds?: string[];
 }
 
 export class ScheduleAutoPostDto {
@@ -137,12 +146,26 @@ export class ScheduleAutoPostDto {
 
   @IsDateString()
   scheduledAt!: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsUUID('4', { each: true })
+  fanpageIds?: string[];
 }
 
 export class AutoPostListQueryDto {
   @IsOptional()
   @IsEnum(AutoPostStatus)
   status?: AutoPostStatus;
+}
+
+/** OAuth: chọn nhiều Fanpage (Meta pageId). */
+export class SelectOAuthPagesDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsString({ each: true })
+  pageIds!: string[];
 }
 
 export class SelectAutoPostPageDto {

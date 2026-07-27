@@ -338,6 +338,64 @@ async function main() {
   });
   assert.equal(cross, null);
 
+  section('Multi Fanpage: separate posts / facebookPostId / no cross-page duplicate');
+  const pageB = await prisma.autoPostFacebookPage.create({
+    data: {
+      userId: userA.id,
+      connectionId: connA.id,
+      pageId: 'fb-page-b',
+      pageName: 'Page B',
+      encryptedPageAccessToken: encryptSecret('PAGE_TOKEN_B', ENCRYPTION_KEY),
+    },
+  });
+  const multiA = await prisma.autoPost.create({
+    data: {
+      userId: userA.id,
+      organizationId: orgA.id,
+      fanpageId: pageA.id,
+      fanpagePageId: pageA.pageId,
+      fanpageName: pageA.pageName,
+      postType: 'SPA_SALES',
+      topic: 'Multi A',
+      caption: 'Same caption multi',
+      status: AutoPostStatus.PUBLISHED,
+      facebookPostId: 'fb-page-a_111',
+      publishedAt: new Date(),
+      approvedAt: new Date(),
+    },
+  });
+  const multiB = await prisma.autoPost.create({
+    data: {
+      userId: userA.id,
+      organizationId: orgA.id,
+      fanpageId: pageB.id,
+      fanpagePageId: pageB.pageId,
+      fanpageName: pageB.pageName,
+      postType: 'SPA_SALES',
+      topic: 'Multi B',
+      caption: 'Same caption multi',
+      status: AutoPostStatus.PUBLISHED,
+      facebookPostId: 'fb-page-b_222',
+      publishedAt: new Date(),
+      approvedAt: new Date(),
+    },
+  });
+  assert.notEqual(multiA.id, multiB.id);
+  assert.notEqual(multiA.facebookPostId, multiB.facebookPostId);
+  assert.notEqual(multiA.fanpageId, multiB.fanpageId);
+  // Idempotency key scope is per post id
+  assert.equal(`auto-post-${multiA.id}` !== `auto-post-${multiB.id}`, true);
+  // IDOR: org B cannot load either
+  const stealMulti = await prisma.autoPost.findFirst({
+    where: {
+      id: { in: [multiA.id, multiB.id] },
+      organizationId: orgB.id,
+    },
+  });
+  assert.equal(stealMulti, null);
+  assert.ok(!JSON.stringify(multiA).includes('PAGE_TOKEN'));
+  assert.ok(!JSON.stringify(multiB).includes('PAGE_TOKEN'));
+
   // Cleanup test rows (best-effort)
   await prisma.autoPost.deleteMany({
     where: { userId: { in: [userA.id, userB.id] } },

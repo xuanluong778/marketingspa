@@ -8,6 +8,7 @@ import { ErrorState, LoadingState } from '@/components/shared/page-state';
 import { FacebookFanpagePreview } from '@/components/auto-post/facebook-fanpage-preview';
 import { AiMarketingPostPicker } from '@/components/auto-post/ai-marketing-post-picker';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -52,7 +53,7 @@ export function AutoPostPublishPanel({
   const [tabFilter, setTabFilter] = useState<ContentStudioTab>('ad');
   const [selected, setSelected] = useState<AiMarketingPostPayload | null>(null);
   const [caption, setCaption] = useState('');
-  const [fanpageId, setFanpageId] = useState('');
+  const [fanpageIds, setFanpageIds] = useState<string[]>([]);
   const [imageUrl, setImageUrl] = useState('');
   const [linkUrl, setLinkUrl] = useState('');
   const [scheduledAt, setScheduledAt] = useState('');
@@ -110,10 +111,18 @@ export function AutoPostPublishPanel({
     [selected],
   );
 
-  const selectedPage = useMemo(
-    () => fbStatus?.pages.find((p) => p.id === fanpageId),
-    [fbStatus?.pages, fanpageId],
+  const selectedPages = useMemo(
+    () => (fbStatus?.pages ?? []).filter((p) => fanpageIds.includes(p.id)),
+    [fbStatus?.pages, fanpageIds],
   );
+  const selectedPage = selectedPages[0];
+
+  const toggleFanpage = useCallback((id: string, checked: boolean) => {
+    setFanpageIds((prev) => {
+      if (checked) return prev.includes(id) ? prev : [...prev, id];
+      return prev.filter((x) => x !== id);
+    });
+  }, []);
 
   const isBusy =
     mutations.saveDraft.isPending ||
@@ -130,7 +139,7 @@ export function AutoPostPublishPanel({
       postType,
       topic,
       caption,
-      fanpageId: fanpageId || undefined,
+      fanpageId: fanpageIds[0] || undefined,
       imageUrl: imageUrl || undefined,
       linkUrl: linkUrl || undefined,
     };
@@ -160,8 +169,8 @@ export function AutoPostPublishPanel({
   };
 
   const handlePublishNow = async () => {
-    if (!fanpageId) {
-      setErrorMsg('Vui lòng chọn Fanpage — kết nối tại tab Kết nối kênh nếu chưa có');
+    if (fanpageIds.length === 0) {
+      setErrorMsg('Vui lòng chọn ít nhất một Fanpage — kết nối tại tab Kết nối kênh nếu chưa có');
       return;
     }
     if (!caption.trim()) {
@@ -176,16 +185,29 @@ export function AutoPostPublishPanel({
       setErrorMsg('MISSING_PERMISSION: Thiếu pages_manage_posts — kết nối lại và cấp đủ quyền');
       return;
     }
-    if (!window.confirm('Bạn đã duyệt nội dung và muốn đăng ngay lên Fanpage?')) return;
+    if (
+      !window.confirm(
+        `Bạn đã duyệt nội dung và muốn đăng ngay lên ${fanpageIds.length} Fanpage?`,
+      )
+    ) {
+      return;
+    }
 
     setErrorMsg('');
     try {
       const postId = await ensureDraft();
-      const published = await mutations.publishNow.mutateAsync(postId);
+      const published = await mutations.publishNow.mutateAsync({
+        postId,
+        fanpageIds,
+      });
+      const items = Array.isArray((published as { items?: unknown }).items)
+        ? (published as { items: Array<{ facebookPostUrl?: string | null }> }).items
+        : [published as { facebookPostUrl?: string | null }];
+      const urls = items.map((i) => i.facebookPostUrl).filter(Boolean);
       setMsg(
-        published.facebookPostUrl
-          ? `Đã đăng bài thành công! ${published.facebookPostUrl}`
-          : 'Đã đăng bài thành công!',
+        urls.length
+          ? `Đã đăng ${items.length} bài! ${urls.join(' · ')}`
+          : `Đã đăng ${items.length} bài thành công!`,
       );
       onScheduled?.();
       setTimeout(() => setMsg(''), 5000);
@@ -195,8 +217,8 @@ export function AutoPostPublishPanel({
   };
 
   const handleSchedule = async () => {
-    if (!fanpageId) {
-      setErrorMsg('Vui lòng chọn Fanpage');
+    if (fanpageIds.length === 0) {
+      setErrorMsg('Vui lòng chọn ít nhất một Fanpage');
       return;
     }
     if (!caption.trim()) {
@@ -217,7 +239,7 @@ export function AutoPostPublishPanel({
     }
     if (
       !window.confirm(
-        `Lên lịch đăng lúc ${new Date(scheduledAt).toLocaleString('vi-VN')}?`,
+        `Lên lịch đăng ${fanpageIds.length} Fanpage lúc ${new Date(scheduledAt).toLocaleString('vi-VN')}?`,
       )
     ) {
       return;
@@ -229,6 +251,7 @@ export function AutoPostPublishPanel({
       await mutations.schedule.mutateAsync({
         postId,
         scheduledAt: new Date(scheduledAt).toISOString(),
+        fanpageIds,
       });
       setMsg('Đã lên lịch đăng bài! Xem tại tab Lịch đăng.');
       onScheduled?.();
@@ -363,26 +386,26 @@ export function AutoPostPublishPanel({
         <h2 className="font-semibold text-lg">Thiết lập đăng</h2>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <div className="space-y-1.5 lg:col-span-2">
-            <Label>Fanpage *</Label>
+            <Label>Fanpage * (có thể chọn nhiều)</Label>
             {fbLoading ? (
               <LoadingState message="Đang tải Fanpage..." />
             ) : (
-              <Select
-                value={fanpageId || undefined}
-                onValueChange={setFanpageId}
-                disabled={!fbStatus?.connected || fbStatus.pages.length === 0}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Chọn Fanpage" />
-                </SelectTrigger>
-                <SelectContent>
-                  {fbStatus?.pages.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.pageName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="rounded-md border bg-white p-3 space-y-2 max-h-40 overflow-auto text-black">
+                {(fbStatus?.pages ?? []).length === 0 ? (
+                  <p className="text-sm text-slate-600">Chưa có Fanpage — kết nối tại tab Kết nối kênh.</p>
+                ) : (
+                  fbStatus!.pages.map((p) => (
+                    <label key={p.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                      <Checkbox
+                        checked={fanpageIds.includes(p.id)}
+                        onCheckedChange={(v) => toggleFanpage(p.id, v === true)}
+                        disabled={!fbStatus?.connected}
+                      />
+                      <span className="font-medium">{p.pageName}</span>
+                    </label>
+                  ))
+                )}
+              </div>
             )}
           </div>
           <div className="space-y-1.5 lg:col-span-2">

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Facebook, Loader2, RefreshCw, Unplug } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ErrorState, LoadingState } from '@/components/shared/page-state';
 import {
@@ -22,6 +23,7 @@ export function AutoPostChannelsPanel() {
   const [msg, setMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [oauthPickOpen, setOauthPickOpen] = useState(false);
+  const [selectedPageIds, setSelectedPageIds] = useState<string[]>([]);
 
   useEffect(() => {
     const fb = searchParams.get('facebook');
@@ -41,13 +43,33 @@ export function AutoPostChannelsPanel() {
     }
   }, [searchParams]);
 
-  const canConnect =
-    Boolean(status?.metaPageEnvConfigured) || Boolean(status?.metaConfigured);
+  const canUseServerEnv = Boolean(status?.canUseServerEnv);
+  const metaPageEnvReady = Boolean(status?.metaPageEnvConfigured);
+  // SaaS: chỉ OAuth. Admin: OAuth luôn (nếu login config), SERVER_ENV chỉ khi env sẵn sàng.
+  const canOauth =
+    Boolean(status?.metaConfigured) && Boolean(status?.metaLoginConfigId);
+  const canServerEnv = canUseServerEnv && metaPageEnvReady;
 
   const needsOauthPageSelection =
     Boolean(fbStatus?.connected && fbStatus.connectionMode === 'oauth' && fbStatus.pages.length === 0);
 
   const oauthPagesQuery = useAutoPostOauthPages(oauthPickOpen || needsOauthPageSelection);
+
+  useEffect(() => {
+    if (!oauthPickOpen) return;
+    const already = new Set((fbStatus?.pages ?? []).map((p) => p.pageId));
+    const fromList = (oauthPagesQuery.data ?? [])
+      .map((p) => p.pageId)
+      .filter((id) => already.has(id));
+    setSelectedPageIds(fromList);
+  }, [oauthPickOpen, oauthPagesQuery.data, fbStatus?.pages]);
+
+  const togglePageId = useCallback((pageId: string, checked: boolean) => {
+    setSelectedPageIds((prev) => {
+      if (checked) return prev.includes(pageId) ? prev : [...prev, pageId];
+      return prev.filter((id) => id !== pageId);
+    });
+  }, []);
 
   const handleConnectFacebook = useCallback(async () => {
     setMsg('');
@@ -59,21 +81,40 @@ export function AutoPostChannelsPanel() {
     }
   }, [mutations.connectFacebook]);
 
-  const handleSelectOauthPage = useCallback(
-    async (pageId: string) => {
-      setMsg('');
-      setErrorMsg('');
-      try {
-        await mutations.selectOauthPage.mutateAsync(pageId);
-        setOauthPickOpen(false);
-        // Xóa trạng thái oauth_connected khỏi URL để tránh modal tự mở lại
-        window.location.href = '/content?tab=channels';
-      } catch (error) {
-        setErrorMsg(formatMutationError(error, 'Không thể lưu Fanpage đã chọn'));
+  const handleConnectServerEnv = useCallback(async () => {
+    setMsg('');
+    setErrorMsg('');
+    try {
+      await mutations.connectServerEnv.mutateAsync();
+    } catch (error) {
+      setErrorMsg(formatMutationError(error, 'Đồng bộ Fanpage SERVER_ENV thất bại'));
+    }
+  }, [mutations.connectServerEnv]);
+
+  const handleSelectOauthPages = useCallback(async () => {
+    if (selectedPageIds.length === 0) {
+      setErrorMsg('Chọn ít nhất một Fanpage');
+      return;
+    }
+    setMsg('');
+    setErrorMsg('');
+    try {
+      const res = (await mutations.selectOauthPages.mutateAsync(selectedPageIds)) as {
+        failed?: Array<{ pageId: string; reason: string }>;
+      };
+      setOauthPickOpen(false);
+      if (res?.failed?.length) {
+        setMsg(
+          `Đã lưu một phần Fanpage. Lỗi: ${res.failed.map((f) => f.pageId).join(', ')}`,
+        );
+      } else {
+        setMsg('Đã lưu Fanpage đã chọn!');
       }
-    },
-    [mutations.selectOauthPage],
-  );
+      window.history.replaceState({}, '', '/content?tab=channels');
+    } catch (error) {
+      setErrorMsg(formatMutationError(error, 'Không thể lưu Fanpage đã chọn'));
+    }
+  }, [mutations.selectOauthPages, selectedPageIds]);
 
   const handleRefreshPages = useCallback(async () => {
     setMsg('');
@@ -97,6 +138,21 @@ export function AutoPostChannelsPanel() {
     }
   }, [mutations.disconnectFacebook]);
 
+  const handleDisconnectPage = useCallback(
+    async (fanpageRowId: string, pageName: string) => {
+      if (!window.confirm(`Ngắt kết nối Fanpage «${pageName}»?`)) return;
+      setMsg('');
+      setErrorMsg('');
+      try {
+        await mutations.disconnectPage.mutateAsync(fanpageRowId);
+        setMsg(`Đã ngắt Fanpage «${pageName}».`);
+      } catch (error) {
+        setErrorMsg(formatMutationError(error, 'Không thể ngắt Fanpage'));
+      }
+    },
+    [mutations.disconnectPage],
+  );
+
   if (isLoading || isStatusLoading) {
     return <LoadingState message="Đang tải kết nối kênh..." />;
   }
@@ -106,30 +162,28 @@ export function AutoPostChannelsPanel() {
       <div className="rounded-lg border bg-card p-5 shadow-sm space-y-4">
         <h2 className="text-lg font-semibold">Kết nối Facebook Fanpage</h2>
         <p className="text-sm text-muted-foreground">
-          {status?.metaPageEnvConfigured
-            ? 'Trang Facebook đã được cấu hình trên hệ thống. Bấm Kết nối để đồng bộ — không cần đăng nhập Facebook trên trình duyệt.'
-            : 'Liên kết tài khoản Facebook để lấy danh sách trang. Thông tin đăng nhập được bảo mật trên hệ thống.'}
+          {canUseServerEnv
+            ? 'Chọn một cách kết nối: OAuth (đăng nhập Meta) hoặc Fanpage nội bộ từ cấu hình máy chủ (SERVER_ENV). Không dán Page Access Token trên trình duyệt.'
+            : 'Bấm «Kết nối Facebook» để đăng nhập Meta và chọn Fanpage. Không nhập Page Access Token trên trình duyệt.'}
         </p>
 
-        {status?.metaPageEnvConfigured && (
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-            Hệ thống đã sẵn sàng. Kết nối sẽ đồng bộ trang Facebook ngay.
+        {canUseServerEnv && metaPageEnvReady && (
+          <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-800">
+            Admin/allowlist: có sẵn Fanpage nội bộ trên server. OAuth và SERVER_ENV là hai lựa chọn riêng — hệ thống không tự chọn SERVER_ENV.
           </div>
         )}
 
-        {!status?.metaPageEnvConfigured && status && !status.metaConfigured && (
+        {!canUseServerEnv && status && !status.metaConfigured && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            Trang Facebook chưa được cấu hình. Vui lòng liên hệ hỗ trợ để kết nối.
+            Facebook App chưa sẵn sàng. Vui lòng liên hệ hỗ trợ.
           </div>
         )}
 
-        {!status?.metaPageEnvConfigured &&
-          status?.metaConfigured &&
-          !status.metaLoginConfigId && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-              Cần hỗ trợ kỹ thuật hoàn tất cấu hình Facebook. Vui lòng liên hệ hỗ trợ.
-            </div>
-          )}
+        {!canUseServerEnv && status?.metaConfigured && !status.metaLoginConfigId && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            Cần hỗ trợ kỹ thuật hoàn tất cấu hình Facebook Login. Vui lòng liên hệ hỗ trợ.
+          </div>
+        )}
 
         {msg && (
           <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
@@ -179,15 +233,27 @@ export function AutoPostChannelsPanel() {
               ) : null}
               <Button
                 onClick={handleConnectFacebook}
-                disabled={mutations.connectFacebook.isPending || !canConnect}
+                disabled={mutations.connectFacebook.isPending || !canOauth}
               >
                 {mutations.connectFacebook.isPending ? (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 ) : (
                   <Facebook className="mr-2 h-4 w-4" />
                 )}
-                Kết nối lại
+                {canUseServerEnv ? 'Kết nối lại (OAuth)' : 'Kết nối lại'}
               </Button>
+              {canUseServerEnv && (
+                <Button
+                  variant="secondary"
+                  onClick={handleConnectServerEnv}
+                  disabled={mutations.connectServerEnv.isPending || !canServerEnv}
+                >
+                  {mutations.connectServerEnv.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : null}
+                  Dùng Fanpage nội bộ SERVER_ENV
+                </Button>
+              )}
               <Button
                 variant="destructive"
                 onClick={handleDisconnect}
@@ -201,10 +267,34 @@ export function AutoPostChannelsPanel() {
                 Ngắt kết nối
               </Button>
             </>
+          ) : canUseServerEnv ? (
+            <>
+              <Button
+                onClick={handleConnectFacebook}
+                disabled={mutations.connectFacebook.isPending || !canOauth}
+              >
+                {mutations.connectFacebook.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Facebook className="mr-2 h-4 w-4" />
+                )}
+                Kết nối Facebook OAuth
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={handleConnectServerEnv}
+                disabled={mutations.connectServerEnv.isPending || !canServerEnv}
+              >
+                {mutations.connectServerEnv.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : null}
+                Dùng Fanpage nội bộ SERVER_ENV
+              </Button>
+            </>
           ) : (
             <Button
               onClick={handleConnectFacebook}
-              disabled={mutations.connectFacebook.isPending || !canConnect}
+              disabled={mutations.connectFacebook.isPending || !canOauth}
             >
               {mutations.connectFacebook.isPending ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -217,21 +307,21 @@ export function AutoPostChannelsPanel() {
         </div>
 
         {fbStatus?.connected && (
-          <div className="rounded-lg border bg-slate-50 p-4 space-y-2">
-            <p className="text-sm font-medium">
+          <div className="rounded-lg border bg-slate-50 p-4 space-y-2 text-black">
+            <p className="text-sm font-medium text-black">
               {fbStatus.connectionMode === 'env' ? 'Trang Facebook' : 'Tài khoản'}:{' '}
               {fbStatus.facebookUserName ?? 'Facebook'}
             </p>
             {fbStatus.tokenExpiresAt && (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-slate-600">
                 Hết hạn kết nối: {new Date(fbStatus.tokenExpiresAt).toLocaleString('vi-VN')}
               </p>
             )}
-            <p className="text-sm font-medium mt-3">
+            <p className="text-sm font-medium mt-3 text-black">
               Fanpage đã kết nối ({fbStatus.pages.length})
             </p>
             {fbStatus.pages.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-slate-600">
                 Chưa có Fanpage — bấm Kết nối / Làm mới Fanpage.
               </p>
             ) : (
@@ -239,7 +329,7 @@ export function AutoPostChannelsPanel() {
                 {fbStatus.pages.map((p) => (
                   <li
                     key={p.id}
-                    className="flex items-center gap-3 rounded-md border bg-white px-3 py-2 text-sm"
+                    className="flex items-center gap-3 rounded-md border bg-white px-3 py-2 text-sm text-black"
                   >
                     <div className="h-9 w-9 rounded-full bg-emerald-100 overflow-hidden shrink-0">
                       {p.pagePictureUrl ? (
@@ -251,7 +341,18 @@ export function AutoPostChannelsPanel() {
                         </span>
                       )}
                     </div>
-                    <span className="font-medium">{p.pageName}</span>
+                    <span className="font-medium text-black flex-1">{p.pageName}</span>
+                    {fbStatus.connectionMode !== 'env' && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive"
+                        onClick={() => handleDisconnectPage(p.id, p.pageName)}
+                        disabled={mutations.disconnectPage.isPending}
+                      >
+                        Ngắt
+                      </Button>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -284,30 +385,40 @@ export function AutoPostChannelsPanel() {
             ) : (
               <div className="space-y-4">
                 <p className="text-sm text-muted-foreground">
-                  Hệ thống chỉ lưu Fanpage bạn chọn. Không tin `pageId` từ trình duyệt.
+                  Chọn một hoặc nhiều Fanpage. Hệ thống xác minh quyền trên backend — không tin
+                  `pageId` từ trình duyệt. Page đang kết nối sẽ được giữ nếu bạn vẫn chọn.
                 </p>
 
                 {oauthPagesQuery.data?.length ? (
                   <div className="space-y-2 max-h-[50vh] overflow-auto pr-1">
-                    {oauthPagesQuery.data.map((p) => (
-                      <Button
-                        key={p.pageId}
-                        variant="outline"
-                        className="w-full justify-start"
-                        onClick={() => handleSelectOauthPage(p.pageId)}
-                        disabled={mutations.selectOauthPage.isPending}
-                      >
-                        {p.pagePictureUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={p.pagePictureUrl} alt="" className="h-6 w-6 rounded-full mr-2 object-cover" />
-                        ) : (
-                          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 mr-2 text-emerald-700 font-bold">
-                            {p.pageName.slice(0, 1)}
-                          </span>
-                        )}
-                        <span>{p.pageName}</span>
-                      </Button>
-                    ))}
+                    {oauthPagesQuery.data.map((p) => {
+                      const checked = selectedPageIds.includes(p.pageId);
+                      return (
+                        <label
+                          key={p.pageId}
+                          className="flex items-center gap-3 rounded-md border bg-white px-3 py-2 text-sm text-black cursor-pointer"
+                        >
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={(v) => togglePageId(p.pageId, v === true)}
+                            disabled={mutations.selectOauthPages.isPending}
+                          />
+                          {p.pagePictureUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={p.pagePictureUrl}
+                              alt=""
+                              className="h-6 w-6 rounded-full object-cover"
+                            />
+                          ) : (
+                            <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 font-bold">
+                              {p.pageName.slice(0, 1)}
+                            </span>
+                          )}
+                          <span className="font-medium">{p.pageName}</span>
+                        </label>
+                      );
+                    })}
                   </div>
                 ) : (
                   <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
@@ -316,6 +427,17 @@ export function AutoPostChannelsPanel() {
                 )}
 
                 <div className="flex flex-wrap gap-2">
+                  <Button
+                    onClick={() => void handleSelectOauthPages()}
+                    disabled={
+                      mutations.selectOauthPages.isPending || selectedPageIds.length === 0
+                    }
+                  >
+                    {mutations.selectOauthPages.isPending ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : null}
+                    Lưu {selectedPageIds.length || ''} Fanpage
+                  </Button>
                   <Button
                     variant="outline"
                     onClick={() => setTimeout(() => handleConnectFacebook(), 0)}
