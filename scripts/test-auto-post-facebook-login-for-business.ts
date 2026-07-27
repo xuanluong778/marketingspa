@@ -16,7 +16,7 @@
  */
 import assert from 'node:assert/strict';
 import { PrismaClient } from '@prisma/client';
-import { decryptSecret } from '../apps/api/src/common/utils/encryption.util';
+import { decryptSecret, encryptSecret } from '../apps/api/src/common/utils/encryption.util';
 import { AutoPostFacebookConnectionStatus } from '@marketingspa/database';
 import {
   createOAuthStateRecord,
@@ -59,6 +59,41 @@ async function main() {
   await prisma.$executeRawUnsafe(`
     CREATE UNIQUE INDEX IF NOT EXISTS "auto_post_facebook_oauth_states_state_hash_key"
     ON "auto_post_facebook_oauth_states"("state_hash");
+  `);
+
+  // Phase 3: pending connection + composite uniqueness (no migration deploy)
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "auto_post_facebook_oauth_pending_connections" (
+      "id" TEXT NOT NULL,
+      "user_id" TEXT NOT NULL,
+      "organization_id" TEXT NOT NULL,
+      "encrypted_access_token" TEXT NOT NULL,
+      "token_expires_at" TIMESTAMP(3),
+      "facebook_user_id" TEXT,
+      "facebook_user_name" TEXT,
+      "scopes" TEXT[] NOT NULL DEFAULT '{}'::text[],
+      "last_error" TEXT,
+      "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updated_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "auto_post_facebook_oauth_pending_connections_pkey" PRIMARY KEY ("id")
+    );
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "auto_post_facebook_oauth_pending_connections_user_id_organization_id_key"
+    ON "auto_post_facebook_oauth_pending_connections"("user_id", "organization_id");
+  `);
+
+  // Active connection composite unique key
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "auto_post_facebook_connections_user_id_organization_id_key"
+    ON "auto_post_facebook_connections"("user_id", "organization_id");
+  `);
+
+  // Active page composite unique key
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "auto_post_facebook_pages_connection_id_page_id_key"
+    ON "auto_post_facebook_pages"("connection_id", "page_id");
   `);
 
   const orgA = await prisma.organization.create({
@@ -120,6 +155,11 @@ async function main() {
     },
   ];
 
+  // Phase 3 permission checks are driven by Graph debug_token scopes.
+  // We mutate this in later test sections (success vs missing permission).
+  let debugScopes: string[] = ['pages_manage_posts'];
+  const debugExpiresAtSeconds = Math.floor(Date.now() / 1000) + 60 * 60; // +1h
+
   const metaStub = {
     get appId() {
       return 'test-app-id';
@@ -148,9 +188,47 @@ async function main() {
     async getManagedPages(_accessToken: string) {
       return pages;
     },
+    async debugToken(_accessToken: string) {
+      return {
+        is_valid: true,
+        expires_at: debugExpiresAtSeconds,
+        scopes: debugScopes,
+      };
+    },
   };
 
   // --- OAuth state + callback ---
+  // Seed an existing active connection/page to verify Phase 3 behavior:
+  // - OAuth callback must NOT overwrite active connection/page
+  const OLD_ACCESS_TOKEN = 'OLD_LONG_LIVED_ACCESS_TOKEN';
+  const OLD_PAGE_ACCESS_TOKEN = 'OLD_PAGE_ACCESS_TOKEN';
+  const OLD_PAGE_ID = 'page-old';
+
+  const oldConn = await prisma.autoPostFacebookConnection.create({
+    data: {
+      userId: userA.id,
+      organizationId: userA.organizationId,
+      encryptedAccessToken: encryptSecret(OLD_ACCESS_TOKEN, ENCRYPTION_KEY),
+      tokenExpiresAt: new Date(Date.now() + 1000 * 60 * 60),
+      facebookUserId: 'fb-user-old',
+      facebookUserName: 'FB User Old',
+      status: AutoPostFacebookConnectionStatus.CONNECTED,
+      scopes: ['pages_manage_posts'],
+      lastError: null,
+    },
+  });
+
+  const oldPage = await prisma.autoPostFacebookPage.create({
+    data: {
+      userId: userA.id,
+      connectionId: oldConn.id,
+      pageId: OLD_PAGE_ID,
+      pageName: 'Old Fanpage',
+      pagePictureUrl: null,
+      encryptedPageAccessToken: encryptSecret(OLD_PAGE_ACCESS_TOKEN, ENCRYPTION_KEY),
+    },
+  });
+
   section('OAuth state: valid → callback stores encrypted connection');
   const { state } = await createOAuthStateRecord(prisma, {
     userId: userA.id,
@@ -165,9 +243,24 @@ async function main() {
     meta: metaStub as any,
   });
 
-  const conn = await prisma.autoPostFacebookConnection.findUnique({ where: { userId: userA.id } });
-  assert.equal(conn?.status, AutoPostFacebookConnectionStatus.CONNECTED);
-  assert.ok(conn?.encryptedAccessToken, 'encryptedAccessToken should be stored');
+  // Phase 3: callback writes pending only, active connection/page must remain unchanged.
+  const pending = await prisma.autoPostFacebookOAuthPendingConnection.findUnique({
+    where: { userId_organizationId: { userId: userA.id, organizationId: userA.organizationId } },
+  });
+  assert.ok(pending, 'pending row should exist after callback');
+
+  const activeConnAfter = await prisma.autoPostFacebookConnection.findUnique({
+    where: { userId_organizationId: { userId: userA.id, organizationId: userA.organizationId } },
+  });
+  assert.ok(activeConnAfter, 'active connection must still exist');
+  assert.equal(activeConnAfter!.id, oldConn.id, 'active connection must not be overwritten');
+  const decryptedOldOauth = decryptSecret(activeConnAfter!.encryptedAccessToken, ENCRYPTION_KEY);
+  assert.equal(decryptedOldOauth, OLD_ACCESS_TOKEN, 'active encrypted oauth token must remain');
+
+  const activePageAfter = await prisma.autoPostFacebookPage.findFirst({
+    where: { connectionId: oldConn.id, pageId: OLD_PAGE_ID },
+  });
+  assert.ok(activePageAfter, 'active page must still exist');
 
   // --- OAuth state: replay protection ---
   section('OAuth state: replay → callback rejected');
@@ -225,7 +318,17 @@ async function main() {
   );
 
   // --- OAuth callback failure ---
-  section('OAuth callback: exchange failure → connection marked ERROR');
+  section('OAuth callback: exchange failure → pending not created (active unchanged)');
+
+  // Clear pending so we can assert it stays absent on callback failure.
+  await prisma.autoPostFacebookOAuthPendingConnection
+    .delete({
+      where: {
+        userId_organizationId: { userId: userA.id, organizationId: userA.organizationId },
+      },
+    })
+    .catch(() => undefined);
+
   const { state: state3 } = await createOAuthStateRecord(prisma, {
     userId: userA.id,
     organizationId: userA.organizationId,
@@ -242,12 +345,17 @@ async function main() {
     /Graph exchange failed/,
   );
 
-  const connAfterFail = await prisma.autoPostFacebookConnection.findUnique({
-    where: { userId: userA.id },
+  const pendingAfterFail = await prisma.autoPostFacebookOAuthPendingConnection.findUnique({
+    where: { userId_organizationId: { userId: userA.id, organizationId: userA.organizationId } },
   });
-  assert.equal(connAfterFail?.status, AutoPostFacebookConnectionStatus.ERROR);
+  assert.equal(pendingAfterFail, null);
 
-  section('OAuth callback: success again to enable page selection');
+  const connAfterFail = await prisma.autoPostFacebookConnection.findUnique({
+    where: { userId_organizationId: { userId: userA.id, organizationId: userA.organizationId } },
+  });
+  assert.equal(connAfterFail?.status, AutoPostFacebookConnectionStatus.CONNECTED);
+
+  section('OAuth callback: success again (pending ready for page selection)');
   const { state: state4 } = await createOAuthStateRecord(prisma, {
     userId: userA.id,
     organizationId: userA.organizationId,
@@ -259,10 +367,11 @@ async function main() {
     encryptionKey: ENCRYPTION_KEY,
     meta: metaStub as any,
   });
-  const connAfterReconnect = await prisma.autoPostFacebookConnection.findUnique({
-    where: { userId: userA.id },
+
+  const pendingAfterReconnect = await prisma.autoPostFacebookOAuthPendingConnection.findUnique({
+    where: { userId_organizationId: { userId: userA.id, organizationId: userA.organizationId } },
   });
-  assert.equal(connAfterReconnect?.status, AutoPostFacebookConnectionStatus.CONNECTED);
+  assert.ok(pendingAfterReconnect, 'pending should exist after successful callback');
 
   // --- Tenant isolation ---
   section('Tenant isolation: other user cannot list/select');
@@ -270,16 +379,18 @@ async function main() {
     () =>
       listOAuthManagedPages(prisma, {
         userId: userB.id,
+        organizationId: userB.organizationId,
         encryptionKey: ENCRYPTION_KEY,
         meta: metaStub as any,
       }),
-    /Chưa kết nối Facebook/,
+    /Chưa có OAuth pending/,
   );
 
-  // --- List + select fanpage ---
-  section('List OAuth pages → user selects valid pageId');
+  // --- List + select fanpage (Phase 3 rollback + replacement) ---
+  section('List OAuth pages (pending) → user selection validation');
   const list = await listOAuthManagedPages(prisma, {
     userId: userA.id,
+    organizationId: userA.organizationId,
     encryptionKey: ENCRYPTION_KEY,
     meta: metaStub as any,
   });
@@ -287,28 +398,6 @@ async function main() {
   assert.equal(list[0].pageId, pages[0].id);
 
   const selectedPageId = pages[0].id;
-  await selectOAuthPage(prisma, {
-    userId: userA.id,
-    pageId: selectedPageId,
-    encryptionKey: ENCRYPTION_KEY,
-    meta: metaStub as any,
-  });
-
-  const pageRow = await prisma.autoPostFacebookPage.findFirst({
-    where: { userId: userA.id, pageId: selectedPageId },
-  });
-  assert.ok(pageRow, 'AutoPostFacebookPage row should be created');
-
-  // --- Duplicate selection (idempotency) ---
-  section('Duplicate page selection → no duplicate rows');
-  await selectOAuthPage(prisma, {
-    userId: userA.id,
-    pageId: selectedPageId,
-    encryptionKey: ENCRYPTION_KEY,
-    meta: metaStub as any,
-  });
-  const pageRowsCount = await prisma.autoPostFacebookPage.count({ where: { userId: userA.id } });
-  assert.equal(pageRowsCount, 1);
 
   // --- Fake pageId rejected ---
   section('Fake pageId rejected (ownership verified on backend)');
@@ -316,12 +405,114 @@ async function main() {
     () =>
       selectOAuthPage(prisma, {
         userId: userA.id,
+        organizationId: userA.organizationId,
         pageId: 'page-not-owned',
         encryptionKey: ENCRYPTION_KEY,
         meta: metaStub as any,
       }),
     /Fanpage không thuộc quyền của bạn/,
   );
+
+  // Rollback checks: active connection/page unchanged, pending not consumed.
+  const activeConnAfterWrong = await prisma.autoPostFacebookConnection.findUnique({
+    where: { userId_organizationId: { userId: userA.id, organizationId: userA.organizationId } },
+  });
+  assert.equal(activeConnAfterWrong?.id, oldConn.id);
+
+  const activePageAfterWrong = await prisma.autoPostFacebookPage.findFirst({
+    where: { connectionId: oldConn.id, pageId: OLD_PAGE_ID },
+  });
+  assert.ok(activePageAfterWrong, 'old page must remain after failed selection');
+
+  const pendingStillThereAfterWrong = await prisma.autoPostFacebookOAuthPendingConnection.findUnique({
+    where: { userId_organizationId: { userId: userA.id, organizationId: userA.organizationId } },
+  });
+  assert.ok(pendingStillThereAfterWrong, 'pending must remain after failed selection');
+
+  // --- Missing permission should not replace active connection/page ---
+  section('Select valid page but missing permissions → MISSING_PERMISSION + rollback');
+  debugScopes = []; // remove pages_manage_posts from granted scopes
+  await assert.rejects(
+    () =>
+      selectOAuthPage(prisma, {
+        userId: userA.id,
+        organizationId: userA.organizationId,
+        pageId: selectedPageId,
+        encryptionKey: ENCRYPTION_KEY,
+        meta: metaStub as any,
+      }),
+    /MISSING_PERMISSION/,
+  );
+
+  const activeConnAfterMissingPerm = await prisma.autoPostFacebookConnection.findUnique({
+    where: { userId_organizationId: { userId: userA.id, organizationId: userA.organizationId } },
+  });
+  assert.equal(activeConnAfterMissingPerm?.id, oldConn.id);
+
+  const activePageAfterMissingPerm = await prisma.autoPostFacebookPage.findFirst({
+    where: { connectionId: oldConn.id, pageId: OLD_PAGE_ID },
+  });
+  assert.ok(activePageAfterMissingPerm, 'old page must remain after missing permission');
+
+  const pendingStillThereAfterMissingPerm = await prisma.autoPostFacebookOAuthPendingConnection.findUnique({
+    where: { userId_organizationId: { userId: userA.id, organizationId: userA.organizationId } },
+  });
+  assert.ok(pendingStillThereAfterMissingPerm, 'pending must remain after missing permission');
+
+  // --- Success path: replace active connection/page in transaction ---
+  section('Select valid page with required permissions → replace active connection/page');
+  debugScopes = ['pages_manage_posts'];
+  await selectOAuthPage(prisma, {
+    userId: userA.id,
+    organizationId: userA.organizationId,
+    pageId: selectedPageId,
+    encryptionKey: ENCRYPTION_KEY,
+    meta: metaStub as any,
+  });
+
+  const pageRow = await prisma.autoPostFacebookPage.findFirst({
+    where: { connectionId: oldConn.id, pageId: selectedPageId },
+  });
+  assert.ok(pageRow, 'AutoPostFacebookPage row should be created for selected page');
+
+  const pendingAfterSuccess = await prisma.autoPostFacebookOAuthPendingConnection.findUnique({
+    where: { userId_organizationId: { userId: userA.id, organizationId: userA.organizationId } },
+  });
+  assert.equal(pendingAfterSuccess, null);
+
+  // Duplicate selection (idempotency) should still keep a single page row for that connection.
+  section('Duplicate page selection (idempotency)');
+
+  // Phase 3: pending is consumed after a successful select, so we must create a fresh pending via callback.
+  const { state: stateDup } = await createOAuthStateRecord(prisma, {
+    userId: userA.id,
+    organizationId: userA.organizationId,
+    encryptionKey: ENCRYPTION_KEY,
+  });
+  await oauthCallbackConnect(prisma, {
+    code: FB_CODE_OK,
+    state: stateDup,
+    encryptionKey: ENCRYPTION_KEY,
+    meta: metaStub as any,
+  });
+
+  await selectOAuthPage(prisma, {
+    userId: userA.id,
+    organizationId: userA.organizationId,
+    pageId: selectedPageId,
+    encryptionKey: ENCRYPTION_KEY,
+    meta: metaStub as any,
+  });
+  const pageRowsCount = await prisma.autoPostFacebookPage.count({ where: { connectionId: oldConn.id } });
+  assert.equal(pageRowsCount, 1);
+
+  // Verify active connection encrypted oauth token replaced.
+  const activeConnAfterSuccess = await prisma.autoPostFacebookConnection.findUnique({
+    where: { userId_organizationId: { userId: userA.id, organizationId: userA.organizationId } },
+  });
+  assert.ok(activeConnAfterSuccess);
+  const decryptedOauth = decryptSecret(activeConnAfterSuccess!.encryptedAccessToken, ENCRYPTION_KEY);
+  assert.equal(decryptedOauth, `LONG-SHORT-${FB_CODE_OK}`);
 
   // --- Encryption at rest ---
   section('Token encryption: encryptedPageAccessToken is not plaintext');

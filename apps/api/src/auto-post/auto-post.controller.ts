@@ -124,7 +124,7 @@ export class AutoPostController {
   @UseGuards(...FanpageGuards)
   @RequirePermissions('automation.view')
   facebookStatus(@CurrentUser() user: AuthUser) {
-    return this.facebook.getConnectionStatus(user.id);
+    return this.facebook.getConnectionStatus(user.id, user.organizationId);
   }
 
   @Get('facebook/oauth/start')
@@ -149,14 +149,14 @@ export class AutoPostController {
   @UseGuards(...FanpageGuards)
   @RequirePermissions('automation.integration.manage')
   facebookDisconnect(@CurrentUser() user: AuthUser) {
-    return this.facebook.disconnect(user.id);
+    return this.facebook.disconnect(user.id, user.organizationId);
   }
 
   @Post('facebook/pages/refresh')
   @UseGuards(...FanpageGuards)
   @RequirePermissions('automation.integration.manage')
   refreshPages(@CurrentUser() user: AuthUser) {
-    return this.facebook.refreshPages(user.id, user);
+    return this.facebook.refreshPages(user.id, user.organizationId, user);
   }
 
   // OAuth: lấy danh sách Fanpage để user chủ động chọn (không trả token)
@@ -164,7 +164,7 @@ export class AutoPostController {
   @UseGuards(...FanpageGuards)
   @RequirePermissions('automation.integration.manage')
   oauthListPages(@CurrentUser() user: AuthUser) {
-    return this.facebook.listOAuthManagedPages(user.id);
+    return this.facebook.listOAuthManagedPages(user.id, user.organizationId);
   }
 
   @Post('facebook/oauth/select')
@@ -175,7 +175,7 @@ export class AutoPostController {
     @Body() dto: { pageId?: string },
   ) {
     if (!dto?.pageId) throw new BadRequestException('pageId is required');
-    return this.facebook.selectOAuthPage(user.id, dto.pageId);
+    return this.facebook.selectOAuthPage(user.id, user.organizationId, dto.pageId);
   }
 
   /**

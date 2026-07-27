@@ -757,7 +757,7 @@ model User {
   adsActionRequestsRequested AdsActionRequest[] @relation("AdsActionRequestedBy")
   adsActionRequestsApproved  AdsActionRequest[] @relation("AdsActionApprovedBy")
   facebookAdsConnectedOrgs FacebookAdsConnection[] @relation("FacebookAdsConnectedBy")
-  autoPostFacebookConnection AutoPostFacebookConnection?
+  autoPostFacebookConnections AutoPostFacebookConnection[]
   autoPostFacebookPages      AutoPostFacebookPage[]
   autoPosts                  AutoPost[]
   autoPostApiLogs            AutoPostApiLog[]
@@ -3356,7 +3356,7 @@ enum AutoPostFacebookConnectionStatus {
 
 model AutoPostFacebookConnection {
   id                   String                           @id @default(uuid())
-  userId               String                           @unique @map("user_id")
+  userId               String                           @map("user_id")
   organizationId       String                           @map("organization_id")
   encryptedAccessToken String                           @map("encrypted_access_token")
   tokenExpiresAt       DateTime?                        @map("token_expires_at")
@@ -3372,6 +3372,7 @@ model AutoPostFacebookConnection {
   pages AutoPostFacebookPage[]
 
   @@index([organizationId])
+  @@unique([userId, organizationId])
   @@map("auto_post_facebook_connections")
 }
 
@@ -3390,9 +3391,28 @@ model AutoPostFacebookPage {
   user       User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
   posts      AutoPost[]
 
-  @@unique([userId, pageId])
+  @@unique([connectionId, pageId])
   @@index([userId])
   @@map("auto_post_facebook_pages")
+}
+
+/// OAuth pending (Phase 3): không ghi đè connection/page active cho tới khi user chọn page thành công
+model AutoPostFacebookOAuthPendingConnection {
+  id                   String   @id @default(uuid())
+  userId               String   @map("user_id")
+  organizationId       String   @map("organization_id")
+  encryptedAccessToken String   @map("encrypted_access_token")
+  tokenExpiresAt       DateTime? @map("token_expires_at")
+  facebookUserId       String?  @map("facebook_user_id")
+  facebookUserName     String?  @map("facebook_user_name")
+  scopes               String[] @default([])
+  lastError            String?  @map("last_error")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, organizationId])
+  @@index([organizationId])
+  @@map("auto_post_facebook_oauth_pending_connections")
 }
 
 model AutoPost {

@@ -128,8 +128,9 @@ export async function oauthCallbackConnect(
     const expiresAt = longLived.expires_in ? new Date(Date.now() + longLived.expires_in * 1000) : null;
     const encryptedAccessToken = encryptSecret(accessToken, encryptionKey);
 
-    await prisma.autoPostFacebookConnection.upsert({
-      where: { userId: info.userId },
+    // Phase 3: chỉ lưu pending, không ghi đè active connection/page.
+    await prisma.autoPostFacebookOAuthPendingConnection.upsert({
+      where: { userId_organizationId: { userId: info.userId, organizationId: info.organizationId } },
       create: {
         userId: info.userId,
         organizationId: info.organizationId,
@@ -137,7 +138,6 @@ export async function oauthCallbackConnect(
         tokenExpiresAt: expiresAt,
         facebookUserId: me.id,
         facebookUserName: me.name ?? null,
-        status: AutoPostFacebookConnectionStatus.CONNECTED,
         scopes: params.meta.getOAuthScopes(),
         lastError: null,
       },
@@ -146,27 +146,18 @@ export async function oauthCallbackConnect(
         tokenExpiresAt: expiresAt,
         facebookUserId: me.id,
         facebookUserName: me.name ?? null,
-        status: AutoPostFacebookConnectionStatus.CONNECTED,
         scopes: params.meta.getOAuthScopes(),
         lastError: null,
       },
     });
-
-    // OAuth mode: user chủ động chọn Fanpage sau callback
-    await prisma.autoPostFacebookPage.deleteMany({ where: { userId: info.userId } });
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'oauth_failed';
     const safeMsg = msg
       .replace(/access_token\s*=\s*[^\s&]+/gi, 'access_token=[redacted]')
       .slice(0, 300);
 
-    // Giống behavior service: nếu connection chưa tồn tại thì bỏ qua.
-    await prisma.autoPostFacebookConnection
-      .update({
-        where: { userId: info.userId },
-        data: { status: AutoPostFacebookConnectionStatus.ERROR, lastError: safeMsg },
-      })
-      .catch(() => undefined);
+    // Callback lỗi: không ghi đè active connection/page (giữ trạng thái cũ).
+    // Nếu pending tồn tại từ trước, service/FE xử lý bằng redirect error.
 
     throw e;
   }
@@ -176,25 +167,21 @@ export async function listOAuthManagedPages(
   prisma: any,
   params: {
     userId: string;
+    organizationId: string;
     encryptionKey: string;
     meta: { getManagedPages: (accessToken: string) => Promise<MetaPageAccount[]> };
   },
 ): Promise<OAuthPublicPage[]> {
-  const conn = await prisma.autoPostFacebookConnection.findUnique({ where: { userId: params.userId } });
-  if (!conn) throw new Error('Chưa kết nối Facebook');
-  if (conn.status !== AutoPostFacebookConnectionStatus.CONNECTED) {
-    throw new Error('Kết nối Facebook chưa sẵn sàng');
-  }
+  const pending = await prisma.autoPostFacebookOAuthPendingConnection.findUnique({
+    where: { userId_organizationId: { userId: params.userId, organizationId: params.organizationId } },
+  });
+  if (!pending) throw new Error('Chưa có OAuth pending — vui lòng kết nối lại');
 
-  if (conn.tokenExpiresAt && conn.tokenExpiresAt.getTime() < Date.now()) {
-    await prisma.autoPostFacebookConnection.update({
-      where: { userId: params.userId },
-      data: { status: AutoPostFacebookConnectionStatus.TOKEN_EXPIRED },
-    });
+  if (pending.tokenExpiresAt && pending.tokenExpiresAt.getTime() < Date.now()) {
     throw new Error('Token Facebook đã hết hạn — vui lòng kết nối lại');
   }
 
-  const accessToken = decryptSecret(conn.encryptedAccessToken, params.encryptionKey);
+  const accessToken = decryptSecret(pending.encryptedAccessToken, params.encryptionKey);
   const pages = await params.meta.getManagedPages(accessToken);
 
   return pages.map((p) => ({
@@ -209,53 +196,88 @@ export async function selectOAuthPage(
   prisma: any,
   params: {
     userId: string;
+    organizationId: string;
     pageId: string;
     encryptionKey: string;
     meta: {
       getManagedPages: (accessToken: string) => Promise<MetaPageAccount[]>;
+      debugToken: (accessToken: string) => Promise<{ is_valid: boolean; expires_at?: number; scopes?: string[] }>;
     };
   },
 ): Promise<void> {
   const pageId = params.pageId?.trim();
   if (!pageId) throw new Error('pageId is required');
 
-  const conn = await prisma.autoPostFacebookConnection.findUnique({ where: { userId: params.userId } });
-  if (!conn) throw new Error('Chưa kết nối Facebook');
-  if (conn.status !== AutoPostFacebookConnectionStatus.CONNECTED) {
-    throw new Error('Kết nối Facebook chưa sẵn sàng');
-  }
+  const pending = await prisma.autoPostFacebookOAuthPendingConnection.findUnique({
+    where: { userId_organizationId: { userId: params.userId, organizationId: params.organizationId } },
+  });
+  if (!pending) throw new Error('Chưa có OAuth pending — vui lòng kết nối lại');
 
-  if (conn.tokenExpiresAt && conn.tokenExpiresAt.getTime() < Date.now()) {
-    await prisma.autoPostFacebookConnection.update({
-      where: { userId: params.userId },
-      data: { status: AutoPostFacebookConnectionStatus.TOKEN_EXPIRED },
-    });
+  if (pending.tokenExpiresAt && pending.tokenExpiresAt.getTime() < Date.now()) {
     throw new Error('Token Facebook đã hết hạn — vui lòng kết nối lại');
   }
 
-  const accessToken = decryptSecret(conn.encryptedAccessToken, params.encryptionKey);
+  const accessToken = decryptSecret(pending.encryptedAccessToken, params.encryptionKey);
   const pages = await params.meta.getManagedPages(accessToken);
   const chosen = pages.find((p) => p.id === pageId);
   if (!chosen) throw new Error('Fanpage không thuộc quyền của bạn');
 
+  // Phase 3: Graph xác minh page token + granted permissions
+  const debug = await params.meta.debugToken(chosen.access_token);
+  const grantedScopes = debug.scopes ?? [];
+
+  if (!debug.is_valid) throw new Error('Token Facebook đã hết hạn — vui lòng kết nối lại');
+  if (debug.expires_at && debug.expires_at * 1000 < Date.now()) {
+    throw new Error('Token Facebook đã hết hạn — vui lòng kết nối lại');
+  }
+  if (!grantedScopes.includes('pages_manage_posts')) {
+    throw new Error('MISSING_PERMISSION');
+  }
+
+  const tokenExpiresAt = debug.expires_at ? new Date(debug.expires_at * 1000) : pending.tokenExpiresAt;
   const encryptedPageAccessToken = encryptSecret(chosen.access_token, params.encryptionKey);
 
-  await prisma.autoPostFacebookPage.upsert({
-    where: { userId_pageId: { userId: params.userId, pageId } },
-    update: {
-      connectionId: conn.id,
-      pageName: chosen.name,
-      pagePictureUrl: chosen.picture?.data?.url ?? null,
-      encryptedPageAccessToken: encryptedPageAccessToken,
-    },
-    create: {
-      userId: params.userId,
-      connectionId: conn.id,
-      pageId: chosen.id,
-      pageName: chosen.name,
-      pagePictureUrl: chosen.picture?.data?.url ?? null,
-      encryptedPageAccessToken: encryptedPageAccessToken,
-    },
+  await prisma.$transaction(async (tx: any) => {
+    const newConn = await tx.autoPostFacebookConnection.upsert({
+      where: { userId_organizationId: { userId: params.userId, organizationId: params.organizationId } },
+      create: {
+        userId: params.userId,
+        organizationId: params.organizationId,
+        encryptedAccessToken: pending.encryptedAccessToken,
+        tokenExpiresAt,
+        facebookUserId: pending.facebookUserId,
+        facebookUserName: pending.facebookUserName,
+        status: AutoPostFacebookConnectionStatus.CONNECTED,
+        scopes: grantedScopes,
+        lastError: null,
+      },
+      update: {
+        encryptedAccessToken: pending.encryptedAccessToken,
+        tokenExpiresAt,
+        facebookUserId: pending.facebookUserId,
+        facebookUserName: pending.facebookUserName,
+        status: AutoPostFacebookConnectionStatus.CONNECTED,
+        scopes: grantedScopes,
+        lastError: null,
+      },
+    });
+
+    await tx.autoPostFacebookPage.deleteMany({ where: { connectionId: newConn.id } });
+
+    await tx.autoPostFacebookPage.create({
+      data: {
+        userId: params.userId,
+        connectionId: newConn.id,
+        pageId: chosen.id,
+        pageName: chosen.name,
+        pagePictureUrl: chosen.picture?.data?.url ?? null,
+        encryptedPageAccessToken,
+      },
+    });
+
+    await tx.autoPostFacebookOAuthPendingConnection.delete({
+      where: { userId_organizationId: { userId: params.userId, organizationId: params.organizationId } },
+    });
   });
 }
 

@@ -158,12 +158,16 @@ export class AutoPostMetaService {
     return this.parsePublishResponse(res);
   }
 
-  async debugToken(accessToken: string): Promise<{ is_valid: boolean; expires_at?: number }> {
+  async debugToken(
+    accessToken: string,
+  ): Promise<{ is_valid: boolean; expires_at?: number; scopes?: string[] }> {
     const params = new URLSearchParams({
       input_token: accessToken,
       access_token: `${this.appId}|${this.appSecret}`,
     });
-    const res = await this.getJson<{ data: { is_valid: boolean; expires_at?: number } }>(
+    const res = await this.getJson<{
+      data: { is_valid: boolean; expires_at?: number; scopes?: string[] };
+    }>(
       `https://graph.facebook.com/${this.apiVersion}/debug_token?${params.toString()}`,
     );
     return res.data;
