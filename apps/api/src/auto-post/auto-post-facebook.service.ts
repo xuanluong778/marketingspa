@@ -73,6 +73,13 @@ export class AutoPostFacebookService {
       );
     }
 
+    // Canary gate: khi AUTO_POST_OAUTH_CANARY=true chỉ SUPER_ADMIN hoặc org trong AUTO_POST_OAUTH_CANARY_ORG_IDS
+    if (!this.canUseOAuthCanary(user)) {
+      throw new BadRequestException(
+        'OAuth Fanpage đang chạy canary — chỉ SUPER_ADMIN hoặc tổ chức allowlist được kết nối. Chưa mở cho toàn bộ khách hàng.',
+      );
+    }
+
     if (!this.meta.loginConfigId) {
       throw new BadRequestException(
         'Facebook Login for Business cần META_LOGIN_CONFIG_ID (META_LOGIN_CONFIG_ID/ FACEBOOOK_LOGIN_CONFIG_ID).',
@@ -651,6 +658,27 @@ export class AutoPostFacebookService {
     await this.prisma.autoPostApiLog.create({
       data: { userId, postId, action, message, statusCode, errorCode },
     });
+  }
+
+  private canUseOAuthCanary(user: AuthUser): boolean {
+    const canaryOn =
+      (this.config.get<string>('AUTO_POST_OAUTH_CANARY') ?? process.env.AUTO_POST_OAUTH_CANARY ?? '')
+        .trim()
+        .toLowerCase() === 'true';
+    // Canary tắt → OAuth mở theo OAUTH_CONNECTION (sau khi smoke PASS mới tắt canary).
+    if (!canaryOn) return true;
+
+    if (user.role === 'SUPER_ADMIN') return true;
+
+    const raw =
+      this.config.get<string>('AUTO_POST_OAUTH_CANARY_ORG_IDS') ??
+      process.env.AUTO_POST_OAUTH_CANARY_ORG_IDS ??
+      '';
+    const orgs = raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    return Boolean(user.organizationId && orgs.includes(user.organizationId));
   }
 
   private async requireConnection(userId: string, organizationId: string) {
