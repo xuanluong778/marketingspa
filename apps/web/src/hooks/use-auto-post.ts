@@ -7,6 +7,7 @@ import type {
   AutoPostStatus,
   AutoPostType,
 } from '@/types/auto-post';
+import type { AutoPostFacebookPage } from '@/types/auto-post';
 
 const BASE = '/auto-post';
 
@@ -27,6 +28,15 @@ export function useAutoPostFacebookStatus() {
   return useQuery({
     queryKey: ['auto-post', 'facebook'],
     queryFn: () => apiClient<AutoPostFacebookStatus>(`${BASE}/facebook/status`),
+  });
+}
+
+export function useAutoPostOauthPages(enabled = false) {
+  return useQuery({
+    queryKey: ['auto-post', 'facebook', 'oauth', 'pages'],
+    queryFn: () =>
+      apiClient<Array<AutoPostFacebookPage>>(`${BASE}/facebook/oauth/pages`),
+    enabled,
   });
 }
 
@@ -60,6 +70,15 @@ export function useAutoPostMutations() {
   const refreshPages = useMutation({
     mutationFn: () =>
       apiClient(`${BASE}/facebook/pages/refresh`, { method: 'POST' }),
+    onSuccess: invalidate,
+  });
+
+  const selectOauthPage = useMutation({
+    mutationFn: (pageId: string) =>
+      apiClient(`${BASE}/facebook/oauth/select`, {
+        method: 'POST',
+        body: JSON.stringify({ pageId }),
+      }),
     onSuccess: invalidate,
   });
 
@@ -161,6 +180,7 @@ export function useAutoPostMutations() {
     connectFacebook,
     disconnectFacebook,
     refreshPages,
+    selectOauthPage,
     generateAi,
     rewriteAi,
     saveDraft,

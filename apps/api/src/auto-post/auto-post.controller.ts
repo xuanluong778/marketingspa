@@ -159,6 +159,25 @@ export class AutoPostController {
     return this.facebook.refreshPages(user.id, user);
   }
 
+  // OAuth: lấy danh sách Fanpage để user chủ động chọn (không trả token)
+  @Get('facebook/oauth/pages')
+  @UseGuards(...FanpageGuards)
+  @RequirePermissions('automation.integration.manage')
+  oauthListPages(@CurrentUser() user: AuthUser) {
+    return this.facebook.listOAuthManagedPages(user.id);
+  }
+
+  @Post('facebook/oauth/select')
+  @UseGuards(...FanpageGuards)
+  @RequirePermissions('automation.integration.manage')
+  oauthSelectPage(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: { pageId?: string },
+  ) {
+    if (!dto?.pageId) throw new BadRequestException('pageId is required');
+    return this.facebook.selectOAuthPage(user.id, dto.pageId);
+  }
+
   /**
    * Meta Deauthorize Callback (public, no JWT).
    * App Dashboard → Facebook Login → Settings → Deauthorize Callback URL

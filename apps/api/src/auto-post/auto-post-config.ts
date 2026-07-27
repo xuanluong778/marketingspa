@@ -11,10 +11,10 @@ export const AUTO_POST_TYPE_LABELS: Record<AutoPostType, string> = {
   INBOX_BOOKING: 'Bài kéo inbox/đặt lịch',
 };
 
-/** Classic Facebook Login scopes (chỉ dùng khi KHÔNG có META_LOGIN_CONFIG_ID). */
+/** Default Facebook Login scopes (Standard Access). */
 export const AUTO_POST_META_SCOPES = [
+  'public_profile',
   'pages_show_list',
-  'pages_manage_metadata',
   'pages_read_engagement',
   'pages_manage_posts',
 ];

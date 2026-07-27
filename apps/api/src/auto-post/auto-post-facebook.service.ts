@@ -11,7 +11,7 @@ import {
   AutoPostFacebookConnectionStatus,
   AutoPostStatus,
 } from '@marketingspa/database';
-import { createHmac, timingSafeEqual } from 'crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import type { Queue } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
 import { encryptSecret, decryptSecret } from '../common/utils/encryption.util';
@@ -20,6 +20,10 @@ import { AUTO_POST_QUEUE } from '../queue/queue.constants';
 import { AutoPostMetaService } from './auto-post-meta.service';
 import { MetaFanpageService } from '../meta-fanpage/meta-fanpage.service';
 import { ChannelConnectionsService } from '../messaging/channel-connections.service';
+import {
+  canUseServerEnvFanpage,
+  parseMetaFanpageAllowedOrgIds,
+} from '../meta-fanpage/meta-fanpage-access';
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 
@@ -42,7 +46,19 @@ export class AutoPostFacebookService {
    */
   async getOAuthStartUrl(user: AuthUser): Promise<{ url: string; mode: 'env' | 'oauth' }> {
     const envCreds = this.metaFanpage.getEnvCredentials();
-    if (envCreds) {
+    const oauthEnabled =
+      (this.config.get<string>('OAUTH_CONNECTION') ?? process.env.OAUTH_CONNECTION ?? '')
+        .trim()
+        .toLowerCase() === 'true';
+
+    const allowedOrgIds = parseMetaFanpageAllowedOrgIds((k) => this.config.get<string>(k) ?? process.env[k]);
+    const canUseServerEnv = canUseServerEnvFanpage(
+      { role: user.role, organizationId: user.organizationId },
+      allowedOrgIds,
+    );
+
+    // SERVER_ENV luôn chỉ dành cho admin allowlist (Phase 1). Không cho SaaS fallback nếu không đủ điều kiện.
+    if (envCreds && canUseServerEnv) {
       await this.syncEnvPageConnection(user);
       const appUrl = this.config.get<string>('APP_URL') ?? 'http://localhost:3000';
       return {
@@ -51,14 +67,20 @@ export class AutoPostFacebookService {
       };
     }
 
+    if (!oauthEnabled) {
+      throw new BadRequestException(
+        'Kết nối OAuth chưa bật cho tenant này. Vui lòng liên hệ hỗ trợ để bật OAUTH_CONNECTION hoặc dùng SERVER_ENV (admin/allowlist).',
+      );
+    }
+
     if (!this.meta.loginConfigId) {
       throw new BadRequestException(
-        'Facebook Login for Business cần META_LOGIN_CONFIG_ID, hoặc cấu hình META_PAGE_ID + Page Token trên server để kết nối không qua OAuth.',
+        'Facebook Login for Business cần META_LOGIN_CONFIG_ID (META_LOGIN_CONFIG_ID/ FACEBOOOK_LOGIN_CONFIG_ID).',
       );
     }
 
     this.ensureMetaConfig();
-    const state = this.signState(user.id, user.organizationId);
+    const { state } = await this.createOAuthState(user.id, user.organizationId);
     return { url: this.meta.buildOAuthUrl(state), mode: 'oauth' };
   }
 
@@ -141,13 +163,26 @@ export class AutoPostFacebookService {
 
     let userId: string;
     let organizationId: string;
+    let nonce: string | undefined;
     try {
-      ({ userId, organizationId } = this.verifyState(state));
+      ({ userId, organizationId, nonce } = this.verifyState(state));
     } catch {
       return { redirectUrl: `${base}error&message=invalid_state` };
     }
 
     try {
+      const consumed = await this.prisma.autoPostFacebookOAuthState.updateMany({
+        where: {
+          stateHash: createHash('sha256').update(nonce!).digest('hex'),
+          usedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        data: { usedAt: new Date() },
+      });
+      if (consumed.count !== 1) {
+        throw new UnauthorizedException('oauth_state_used_or_expired');
+      }
+
       const short = await this.meta.exchangeCodeForToken(code);
       const longLived = await this.meta.exchangeForLongLivedToken(short.access_token);
       const accessToken = longLived.access_token;
@@ -181,38 +216,31 @@ export class AutoPostFacebookService {
         },
       });
 
-      const pages = await this.meta.getManagedPages(accessToken);
-      await this.prisma.autoPostFacebookPage.deleteMany({
-        where: { userId, connectionId: connection.id },
-      });
+      // OAuth mode: xóa Fanpage rows cũ để user chủ động chọn lại
+      await this.prisma.autoPostFacebookPage.deleteMany({ where: { userId } });
 
-      if (pages.length > 0) {
-        await this.prisma.autoPostFacebookPage.createMany({
-          data: pages.map((p) => ({
-            userId,
-            connectionId: connection.id,
-            pageId: p.id,
-            pageName: p.name,
-            pagePictureUrl: p.picture?.data?.url ?? null,
-            encryptedPageAccessToken: encryptSecret(p.access_token, this.getEncryptionKey()),
-          })),
-        });
-      }
-
-      return { redirectUrl: `${base}connected` };
+      return { redirectUrl: `${base}oauth_connected&mode=oauth` };
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'oauth_failed';
-      this.logger.warn(`Auto Post OAuth failed for user ${userId}: ${msg}`);
+      const safeMsg = msg
+        .replace(/access_token\\s*=\\s*[^\\s&]+/gi, 'access_token=[redacted]')
+        // Meta tokens thường bắt đầu bằng EAAG/EAA* và có độ dài lớn.
+        .replace(/\\b(?:EAAG|EAAD|EAA|EBA|EAAE)[A-Za-z0-9_-]{10,}\\b/g, '[meta_token]')
+        .slice(0, 300);
+
+      this.logger.warn(`Auto Post OAuth failed for user ${userId}`); // Không log token/secret
+
       await this.prisma.autoPostFacebookConnection
         .update({
           where: { userId },
           data: {
             status: AutoPostFacebookConnectionStatus.ERROR,
-            lastError: msg,
+            lastError: safeMsg,
           },
         })
         .catch(() => undefined);
-      return { redirectUrl: `${base}error&message=${encodeURIComponent(msg)}` };
+
+      return { redirectUrl: `${base}error&message=${encodeURIComponent(safeMsg)}` };
     }
   }
 
@@ -220,12 +248,39 @@ export class AutoPostFacebookService {
     // Tự đồng bộ nếu đã có Page Token trên server mà user chưa có page trong DB
     const envCreds = this.metaFanpage.getEnvCredentials();
     if (envCreds) {
-      const existing = await this.prisma.autoPostFacebookPage.findFirst({
-        where: { userId, pageId: envCreds.pageId },
+      const allowedOrgIds = parseMetaFanpageAllowedOrgIds(
+        (k) => this.config.get<string>(k) ?? process.env[k],
+      );
+      const existingConn = await this.prisma.autoPostFacebookConnection.findUnique({
+        where: { userId },
+        select: { scopes: true },
       });
-      if (!existing) {
-        const user = await this.prisma.user.findUnique({ where: { id: userId } });
-        if (user) {
+
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          organizationId: true,
+          role: { select: { code: true } },
+        },
+      });
+
+      const canUseServerEnv = user
+        ? canUseServerEnvFanpage(
+            { role: user.role.code, organizationId: user.organizationId },
+            allowedOrgIds,
+          )
+        : false;
+
+      // Không tự động đồng bộ SERVER_ENV nếu user không thuộc allowlist (Phase 1)
+      // hoặc nếu user đã có connection OAuth (scopes không phải env_page_token).
+      if (canUseServerEnv && (!existingConn || existingConn.scopes?.includes('env_page_token'))) {
+        const existing = await this.prisma.autoPostFacebookPage.findFirst({
+          where: { userId, pageId: envCreds.pageId },
+        });
+        if (!existing && user) {
           try {
             await this.syncEnvPageConnection({
               id: user.id,
@@ -265,12 +320,25 @@ export class AutoPostFacebookService {
       };
     }
 
+    const isTokenExpired =
+      conn.status === AutoPostFacebookConnectionStatus.CONNECTED &&
+      conn.tokenExpiresAt &&
+      conn.tokenExpiresAt.getTime() < Date.now();
+
+    const status = isTokenExpired
+      ? AutoPostFacebookConnectionStatus.TOKEN_EXPIRED
+      : conn.status;
+
+    const lastError = isTokenExpired
+      ? conn.lastError ?? 'Token Facebook đã hết hạn — vui lòng kết nối lại'
+      : conn.lastError;
+
     return {
-      connected: conn.status === AutoPostFacebookConnectionStatus.CONNECTED,
-      status: conn.status,
+      connected: status === AutoPostFacebookConnectionStatus.CONNECTED,
+      status,
       facebookUserName: conn.facebookUserName,
       tokenExpiresAt: conn.tokenExpiresAt?.toISOString() ?? null,
-      lastError: conn.lastError,
+      lastError,
       connectionMode: conn.scopes?.includes('env_page_token')
         ? ('env' as const)
         : ('oauth' as const),
@@ -281,6 +349,79 @@ export class AutoPostFacebookService {
         pagePictureUrl: p.pagePictureUrl,
       })),
     };
+  }
+
+  /** OAuth (Login for Business) — chỉ dùng để liệt kê pages để người dùng chọn. */
+  async listOAuthManagedPages(userId: string) {
+    const conn = await this.requireConnection(userId);
+    if (conn.status !== AutoPostFacebookConnectionStatus.CONNECTED) {
+      throw new UnauthorizedException('Kết nối Facebook chưa sẵn sàng');
+    }
+
+    if (conn.tokenExpiresAt && conn.tokenExpiresAt.getTime() < Date.now()) {
+      await this.prisma.autoPostFacebookConnection.update({
+        where: { userId },
+        data: { status: AutoPostFacebookConnectionStatus.TOKEN_EXPIRED },
+      });
+      throw new UnauthorizedException('Token Facebook đã hết hạn — vui lòng kết nối lại');
+    }
+
+    const accessToken = decryptSecret(conn.encryptedAccessToken, this.getEncryptionKey());
+    const pages = await this.meta.getManagedPages(accessToken);
+    return pages.map((p) => ({
+      id: p.id,
+      pageId: p.id,
+      pageName: p.name,
+      pagePictureUrl: p.picture?.data?.url ?? null,
+    }));
+  }
+
+  /** OAuth (Login for Business) — xác minh ownership trên backend rồi lưu token đã mã hóa. */
+  async selectOAuthPage(userId: string, pageId: string) {
+    const trimmed = pageId?.trim();
+    if (!trimmed) throw new BadRequestException('pageId is required');
+
+    const conn = await this.requireConnection(userId);
+    if (conn.status !== AutoPostFacebookConnectionStatus.CONNECTED) {
+      throw new UnauthorizedException('Kết nối Facebook chưa sẵn sàng');
+    }
+
+    if (conn.tokenExpiresAt && conn.tokenExpiresAt.getTime() < Date.now()) {
+      await this.prisma.autoPostFacebookConnection.update({
+        where: { userId },
+        data: { status: AutoPostFacebookConnectionStatus.TOKEN_EXPIRED },
+      });
+      throw new UnauthorizedException('Token Facebook đã hết hạn — vui lòng kết nối lại');
+    }
+
+    const accessToken = decryptSecret(conn.encryptedAccessToken, this.getEncryptionKey());
+    const pages = await this.meta.getManagedPages(accessToken);
+    const chosen = pages.find((p) => p.id === trimmed);
+    if (!chosen) {
+      throw new BadRequestException('Fanpage không thuộc quyền của bạn');
+    }
+
+    const encryptedPageAccessToken = encryptSecret(chosen.access_token, this.getEncryptionKey());
+
+    await this.prisma.autoPostFacebookPage.upsert({
+      where: { userId_pageId: { userId, pageId: trimmed } },
+      update: {
+        connectionId: conn.id,
+        pageName: chosen.name,
+        pagePictureUrl: chosen.picture?.data?.url ?? null,
+        encryptedPageAccessToken: encryptedPageAccessToken,
+      },
+      create: {
+        userId,
+        connectionId: conn.id,
+        pageId: chosen.id,
+        pageName: chosen.name,
+        pagePictureUrl: chosen.picture?.data?.url ?? null,
+        encryptedPageAccessToken: encryptedPageAccessToken,
+      },
+    });
+
+    return this.getConnectionStatus(userId);
   }
 
   async disconnect(userId: string) {
@@ -453,32 +594,56 @@ export class AutoPostFacebookService {
     return key;
   }
 
-  private signState(userId: string, organizationId: string): string {
+  private async createOAuthState(
+    userId: string,
+    organizationId: string,
+  ): Promise<{ state: string }> {
     const ts = Date.now();
-    const payload = `${userId}:${organizationId}:${ts}`;
+    const nonce = randomBytes(16).toString('hex');
+    const stateHash = createHash('sha256').update(nonce).digest('hex');
+    const payload = `${userId}:${organizationId}:${ts}:${nonce}`;
     const sig = createHmac('sha256', this.getEncryptionKey()).update(payload).digest('hex');
-    return Buffer.from(`${payload}:${sig}`).toString('base64url');
+
+    const expiresAt = new Date(ts + STATE_TTL_MS);
+    const state = Buffer.from(`${payload}:${sig}`).toString('base64url');
+
+    await this.prisma.autoPostFacebookOAuthState.create({
+      data: {
+        stateHash,
+        userId,
+        organizationId,
+        nonce,
+        expiresAt,
+      },
+    });
+
+    return { state };
   }
 
-  private verifyState(state: string): { userId: string; organizationId: string } {
+  private verifyState(state: string): {
+    userId: string;
+    organizationId: string;
+    nonce: string;
+    ts: number;
+  } {
     const decoded = Buffer.from(state, 'base64url').toString('utf8');
     const parts = decoded.split(':');
-    if (parts.length !== 4) throw new UnauthorizedException('State không hợp lệ');
-    const [userId, organizationId, tsStr, sig] = parts;
+    if (parts.length !== 5) throw new UnauthorizedException('State không hợp lệ');
+    const [userId, organizationId, tsStr, nonce, sig] = parts;
     const ts = Number(tsStr);
-    if (!userId || !organizationId || !Number.isFinite(ts) || !sig) {
+    if (!userId || !organizationId || !nonce || !Number.isFinite(ts) || !sig) {
       throw new UnauthorizedException('State không hợp lệ');
     }
     if (Date.now() - ts > STATE_TTL_MS) {
       throw new UnauthorizedException('State đã hết hạn');
     }
-    const payload = `${userId}:${organizationId}:${tsStr}`;
+    const payload = `${userId}:${organizationId}:${tsStr}:${nonce}`;
     const expected = createHmac('sha256', this.getEncryptionKey()).update(payload).digest('hex');
     const a = Buffer.from(sig);
     const b = Buffer.from(expected);
     if (a.length !== b.length || !timingSafeEqual(a, b)) {
       throw new UnauthorizedException('State không hợp lệ');
     }
-    return { userId, organizationId };
+    return { userId, organizationId, nonce, ts };
   }
 }
