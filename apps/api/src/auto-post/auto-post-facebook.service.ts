@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -11,11 +12,14 @@ import {
   AutoPostStatus,
 } from '@marketingspa/database';
 import { createHmac, timingSafeEqual } from 'crypto';
+import type { Queue } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
 import { encryptSecret, decryptSecret } from '../common/utils/encryption.util';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
+import { AUTO_POST_QUEUE } from '../queue/queue.constants';
 import { AutoPostMetaService } from './auto-post-meta.service';
 import { MetaFanpageService } from '../meta-fanpage/meta-fanpage.service';
+import { ChannelConnectionsService } from '../messaging/channel-connections.service';
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 
@@ -28,6 +32,8 @@ export class AutoPostFacebookService {
     private readonly config: ConfigService,
     private readonly meta: AutoPostMetaService,
     private readonly metaFanpage: MetaFanpageService,
+    private readonly channelConnections: ChannelConnectionsService,
+    @Inject(AUTO_POST_QUEUE) private readonly autoPostQueue: Queue,
   ) {}
 
   /**
@@ -278,8 +284,50 @@ export class AutoPostFacebookService {
   }
 
   async disconnect(userId: string) {
+    const pages = await this.prisma.autoPostFacebookPage.findMany({
+      where: { userId },
+      select: { pageId: true },
+    });
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { organizationId: true },
+    });
+
     await this.prisma.autoPostFacebookPage.deleteMany({ where: { userId } });
     await this.prisma.autoPostFacebookConnection.deleteMany({ where: { userId } });
+
+    for (const page of pages) {
+      await this.channelConnections.disableMessengerPageAccess(page.pageId, {
+        organizationId: user?.organizationId,
+        reason: 'Auto Post Facebook disconnected',
+      });
+    }
+
+    const scheduled = await this.prisma.autoPost.findMany({
+      where: { userId, status: AutoPostStatus.SCHEDULED },
+      select: { id: true },
+    });
+    for (const post of scheduled) {
+      try {
+        const job = await this.autoPostQueue.getJob(`auto-post-${post.id}`);
+        if (job) await job.remove();
+      } catch (e) {
+        this.logger.warn(
+          `Failed to cancel auto-post job ${post.id}: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    }
+    if (scheduled.length > 0) {
+      await this.prisma.autoPost.updateMany({
+        where: { userId, status: AutoPostStatus.SCHEDULED },
+        data: {
+          status: AutoPostStatus.CANCELLED,
+          scheduledAt: null,
+          errorMessage: 'Cancelled: Facebook disconnected',
+        },
+      });
+    }
+
     return { ok: true };
   }
 

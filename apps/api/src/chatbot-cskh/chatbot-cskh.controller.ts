@@ -7,14 +7,20 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ChatbotCskhService } from './chatbot-cskh.service';
 import { ChatbotSuggestService } from './chatbot-suggest.service';
 import { ChatbotFacebookWebhookService } from './chatbot-facebook-webhook.service';
 import { OpenAiService } from '../openai/openai.service';
+import { RealtimeBridgeService } from '../events/realtime-bridge.service';
 import { JwtAuthGuard } from '../common/guards/auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
+import { PermissionsGuard } from '../common/guards/permissions.guard';
+import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import {
@@ -22,6 +28,7 @@ import {
   CreateChannelDto,
   CreateChatbotBotDto,
   CreateKnowledgeSourceDto,
+  CrawlKnowledgeUrlDto,
   UpdateChatbotBotDto,
   UpdateSettingsDto,
 } from './dto/chatbot-cskh.dto';
@@ -35,6 +42,7 @@ export class ChatbotCskhController {
     private readonly suggestService: ChatbotSuggestService,
     private readonly openAi: OpenAiService,
     private readonly facebookWebhook: ChatbotFacebookWebhookService,
+    private readonly realtimeBridge: RealtimeBridgeService,
   ) {}
 
   @Get('options')
@@ -96,6 +104,42 @@ export class ChatbotCskhController {
     return this.service.createKnowledge(user.organizationId, dto);
   }
 
+  @Post('knowledge/diagram')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 2 * 1024 * 1024 },
+    }),
+  )
+  uploadKnowledgeDiagram(
+    @CurrentUser() user: AuthUser,
+    @UploadedFile()
+    file:
+      | {
+          originalname?: string;
+          buffer?: Buffer;
+        }
+      | undefined,
+    @Body()
+    body: {
+      botId?: string;
+      title?: string;
+      replaceExisting?: string;
+    },
+  ) {
+    return this.service.uploadKnowledgeDiagram(user.organizationId, {
+      botId: body.botId || '',
+      title: body.title,
+      filename: file?.originalname || 'diagram.txt',
+      buffer: file?.buffer || Buffer.alloc(0),
+      replaceExisting: body.replaceExisting === '1' || body.replaceExisting === 'true',
+    });
+  }
+
+  @Post('knowledge/crawl')
+  crawlKnowledgeFromUrl(@CurrentUser() user: AuthUser, @Body() dto: CrawlKnowledgeUrlDto) {
+    return this.service.crawlKnowledgeFromUrl(user.organizationId, dto);
+  }
+
   @Delete('knowledge/:id')
   deleteKnowledge(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.service.deleteKnowledge(user.organizationId, id);
@@ -126,6 +170,15 @@ export class ChatbotCskhController {
     return this.service.getConversation(user.organizationId, id);
   }
 
+  @Post('inbox/:id/takeover')
+  takeover(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() body: { employeeId?: string; resumeBot?: boolean },
+  ) {
+    return this.service.takeoverConversation(user.organizationId, id, body);
+  }
+
   @Get('leads')
   listLeads(@CurrentUser() user: AuthUser, @Query('limit') limit?: string) {
     return this.service.listLeads(user.organizationId, limit ? Number(limit) : 50);
@@ -147,27 +200,40 @@ export class ChatbotCskhController {
   }
 
   @Get('facebook/pages')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('automation.view')
   listFacebook(@CurrentUser() user: AuthUser) {
     return this.service.listFacebookPages(user.organizationId);
   }
 
   @Get('facebook/webhook-status')
-  facebookWebhookStatus() {
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('automation.view')
+  async facebookWebhookStatus(@CurrentUser() user: AuthUser) {
+    const status = await this.facebookWebhook.getPublicConnectStatus(user.organizationId);
     return {
-      ok: true,
-      webhookPath: this.facebookWebhook.getWebhookPath(),
-      webhookUrl: this.facebookWebhook.getWebhookUrl(),
-      verifyTokenHint: 'CSKH_FB_WEBHOOK_VERIFY_TOKEN',
-      mode: 'page_token_only',
+      ...status,
+      realtime: this.realtimeBridge.getStatus(),
     };
   }
 
   @Post('facebook/pages')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('automation.integration.manage')
   connectFacebook(@CurrentUser() user: AuthUser, @Body() dto: ConnectFacebookPageDto) {
     return this.service.connectFacebookPage(user.organizationId, dto);
   }
 
+  @Post('facebook/pages/sync-messaging')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('automation.integration.manage')
+  syncMessagingFromChatbot(@CurrentUser() user: AuthUser) {
+    return this.service.syncMessagingFromChatbotPages(user.organizationId);
+  }
+
   @Delete('facebook/pages/:id')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('automation.integration.manage')
   disconnectFacebook(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.service.disconnectFacebookPage(user.organizationId, id);
   }

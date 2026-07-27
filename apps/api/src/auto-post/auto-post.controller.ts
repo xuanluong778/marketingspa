@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -7,17 +8,21 @@ import {
   Post,
   Put,
   Query,
+  Req,
   Res,
   UseGuards,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { AutoPostStatus } from '@marketingspa/database';
 import { JwtAuthGuard } from '../common/guards/auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
+import { PermissionsGuard } from '../common/guards/permissions.guard';
+import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { AutoPostService } from './auto-post.service';
 import { AutoPostFacebookService } from './auto-post-facebook.service';
+import { AutoPostMetaComplianceService } from './auto-post-meta-compliance.service';
 import {
   GenerateAutoPostDto,
   PublishAutoPostDto,
@@ -27,11 +32,16 @@ import {
   UpdateAutoPostDto,
 } from './dto/auto-post.dto';
 
+type MetaCallbackRequest = Request & { requestId?: string };
+
+const FanpageGuards = [JwtAuthGuard, TenantGuard, PermissionsGuard] as const;
+
 @Controller('auto-post')
 export class AutoPostController {
   constructor(
     private readonly service: AutoPostService,
     private readonly facebook: AutoPostFacebookService,
+    private readonly metaCompliance: AutoPostMetaComplianceService,
   ) {}
 
   @Get('status')
@@ -111,13 +121,15 @@ export class AutoPostController {
   }
 
   @Get('facebook/status')
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(...FanpageGuards)
+  @RequirePermissions('automation.view')
   facebookStatus(@CurrentUser() user: AuthUser) {
     return this.facebook.getConnectionStatus(user.id);
   }
 
   @Get('facebook/oauth/start')
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(...FanpageGuards)
+  @RequirePermissions('automation.integration.manage')
   facebookOAuthStart(@CurrentUser() user: AuthUser) {
     return this.facebook.getOAuthStartUrl(user);
   }
@@ -134,14 +146,79 @@ export class AutoPostController {
   }
 
   @Post('facebook/disconnect')
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(...FanpageGuards)
+  @RequirePermissions('automation.integration.manage')
   facebookDisconnect(@CurrentUser() user: AuthUser) {
     return this.facebook.disconnect(user.id);
   }
 
   @Post('facebook/pages/refresh')
-  @UseGuards(JwtAuthGuard, TenantGuard)
+  @UseGuards(...FanpageGuards)
+  @RequirePermissions('automation.integration.manage')
   refreshPages(@CurrentUser() user: AuthUser) {
     return this.facebook.refreshPages(user.id, user);
+  }
+
+  /**
+   * Meta Deauthorize Callback (public, no JWT).
+   * App Dashboard → Facebook Login → Settings → Deauthorize Callback URL
+   * POST application/x-www-form-urlencoded: signed_request=...
+   */
+  @Post('facebook/deauthorize')
+  facebookDeauthorize(
+    @Req() req: MetaCallbackRequest,
+    @Body() body: { signed_request?: string },
+  ) {
+    const signedRequest = this.extractSignedRequest(req, body);
+    return this.metaCompliance.handleDeauthorize({
+      signedRequest,
+      ipAddress: req.ip,
+      requestId: req.requestId,
+      secure: req.secure,
+      forwardedProto: req.headers['x-forwarded-proto'],
+    });
+  }
+
+  /**
+   * Meta Data Deletion Request Callback (public, no JWT).
+   * Returns { url, confirmation_code } per Meta Platform Terms.
+   */
+  @Post('facebook/data-deletion')
+  facebookDataDeletion(
+    @Req() req: MetaCallbackRequest,
+    @Body() body: { signed_request?: string },
+  ) {
+    const signedRequest = this.extractSignedRequest(req, body);
+    return this.metaCompliance.handleDataDeletion({
+      signedRequest,
+      ipAddress: req.ip,
+      requestId: req.requestId,
+      secure: req.secure,
+      forwardedProto: req.headers['x-forwarded-proto'],
+    });
+  }
+
+  /** Public status check for Meta data deletion confirmation_code */
+  @Get('facebook/data-deletion/status/:code')
+  facebookDataDeletionStatus(@Param('code') code: string) {
+    return this.metaCompliance.getDeletionStatus(code);
+  }
+
+  private extractSignedRequest(
+    req: MetaCallbackRequest,
+    body: { signed_request?: string },
+  ): string {
+    const fromBody =
+      (typeof body?.signed_request === 'string' && body.signed_request) ||
+      (typeof (req.body as { signed_request?: string })?.signed_request === 'string' &&
+        (req.body as { signed_request?: string }).signed_request) ||
+      '';
+    const fromQuery =
+      typeof req.query?.signed_request === 'string' ? req.query.signed_request : '';
+    const signedRequest = (fromBody || fromQuery).trim();
+    if (!signedRequest) {
+      throw new BadRequestException('signed_request is required');
+    }
+    return signedRequest;
   }
 }

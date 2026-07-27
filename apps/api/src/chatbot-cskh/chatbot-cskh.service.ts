@@ -2,11 +2,12 @@ import {
   BadRequestException,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
   forwardRef,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ChatbotBotStatus, Prisma } from '@marketingspa/database';
+import { ChatbotBotStatus, ChatbotSourceType, Prisma } from '@marketingspa/database';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
@@ -15,11 +16,25 @@ import {
   CreateChannelDto,
   CreateChatbotBotDto,
   CreateKnowledgeSourceDto,
+  CrawlKnowledgeUrlDto,
   UpdateChatbotBotDto,
   UpdateSettingsDto,
 } from './dto/chatbot-cskh.dto';
 import { buildEmbedCode, defaultGreeting, resolveEmbedApiUrl } from './utils/chatbot-constants';
+import { encodeStoredSecret } from '../common/utils/token-security.util';
 import { ChatbotFacebookWebhookService } from './chatbot-facebook-webhook.service';
+import {
+  formatDiagramNodeContent,
+  KNOWLEDGE_DIAGRAM_URL,
+  parseKnowledgeDiagramFile,
+} from './utils/knowledge-diagram.util';
+import {
+  chunkWebsiteContent,
+  CrawlFetchError,
+  CrawlValidationError,
+  fetchAndExtractUrl,
+} from './utils/website-crawl.util';
+import { ChannelConnectionsService } from '../messaging/channel-connections.service';
 
 const MAX_BOTS = 10;
 const MAX_SOURCES = 50;
@@ -27,11 +42,14 @@ const MAX_CHANNELS = 30;
 
 @Injectable()
 export class ChatbotCskhService {
+  private readonly logger = new Logger(ChatbotCskhService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     @Inject(forwardRef(() => ChatbotFacebookWebhookService))
     private readonly facebookWebhook: ChatbotFacebookWebhookService,
+    private readonly channelConnections: ChannelConnectionsService,
   ) {}
 
   private appBaseUrl(): string {
@@ -212,6 +230,177 @@ export class ChatbotCskhService {
     return { success: true };
   }
 
+  /**
+   * Upload sơ đồ tri thức (.txt/.md/.csv/.json) → tách thành các nguồn FILE
+   * đánh dấu url = internal://knowledge-diagram để AI ưu tiên.
+   */
+  async uploadKnowledgeDiagram(
+    organizationId: string,
+    params: {
+      botId: string;
+      title?: string;
+      filename: string;
+      buffer: Buffer;
+      replaceExisting?: boolean;
+    },
+  ) {
+    if (!params.botId?.trim()) {
+      throw new BadRequestException('Thiếu botId — chọn chatbot trước khi upload sơ đồ.');
+    }
+    await this.findBotOrThrow(organizationId, params.botId);
+
+    const allowed = /\.(txt|md|markdown|csv|json)$/i;
+    if (!allowed.test(params.filename || '')) {
+      throw new BadRequestException(
+        'Chỉ hỗ trợ file .txt, .md, .csv, .json cho sơ đồ tri thức.',
+      );
+    }
+    if (!params.buffer?.length) {
+      throw new BadRequestException('File trống hoặc không đọc được.');
+    }
+    if (params.buffer.length > 2 * 1024 * 1024) {
+      throw new BadRequestException('File tối đa 2MB.');
+    }
+
+    const text = params.buffer.toString('utf8');
+    let nodes;
+    try {
+      nodes = parseKnowledgeDiagramFile({
+        filename: params.filename,
+        text,
+        defaultTitle: params.title || 'Sơ đồ tri thức',
+      });
+    } catch (e) {
+      throw new BadRequestException(e instanceof Error ? e.message : 'Không đọc được file');
+    }
+
+    if (!nodes.length) {
+      throw new BadRequestException(
+        'Không tìm thấy nội dung trong file. Dùng Markdown (# tiêu đề), CSV (title,content) hoặc JSON {nodes:[]}.',
+      );
+    }
+
+    if (params.replaceExisting) {
+      await this.prisma.chatbotKnowledgeSource.deleteMany({
+        where: {
+          organizationId,
+          botId: params.botId,
+          url: KNOWLEDGE_DIAGRAM_URL,
+        },
+      });
+    }
+
+    const existing = await this.prisma.chatbotKnowledgeSource.count({
+      where: { organizationId, botId: params.botId },
+    });
+    const remaining = MAX_SOURCES - existing;
+    if (remaining <= 0) {
+      throw new BadRequestException(`Tối đa ${MAX_SOURCES} nguồn dữ liệu. Hãy xóa bớt trước.`);
+    }
+
+    const toCreate = nodes.slice(0, remaining);
+    const mapTitle = (params.title || 'Sơ đồ tri thức').trim().slice(0, 80);
+
+    const created = await this.prisma.$transaction(
+      toCreate.map((node) =>
+        this.prisma.chatbotKnowledgeSource.create({
+          data: {
+            organizationId,
+            botId: params.botId,
+            title: `Sơ đồ: ${node.title}`.slice(0, 160),
+            sourceType: ChatbotSourceType.FILE,
+            content: formatDiagramNodeContent(node),
+            url: KNOWLEDGE_DIAGRAM_URL,
+            status: 'active',
+          },
+        }),
+      ),
+    );
+
+    return {
+      success: true,
+      mapTitle,
+      filename: params.filename,
+      imported: created.length,
+      skipped: nodes.length - created.length,
+      sources: created,
+    };
+  }
+
+  /**
+   * Quét URL website → lưu nội dung vào knowledge (sourceType URL)
+   * để chatbot AI trả lời dựa trên dữ liệu thật từ trang.
+   */
+  async crawlKnowledgeFromUrl(organizationId: string, dto: CrawlKnowledgeUrlDto) {
+    if (!dto.botId?.trim()) {
+      throw new BadRequestException('Thiếu botId — chọn chatbot trước khi quét website.');
+    }
+    await this.findBotOrThrow(organizationId, dto.botId);
+
+    let result;
+    try {
+      result = await fetchAndExtractUrl(dto.url);
+    } catch (e) {
+      if (e instanceof CrawlValidationError || e instanceof CrawlFetchError) {
+        throw new BadRequestException(e.message);
+      }
+      throw new BadRequestException('Không quét được website.');
+    }
+
+    const pageUrl = result.pageUrl.slice(0, 2000);
+    const baseTitle = (
+      dto.title?.trim() ||
+      result.title ||
+      `Website ${new URL(pageUrl).hostname}`
+    ).slice(0, 140);
+
+    if (dto.replaceExisting) {
+      await this.prisma.chatbotKnowledgeSource.deleteMany({
+        where: {
+          organizationId,
+          botId: dto.botId,
+          OR: [{ url: pageUrl }, { url: dto.url.trim() }],
+        },
+      });
+    }
+
+    const existing = await this.prisma.chatbotKnowledgeSource.count({
+      where: { organizationId, botId: dto.botId },
+    });
+    const remaining = MAX_SOURCES - existing;
+    if (remaining <= 0) {
+      throw new BadRequestException(`Tối đa ${MAX_SOURCES} nguồn dữ liệu. Hãy xóa bớt trước.`);
+    }
+
+    const chunks = chunkWebsiteContent(result.content).slice(0, remaining);
+    const created = await this.prisma.$transaction(
+      chunks.map((content, i) =>
+        this.prisma.chatbotKnowledgeSource.create({
+          data: {
+            organizationId,
+            botId: dto.botId,
+            title: (chunks.length > 1 ? `${baseTitle} (${i + 1})` : baseTitle).slice(0, 160),
+            sourceType: ChatbotSourceType.URL,
+            content,
+            url: pageUrl,
+            status: 'active',
+            crawlError: null,
+          },
+        }),
+      ),
+    );
+
+    return {
+      success: true,
+      url: pageUrl,
+      title: baseTitle,
+      imported: created.length,
+      contentLength: result.content.length,
+      preview: result.content.slice(0, 280),
+      sources: created,
+    };
+  }
+
   async listChannels(organizationId: string) {
     return this.prisma.chatbotChannel.findMany({
       where: { organizationId },
@@ -273,6 +462,50 @@ export class ChatbotCskhService {
     return conv;
   }
 
+  /** Nhân viên tiếp quản — dừng bot, gán NV, cập nhật lead CRM nếu có */
+  async takeoverConversation(
+    organizationId: string,
+    conversationId: string,
+    opts: { employeeId?: string; resumeBot?: boolean } = {},
+  ) {
+    const conv = await this.getConversation(organizationId, conversationId);
+    if (opts.resumeBot) {
+      return this.prisma.chatbotConversation.update({
+        where: { id: conv.id },
+        data: {
+          humanTakeover: false,
+          status: 'OPEN',
+        },
+      });
+    }
+
+    const updated = await this.prisma.chatbotConversation.update({
+      where: { id: conv.id },
+      data: {
+        humanTakeover: true,
+        status: 'NEEDS_STAFF',
+        assignedEmployeeId: opts.employeeId,
+      },
+    });
+
+    if (conv.linkedLeadId && opts.employeeId) {
+      await this.prisma.lead.updateMany({
+        where: { id: conv.linkedLeadId, organizationId },
+        data: { assignedToId: opts.employeeId },
+      });
+    }
+
+    await this.prisma.chatbotMessage.create({
+      data: {
+        conversationId: conv.id,
+        role: 'system',
+        message: 'Nhân viên đã tiếp quản hội thoại. Bot tạm dừng.',
+      },
+    });
+
+    return updated;
+  }
+
   async listLeads(organizationId: string, limit = 50) {
     return this.prisma.chatbotLead.findMany({
       where: { organizationId },
@@ -295,42 +528,145 @@ export class ChatbotCskhService {
   }
 
   async listFacebookPages(organizationId: string) {
-    return this.prisma.chatbotFacebookPage.findMany({
+    const pages = await this.prisma.chatbotFacebookPage.findMany({
       where: { organizationId },
       include: { bot: { select: { id: true, botName: true } } },
       orderBy: { createdAt: 'desc' },
     });
+    return pages.map((p) => ({
+      id: p.id,
+      organizationId: p.organizationId,
+      botId: p.botId,
+      pageId: p.pageId,
+      pageName: p.pageName,
+      aiEnabled: p.aiEnabled,
+      status: p.status,
+      webhookSubscribed: p.webhookSubscribed,
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+      hasPageToken: Boolean(p.pageAccessTokenEncrypted),
+      bot: p.bot,
+    }));
   }
 
   async connectFacebookPage(organizationId: string, dto: ConnectFacebookPageDto) {
     await this.findBotOrThrow(organizationId, dto.botId);
-    const subscribed = await this.facebookWebhook.subscribePageWebhook(
-      dto.pageId,
-      dto.pageAccessToken,
-    );
 
-    return this.prisma.chatbotFacebookPage.upsert({
-      where: { pageId: dto.pageId },
+    // Ưu tiên token/pageId gửi kèm (reconnect), fallback env server
+    const pageAccessToken = (
+      dto.pageAccessToken?.trim() ||
+      this.facebookWebhook.getMessengerPageToken()
+    ).trim();
+    const pageId = (dto.pageId?.trim() || this.facebookWebhook.getEnvPageId()).trim();
+    let pageName = (
+      dto.pageName ||
+      this.config.get<string>('META_PAGE_NAME') ||
+      'Trang Facebook'
+    ).trim();
+
+    if (!pageAccessToken || !pageId) {
+      throw new BadRequestException(
+        'Thiếu Page ID hoặc Page Access Token. Dán token mới từ Meta (Page Access Token) rồi thử lại.',
+      );
+    }
+
+    const probe = await this.facebookWebhook.validatePageToken(pageId, pageAccessToken);
+    if (!probe.ok) {
+      throw new BadRequestException(
+        probe.error === 'token_expired_or_missing_permission'
+          ? 'Page Access Token hết hạn hoặc thiếu quyền pages_messaging. Tạo token mới trên Meta rồi kết nối lại.'
+          : `Token Fanpage không hợp lệ: ${probe.error}`,
+      );
+    }
+    if (probe.pageName) pageName = probe.pageName;
+
+    const subscribed = await this.facebookWebhook.subscribePageWebhook(pageId, pageAccessToken);
+    if (!subscribed) {
+      throw new BadRequestException(
+        'Không subscribe được webhook messages/messaging_postbacks. Kiểm tra quyền pages_manage_metadata / pages_messaging và Callback URL Meta App.',
+      );
+    }
+
+    const encryptionKey = this.config.get<string>('ENCRYPTION_KEY');
+    if (!encryptionKey || encryptionKey.length < 16) {
+      throw new BadRequestException('ENCRYPTION_KEY chưa được cấu hình trên server');
+    }
+    const tokenStored = encodeStoredSecret(pageAccessToken, encryptionKey);
+
+    const existing = await this.prisma.chatbotFacebookPage.findUnique({ where: { pageId } });
+    if (existing && existing.organizationId !== organizationId) {
+      throw new NotFoundException('Không tìm thấy Fanpage');
+    }
+
+    const page = await this.prisma.chatbotFacebookPage.upsert({
+      where: { pageId },
       create: {
         organizationId,
         botId: dto.botId,
-        pageId: dto.pageId,
-        pageName: dto.pageName,
-        pageAccessTokenEncrypted: Buffer.from(dto.pageAccessToken).toString('base64'),
+        pageId,
+        pageName,
+        pageAccessTokenEncrypted: tokenStored,
         aiEnabled: dto.aiEnabled ?? true,
         status: 'connected',
         webhookSubscribed: subscribed,
       },
       update: {
+        organizationId,
         botId: dto.botId,
-        pageName: dto.pageName,
-        pageAccessTokenEncrypted: Buffer.from(dto.pageAccessToken).toString('base64'),
+        pageName,
+        pageAccessTokenEncrypted: tokenStored,
         aiEnabled: dto.aiEnabled ?? true,
         status: 'connected',
         webhookSubscribed: subscribed,
       },
       include: { bot: { select: { id: true, botName: true } } },
     });
+
+    // Chuẩn hóa channelRef cũ (từng lưu nhầm pageName) → pageId
+    await this.prisma.chatbotConversation.updateMany({
+      where: {
+        organizationId,
+        channel: 'facebook',
+        OR: [{ channelRef: pageName }, { sessionId: { startsWith: `fb:${pageId}:` } }],
+      },
+      data: { channelRef: pageId },
+    });
+
+    // Đồng bộ sang MessagingChannelConnection để nhắn tin hàng loạt dùng chung Page
+    try {
+      await this.channelConnections.upsertMessengerFromChatbot(
+        organizationId,
+        {
+          pageId,
+          pageAccessToken,
+          pageName,
+          subscribeWebhook: subscribed,
+        },
+      );
+    } catch (e) {
+      this.logger.warn(
+        `Sync chatbot page → messaging connection failed: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+      );
+    }
+
+    return {
+      id: page.id,
+      organizationId: page.organizationId,
+      botId: page.botId,
+      pageId: page.pageId,
+      pageName: page.pageName,
+      aiEnabled: page.aiEnabled,
+      status: page.status,
+      webhookSubscribed: page.webhookSubscribed,
+      createdAt: page.createdAt,
+      updatedAt: page.updatedAt,
+      hasPageToken: true,
+      bot: page.bot,
+      syncedToMessaging: true,
+      tokenValidated: true,
+    };
   }
 
   async disconnectFacebookPage(organizationId: string, id: string) {
@@ -338,8 +674,83 @@ export class ChatbotCskhService {
       where: { id, organizationId },
     });
     if (!page) throw new NotFoundException('Không tìm thấy Fanpage');
+
+    await this.channelConnections.disableMessengerPageAccess(page.pageId, {
+      organizationId,
+      reason: 'Chatbot Fanpage disconnected',
+    });
+
     await this.prisma.chatbotFacebookPage.delete({ where: { id } });
     return { success: true };
+  }
+
+  /**
+   * Đồng bộ mọi Fanpage chatbot → MessagingChannelConnection
+   * để Nhắn tin hàng loạt dùng chung Page.
+   */
+  async syncMessagingFromChatbotPages(organizationId: string) {
+    const pages = await this.prisma.chatbotFacebookPage.findMany({
+      where: { organizationId, status: 'connected' },
+      orderBy: { updatedAt: 'desc' },
+    });
+    if (pages.length === 0) {
+      throw new BadRequestException(
+        'Chưa có Fanpage chatbot nào. Kết nối Fanpage ở Chatbot CSKH trước.',
+      );
+    }
+
+    const envToken = this.facebookWebhook.getMessengerPageToken();
+    const results: Array<{
+      pageId: string;
+      pageName: string | null;
+      ok: boolean;
+      error?: string;
+      connectionId?: string;
+    }> = [];
+
+    for (const page of pages) {
+      const storedToken = this.facebookWebhook.decodePageToken(page.pageAccessTokenEncrypted);
+      const pageAccessToken = storedToken || envToken;
+      if (!pageAccessToken) {
+        results.push({
+          pageId: page.pageId,
+          pageName: page.pageName,
+          ok: false,
+          error: 'Thiếu Page Access Token',
+        });
+        continue;
+      }
+      try {
+        const connection = await this.channelConnections.upsertMessengerFromChatbot(
+          organizationId,
+          {
+            pageId: page.pageId,
+            pageAccessToken,
+            pageName: page.pageName ?? undefined,
+            subscribeWebhook: page.webhookSubscribed,
+          },
+        );
+        results.push({
+          pageId: page.pageId,
+          pageName: page.pageName,
+          ok: true,
+          connectionId: connection.id,
+        });
+      } catch (e) {
+        results.push({
+          pageId: page.pageId,
+          pageName: page.pageName,
+          ok: false,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+
+    return {
+      synced: results.filter((r) => r.ok).length,
+      failed: results.filter((r) => !r.ok).length,
+      results,
+    };
   }
 
   async getUsageSnapshot(organizationId: string) {

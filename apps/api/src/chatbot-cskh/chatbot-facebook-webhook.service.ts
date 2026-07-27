@@ -2,10 +2,12 @@ import {
   Inject,
   Injectable,
   Logger,
+  OnModuleInit,
   forwardRef,
   ForbiddenException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { createHmac, timingSafeEqual } from 'crypto';
 import {
   ChatbotBot,
   ChatbotBotStatus,
@@ -14,11 +16,14 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { OpenAiService } from '../openai/openai.service';
 import { ChatbotCskhService } from './chatbot-cskh.service';
+import { EventsGateway } from '../events/events.gateway';
+import { MessagingWebhookIngressService } from '../messaging/messaging-webhook-ingress.service';
 import { generateAiReply } from './utils/chatbot-ai.util';
 import {
   CREDIT_EXHAUSTED_MESSAGE,
   NO_DATA_REPLY,
 } from './utils/chatbot-constants';
+import { decodeStoredSecret, maskExternalId } from '../common/utils/token-security.util';
 
 type MetaMessagingEvent = {
   sender?: { id?: string };
@@ -28,8 +33,11 @@ type MetaMessagingEvent = {
     mid?: string;
     text?: string;
     is_echo?: boolean;
+    attachments?: unknown[];
   };
   postback?: { payload?: string; title?: string };
+  delivery?: unknown;
+  read?: unknown;
 };
 
 type MetaWebhookPayload = {
@@ -49,15 +57,25 @@ type FacebookPageWithBot = {
   pageName: string;
   pageAccessTokenEncrypted: string;
   aiEnabled: boolean;
+  status: string;
+  webhookSubscribed: boolean;
   bot: ChatbotBot;
 };
 
 @Injectable()
-export class ChatbotFacebookWebhookService {
+export class ChatbotFacebookWebhookService implements OnModuleInit {
   private readonly logger = new Logger(ChatbotFacebookWebhookService.name);
   private readonly lastReplyAt = new Map<string, number>();
+  private readonly recentMids = new Map<string, number>();
   private readonly minReplyIntervalMs = 3000;
   private readonly messagingWindowMs = 24 * 60 * 60 * 1000;
+  private readonly midTtlMs = 10 * 60 * 1000;
+  private lastWebhookAt: Date | null = null;
+  private lastWebhookPageId: string | null = null;
+  private lastWebhookEventId: string | null = null;
+  private lastWebhookError: string | null = null;
+  private processedCount = 0;
+  private skippedCount = 0;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -65,13 +83,43 @@ export class ChatbotFacebookWebhookService {
     private readonly chatbot: ChatbotCskhService,
     private readonly openAi: OpenAiService,
     private readonly config: ConfigService,
+    private readonly events: EventsGateway,
+    private readonly messagingIngress: MessagingWebhookIngressService,
   ) {}
+
+  onModuleInit() {
+    // Nhận chung payload khi Meta gọi /messaging/webhooks/messenger
+    this.messagingIngress.registerChatbotPageHandler((payload) => {
+      this.processPayloadAsync(payload as MetaWebhookPayload);
+    });
+  }
 
   getVerifyToken(): string {
     return (
       this.config.get<string>('CSKH_FB_WEBHOOK_VERIFY_TOKEN') ||
       this.config.get<string>('FACEBOOK_WEBHOOK_VERIFY_TOKEN') ||
       'marketingspa_cskh_fb'
+    ).trim();
+  }
+
+  /** Page Access Token ưu tiên token chat Messenger. */
+  getMessengerPageToken(): string {
+    return (
+      this.config.get<string>('META_MESSENGER_TOKEN_CHAT') ||
+      this.config.get<string>('META_PAGE_ACCESS_TOKEN') ||
+      ''
+    ).trim();
+  }
+
+  getEnvPageId(): string {
+    return (this.config.get<string>('META_PAGE_ID') || '').trim();
+  }
+
+  getAppSecret(): string {
+    return (
+      this.config.get<string>('META_APP_SECRET') ||
+      this.config.get<string>('FACEBOOK_APP_SECRET') ||
+      ''
     ).trim();
   }
 
@@ -87,6 +135,141 @@ export class ChatbotFacebookWebhookService {
     return `${apiUrl}${this.getWebhookPath()}`;
   }
 
+  /** Trạng thái kết nối an toàn cho UI (không lộ token / verify token). */
+  async getPublicConnectStatus(organizationId?: string) {
+    const pageId = this.getEnvPageId();
+    const hasToken = Boolean(this.getMessengerPageToken());
+    const appSecretConfigured = Boolean(this.getAppSecret());
+    const verifyTokenConfigured = Boolean(this.getVerifyToken());
+
+    const pageRows = organizationId
+      ? await this.prisma.chatbotFacebookPage.findMany({
+          where: { organizationId },
+          include: { bot: { select: { id: true, botName: true, status: true } } },
+          orderBy: { updatedAt: 'desc' },
+          take: 20,
+        })
+      : [];
+
+    const connectedPages = pageRows.filter((p) => p.status === 'connected');
+    const webhookOk = connectedPages.some((p) => p.webhookSubscribed);
+    const botActive = connectedPages.some((p) => p.bot.status === ChatbotBotStatus.ACTIVE);
+
+    let tokenHealth: 'ok' | 'missing' | 'decode_failed' | 'expired' | 'unknown' = 'unknown';
+    let tokenError: string | null = null;
+    if (connectedPages.length > 0) {
+      const sample = connectedPages[0]!;
+      const decoded =
+        this.decodePageToken(sample.pageAccessTokenEncrypted) || this.getMessengerPageToken();
+      if (!decoded) {
+        tokenHealth = 'decode_failed';
+      } else {
+        const probe = await this.validatePageToken(sample.pageId, decoded);
+        if (probe.ok) {
+          tokenHealth = 'ok';
+        } else {
+          tokenHealth = 'expired';
+          tokenError = probe.error || 'token_invalid';
+          this.lastWebhookError = tokenError;
+        }
+      }
+    } else if (pageId && hasToken) {
+      const probe = await this.validatePageToken(pageId, this.getMessengerPageToken());
+      tokenHealth = probe.ok ? 'ok' : 'expired';
+      tokenError = probe.ok ? null : probe.error || 'token_invalid';
+    } else {
+      tokenHealth = hasToken ? 'ok' : 'missing';
+    }
+
+    return {
+      ok: true,
+      serverConfigured: Boolean(pageId && hasToken),
+      pageIdMasked: pageId ? `••••${pageId.slice(-4)}` : null,
+      pageNameHint: (this.config.get<string>('META_PAGE_NAME') || '').trim() || null,
+      webhookUrl: this.getWebhookUrl(),
+      verifyTokenConfigured,
+      appSecretConfigured,
+      signatureMode: appSecretConfigured ? 'required' : 'optional',
+      subscribedFields: ['messages', 'messaging_postbacks'],
+      connectedPageCount: connectedPages.length,
+      webhookSubscribed: webhookOk,
+      botActive,
+      tokenHealth,
+      tokenError,
+      lastWebhookAt: this.lastWebhookAt?.toISOString() ?? null,
+      lastWebhookPageIdMasked: this.lastWebhookPageId
+        ? `••••${this.lastWebhookPageId.slice(-4)}`
+        : null,
+      lastWebhookEventId: this.lastWebhookEventId,
+      lastWebhookError: this.lastWebhookError,
+      processedCount: this.processedCount,
+      skippedCount: this.skippedCount,
+      pages: pageRows.map((p) => ({
+        id: p.id,
+        pageIdMasked: `••••${p.pageId.slice(-4)}`,
+        pageName: p.pageName,
+        status: p.status,
+        webhookSubscribed: p.webhookSubscribed,
+        aiEnabled: p.aiEnabled,
+        botName: p.bot.botName,
+        botStatus: p.bot.status,
+        hasPageToken: Boolean(p.pageAccessTokenEncrypted),
+        pageIdMatchesEnv: pageId ? p.pageId === pageId : null,
+      })),
+      hints: this.buildStatusHints({
+        serverConfigured: Boolean(pageId && hasToken),
+        connectedPageCount: connectedPages.length,
+        webhookOk,
+        botActive,
+        tokenHealth,
+        lastWebhookAt: this.lastWebhookAt,
+        lastWebhookError: this.lastWebhookError,
+      }),
+    };
+  }
+
+  private buildStatusHints(input: {
+    serverConfigured: boolean;
+    connectedPageCount: number;
+    webhookOk: boolean;
+    botActive: boolean;
+    tokenHealth: string;
+    lastWebhookAt: Date | null;
+    lastWebhookError: string | null;
+  }): string[] {
+    const hints: string[] = [];
+    if (!input.serverConfigured) {
+      hints.push('Server chưa cấu hình META_PAGE_ID / Page Access Token.');
+    }
+    if (input.connectedPageCount === 0) {
+      hints.push('Chưa kết nối Fanpage trong tab Kênh — bấm «Kết nối trang Facebook».');
+    }
+    if (input.connectedPageCount > 0 && !input.webhookOk) {
+      hints.push(
+        'Fanpage chưa subscribe webhook (messages/messaging_postbacks). Thử kết nối lại.',
+      );
+    }
+    if (input.connectedPageCount > 0 && !input.botActive) {
+      hints.push('Bot gắn Fanpage chưa ở trạng thái Đang chạy — tin vẫn lưu Inbox nhưng AI không trả lời.');
+    }
+    if (input.tokenHealth === 'decode_failed' || input.tokenHealth === 'missing') {
+      hints.push('Page Access Token thiếu hoặc không giải mã được — kiểm tra ENCRYPTION_KEY / token.');
+    }
+    if (input.tokenHealth === 'expired') {
+      hints.push(
+        'Page Access Token đã hết hạn hoặc thiếu quyền pages_messaging. Dán Page Access Token mới rồi bấm Kết nối lại.',
+      );
+    }
+    if (!input.lastWebhookAt) {
+      hints.push(
+        'Chưa nhận webhook thực tế từ Meta. Sau khi token OK, kết nối lại để subscribe messages/messaging_postbacks.',
+      );
+    }    if (input.lastWebhookError) {
+      hints.push(`Lỗi gần nhất: ${input.lastWebhookError}`);
+    }
+    return hints;
+  }
+
   private graphVersion(): string {
     return (
       this.config.get<string>('META_API_VERSION') ||
@@ -97,25 +280,90 @@ export class ChatbotFacebookWebhookService {
 
   verifyChallenge(mode?: string, token?: string, challenge?: string): string {
     if (mode === 'subscribe' && token === this.getVerifyToken() && challenge) {
+      this.logger.log('Meta webhook verify OK');
       return challenge;
     }
+    this.logger.warn(
+      `Webhook verify failed mode=${mode || '-'} tokenMatch=${token === this.getVerifyToken()}`,
+    );
     throw new ForbiddenException('Webhook verify failed');
   }
 
   /**
-   * Chatbot chỉ dùng Page Access Token — không bắt buộc META_APP_ID/SECRET.
-   * Signature Meta App bỏ qua (MVP token-only).
+   * Verify X-Hub-Signature-256 khi có META_APP_SECRET — fail-closed (không soft-fail).
+   * Thiếu header / rawBody / mismatch → false.
    */
-  verifySignature(_rawBody?: Buffer, _signatureHeader?: string): boolean {
-    return true;
+  verifySignature(rawBody?: Buffer, signatureHeader?: string): boolean {
+    const secret = this.getAppSecret();
+    if (!secret) {
+      return true;
+    }
+
+    if (!signatureHeader?.startsWith('sha256=')) {
+      this.logger.warn('Meta signature header missing');
+      return false;
+    }
+    if (!rawBody?.length) {
+      this.logger.warn('Meta webhook rawBody missing — cannot verify signature');
+      return false;
+    }
+    const expected = createHmac('sha256', secret).update(rawBody).digest('hex');
+    const received = signatureHeader.slice('sha256='.length).trim();
+    try {
+      const a = Buffer.from(expected, 'hex');
+      const b = Buffer.from(received, 'hex');
+      if (a.length !== b.length || !timingSafeEqual(a, b)) {
+        this.logger.warn('Meta signature mismatch — check META_APP_SECRET matches webhook app');
+        return false;
+      }
+      return true;
+    } catch {
+      this.logger.warn('Meta signature parse failed');
+      return false;
+    }
+  }
+
+  /** Kiểm tra Page Access Token còn sống + đúng pageId (không log token). */
+  async validatePageToken(
+    pageId: string,
+    pageAccessToken: string,
+  ): Promise<{ ok: boolean; pageName?: string; error?: string }> {
+    if (!pageId || !pageAccessToken) {
+      return { ok: false, error: 'missing_page_id_or_token' };
+    }
+    try {
+      const url = new URL(`https://graph.facebook.com/${this.graphVersion()}/me`);
+      url.searchParams.set('fields', 'id,name');
+      url.searchParams.set('access_token', pageAccessToken);
+      const res = await fetch(url.toString());
+      const data = (await res.json().catch(() => ({}))) as {
+        id?: string;
+        name?: string;
+        error?: { message?: string; code?: number };
+      };
+      if (!res.ok || data.error) {
+        const msg = data.error?.message || `http_${res.status}`;
+        this.lastWebhookError =
+          data.error?.code === 190 ? 'token_expired_or_missing_permission' : msg.slice(0, 120);
+        return { ok: false, error: this.lastWebhookError };
+      }
+      if (data.id && data.id !== pageId) {
+        return {
+          ok: false,
+          error: `token_page_mismatch:token_for_${data.id.slice(-4)}_expected_${pageId.slice(-4)}`,
+          pageName: data.name,
+        };
+      }
+      return { ok: true, pageName: data.name };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
   }
 
   decodePageToken(encrypted: string): string {
-    try {
-      return Buffer.from(encrypted, 'base64').toString('utf8').trim();
-    } catch {
-      return '';
-    }
+    const key = this.config.get<string>('ENCRYPTION_KEY');
+    if (!key) return '';
+    return decodeStoredSecret(encrypted, key);
   }
 
   async subscribePageWebhook(pageId: string, pageAccessToken: string): Promise<boolean> {
@@ -127,14 +375,23 @@ export class ChatbotFacebookWebhookService {
       url.searchParams.set('subscribed_fields', 'messages,messaging_postbacks');
 
       const res = await fetch(url.toString(), { method: 'POST' });
-      const data = (await res.json().catch(() => ({}))) as { success?: boolean };
+      const data = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        error?: { message?: string; code?: number };
+      };
       const ok = res.ok && Boolean(data.success);
       if (!ok) {
-        this.logger.warn(`Subscribe webhook failed page=${pageId}: ${JSON.stringify(data).slice(0, 200)}`);
+        this.logger.warn(
+          `Subscribe webhook failed page=${pageId}: ${JSON.stringify(data).slice(0, 200)}`,
+        );
+        this.lastWebhookError = data.error?.message || 'subscribe_failed';
+      } else {
+        this.logger.log(`Subscribed page=${pageId} fields=messages,messaging_postbacks`);
       }
       return ok;
     } catch (err) {
       this.logger.warn(`Subscribe webhook exception page=${pageId}: ${(err as Error).message}`);
+      this.lastWebhookError = (err as Error).message;
       return false;
     }
   }
@@ -142,29 +399,72 @@ export class ChatbotFacebookWebhookService {
   /** Fire-and-forget entry — always acknowledge Meta quickly from controller. */
   processPayloadAsync(payload: MetaWebhookPayload): void {
     void this.processPayload(payload).catch((err) => {
+      this.lastWebhookError = (err as Error).message;
       this.logger.error(`Messenger webhook failed: ${(err as Error).message}`);
     });
   }
 
   async processPayload(payload: MetaWebhookPayload): Promise<void> {
-    if (payload.object && payload.object !== 'page') return;
+    if (payload.object && payload.object !== 'page') {
+      this.logger.debug(`Ignore non-page object=${payload.object}`);
+      return;
+    }
     const entries = Array.isArray(payload.entry) ? payload.entry : [];
+    if (!entries.length) {
+      this.logger.warn('Messenger webhook empty entry[]');
+      return;
+    }
+
+    this.lastWebhookAt = new Date();
 
     for (const entry of entries) {
       const pageId = String(entry?.id || '').trim();
       if (!pageId) continue;
+      this.lastWebhookPageId = pageId;
 
-      const fbPage = await this.prisma.chatbotFacebookPage.findFirst({
-        where: { pageId, status: 'connected' },
-        include: { bot: true },
-      });
-      if (!fbPage || fbPage.bot.status !== ChatbotBotStatus.ACTIVE) continue;
+      const fbPage = await this.resolveFacebookPage(pageId);
+      if (!fbPage) {
+        this.skippedCount += 1;
+        this.lastWebhookError = `unmapped_page:${pageId.slice(-4)}`;
+        this.logger.warn(
+          `No ChatbotFacebookPage mapping pageId=••••${pageId.slice(-4)} — connect Fanpage in Chatbot CSKH`,
+        );
+        continue;
+      }
 
       const events = Array.isArray(entry.messaging) ? entry.messaging : [];
+      if (!events.length) {
+        this.logger.debug(`No messaging[] for page=••••${pageId.slice(-4)}`);
+        continue;
+      }
+
       for (const event of events) {
         await this.handleMessagingEvent(fbPage, event);
       }
     }
+  }
+
+  private async resolveFacebookPage(pageId: string): Promise<FacebookPageWithBot | null> {
+    const row = await this.prisma.chatbotFacebookPage.findFirst({
+      where: {
+        OR: [{ pageId }, ...(this.getEnvPageId() === pageId ? [{ pageId: this.getEnvPageId() }] : [])],
+        status: 'connected',
+      },
+      include: { bot: true },
+    });
+    if (row) return row as FacebookPageWithBot;
+
+    // Fallback: bất kỳ bản ghi cùng pageId (kể cả status khác) để log rõ
+    const any = await this.prisma.chatbotFacebookPage.findFirst({
+      where: { pageId },
+      include: { bot: true },
+    });
+    if (any) {
+      this.logger.warn(
+        `Fanpage pageId=••••${pageId.slice(-4)} status=${any.status} — cần status=connected`,
+      );
+    }
+    return null;
   }
 
   private async handleMessagingEvent(
@@ -172,58 +472,224 @@ export class ChatbotFacebookWebhookService {
     event: MetaMessagingEvent,
   ) {
     const psid = String(event.sender?.id || '').trim();
-    if (!psid) return;
+    const eventId =
+      String(event.message?.mid || '').trim() ||
+      `pb:${event.timestamp || Date.now()}:${psid.slice(-6)}`;
+    this.lastWebhookEventId = eventId.slice(0, 64);
+
+    if (!psid) {
+      this.skippedCount += 1;
+      return;
+    }
+
+    // Bỏ echo / delivery / read — không phải tin khách
+    if (event.message?.is_echo) {
+      this.skippedCount += 1;
+      return;
+    }
+    if (event.delivery || event.read) {
+      this.skippedCount += 1;
+      return;
+    }
 
     const text =
       String(event.message?.text || '').trim() ||
       String(event.postback?.title || event.postback?.payload || '').trim();
-    if (!text) return;
-    if (event.message?.is_echo) return;
 
-    const rateKey = `${fbPage.pageId}:${psid}`;
-    if (!this.allowReply(rateKey)) {
-      this.logger.debug(`Rate limited FB reply ${rateKey}`);
+    if (!text) {
+      // Attachment-only: vẫn tạo hội thoại + ghi chú để Inbox thấy
+      if (event.message?.attachments?.length) {
+        await this.persistInbound({
+          fbPage,
+          psid,
+          eventId,
+          text: '[Khách gửi ảnh/file đính kèm]',
+        });
+        this.processedCount += 1;
+      } else {
+        this.skippedCount += 1;
+        this.logger.debug(
+          `Skip empty event page=••••${fbPage.pageId.slice(-4)} sender=${maskExternalId(psid)} eventId=${eventId.slice(0, 24)}`,
+        );
+      }
       return;
     }
 
-    const sessionId = `fb:${fbPage.pageId}:${psid}`.slice(0, 64);
-    const conversation = await this.getOrCreateFbConversation(
-      fbPage.organizationId,
-      fbPage.botId,
-      sessionId,
-      psid,
-      fbPage.pageName || fbPage.pageId,
+    this.logger.log(
+      `FB inbound page=••••${fbPage.pageId.slice(-4)} sender=${maskExternalId(psid)} eventId=${eventId.slice(0, 32)}`,
     );
 
-    await this.prisma.chatbotMessage.create({
-      data: {
-        conversationId: conversation.id,
-        role: 'user',
-        message: text.slice(0, 2000),
-      },
-    });
+    if (this.isDuplicateMid(eventId)) {
+      this.skippedCount += 1;
+      this.logger.debug(`Dedupe webhook eventId=${eventId.slice(0, 32)}`);
+      return;
+    }
+    this.markMid(eventId);
 
-    await this.prisma.chatbotConversation.update({
-      where: { id: conversation.id },
-      data: { lastUserMessageAt: new Date() },
+    const { conversation, isDuplicate } = await this.persistInbound({
+      fbPage,
+      psid,
+      eventId,
+      text,
     });
+    if (isDuplicate) {
+      this.skippedCount += 1;
+      return;
+    }
+    this.processedCount += 1;
+
+    // AI reply — tách khỏi lưu tin; rate-limit chỉ áp dụng cho reply
+    const rateKey = `${fbPage.pageId}:${psid}`;
+    if (!this.allowReply(rateKey)) {
+      this.logger.debug(
+        `AI rate-limited page=••••${fbPage.pageId.slice(-4)} sender=${maskExternalId(psid)}`,
+      );
+      return;
+    }
+
+    if (conversation.humanTakeover) {
+      await this.markNeedsStaff(conversation.id);
+      return;
+    }
+
+    if (fbPage.bot.status !== ChatbotBotStatus.ACTIVE) {
+      await this.markNeedsStaff(conversation.id);
+      this.logger.warn(
+        `Bot ${fbPage.botId} not ACTIVE — message saved, AI skipped`,
+      );
+      return;
+    }
 
     if (!fbPage.aiEnabled) {
       await this.markNeedsStaff(conversation.id);
       return;
     }
 
-    const usage = await this.chatbot.getUsageSnapshot(fbPage.organizationId);
-    const pageToken = this.decodePageToken(fbPage.pageAccessTokenEncrypted);
-
-    if (!usage.allowed) {
-      await this.sendText(fbPage.pageId, pageToken, psid, CREDIT_EXHAUSTED_MESSAGE);
+    const inboundAt = new Date();
+    if (!this.withinMessagingWindow(inboundAt)) {
       await this.markNeedsStaff(conversation.id);
       return;
     }
 
-    if (!this.withinMessagingWindow(conversation.lastUserMessageAt ?? conversation.updatedAt)) {
-      await this.markNeedsStaff(conversation.id);
+    await this.generateAndSendReply({
+      fbPage,
+      conversationId: conversation.id,
+      psid,
+      text,
+    });
+  }
+
+  private async persistInbound(params: {
+    fbPage: FacebookPageWithBot;
+    psid: string;
+    eventId: string;
+    text: string;
+  }) {
+    const { fbPage, psid, eventId, text } = params;
+    const sessionId = `fb:${fbPage.pageId}:${psid}`.slice(0, 64);
+    const conversation = await this.getOrCreateFbConversation(
+      fbPage.organizationId,
+      fbPage.botId,
+      sessionId,
+      psid,
+      fbPage.pageId,
+    );
+
+    // Chống trùng: cùng mid trong 10 phút (lưu mid vào đầu message ẩn nếu cần)
+    const recentDup = await this.prisma.chatbotMessage.findFirst({
+      where: {
+        conversationId: conversation.id,
+        role: 'user',
+        createdAt: { gte: new Date(Date.now() - 60_000) },
+        OR: [
+          { message: text.slice(0, 2000) },
+          { message: { startsWith: `[mid:${eventId.slice(0, 48)}]` } },
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (recentDup && recentDup.message === text.slice(0, 2000)) {
+      // Exact same text within 60s without mid — likely retry
+      const ageMs = Date.now() - recentDup.createdAt.getTime();
+      if (ageMs < 15_000) {
+        return { conversation, isDuplicate: true as const };
+      }
+    }
+    if (recentDup?.message?.startsWith(`[mid:${eventId.slice(0, 48)}]`)) {
+      return { conversation, isDuplicate: true as const };
+    }
+
+    const storedText = text.slice(0, 2000);
+
+    await this.prisma.chatbotMessage.create({
+      data: {
+        conversationId: conversation.id,
+        role: 'user',
+        message: storedText,
+      },
+    });
+
+    await this.prisma.chatbotConversation.update({
+      where: { id: conversation.id },
+      data: {
+        lastUserMessageAt: new Date(),
+        channel: 'facebook',
+        channelRef: fbPage.pageId,
+        externalUserId: psid,
+        status:
+          conversation.status === ChatbotConversationStatus.CLOSED
+            ? ChatbotConversationStatus.OPEN
+            : conversation.status,
+      },
+    });
+
+    try {
+      this.events.broadcastChatbotMessageNew(fbPage.organizationId, {
+        conversationId: conversation.id,
+        channel: 'facebook',
+        preview: text.slice(0, 120),
+        visitorName: conversation.visitorName || undefined,
+        pageName: fbPage.pageName || undefined,
+        botId: fbPage.botId,
+      });
+    } catch (err) {
+      this.logger.warn(`Realtime chatbot notify failed: ${(err as Error).message}`);
+    }
+
+    // Đánh dấu đã nhận webhook thực tế
+    if (!fbPage.webhookSubscribed) {
+      await this.prisma.chatbotFacebookPage
+        .update({
+          where: { id: fbPage.id },
+          data: { webhookSubscribed: true },
+        })
+        .catch(() => undefined);
+    }
+
+    return { conversation, isDuplicate: false as const };
+  }
+
+  private async generateAndSendReply(params: {
+    fbPage: FacebookPageWithBot;
+    conversationId: string;
+    psid: string;
+    text: string;
+  }) {
+    const { fbPage, conversationId, psid, text } = params;
+    const usage = await this.chatbot.getUsageSnapshot(fbPage.organizationId);
+    const pageToken =
+      this.decodePageToken(fbPage.pageAccessTokenEncrypted) || this.getMessengerPageToken();
+
+    if (!pageToken) {
+      this.lastWebhookError = 'missing_page_token';
+      this.logger.warn(`No page token for page=••••${fbPage.pageId.slice(-4)}`);
+      await this.markNeedsStaff(conversationId);
+      return;
+    }
+
+    if (!usage.allowed) {
+      await this.sendText(fbPage.pageId, pageToken, psid, CREDIT_EXHAUSTED_MESSAGE);
+      await this.markNeedsStaff(conversationId);
       return;
     }
 
@@ -232,7 +698,7 @@ export class ChatbotFacebookWebhookService {
         where: { botId: fbPage.botId, status: { in: ['active', 'ready'] } },
       }),
       this.prisma.chatbotMessage.findMany({
-        where: { conversationId: conversation.id },
+        where: { conversationId },
         orderBy: { createdAt: 'asc' },
         take: 20,
       }),
@@ -276,12 +742,12 @@ export class ChatbotFacebookWebhookService {
     }
 
     if (aiResult.showLead || aiResult.noData) {
-      await this.markNeedsStaff(conversation.id);
+      await this.markNeedsStaff(conversationId);
     }
 
     await this.prisma.chatbotMessage.create({
       data: {
-        conversationId: conversation.id,
+        conversationId,
         role: 'assistant',
         message: aiResult.reply.slice(0, 2000),
       },
@@ -307,8 +773,21 @@ export class ChatbotFacebookWebhookService {
       });
     }
 
-    if (pageToken) {
-      await this.sendText(fbPage.pageId, pageToken, psid, aiResult.reply);
+    const sent = await this.sendText(fbPage.pageId, pageToken, psid, aiResult.reply);
+    if (!sent) {
+      this.lastWebhookError = 'send_failed';
+    }
+
+    try {
+      this.events.broadcastChatbotMessageNew(fbPage.organizationId, {
+        conversationId,
+        channel: 'facebook',
+        preview: aiResult.reply.slice(0, 120),
+        pageName: fbPage.pageName || undefined,
+        botId: fbPage.botId,
+      });
+    } catch {
+      /* ignore */
     }
   }
 
@@ -319,6 +798,7 @@ export class ChatbotFacebookWebhookService {
     psid: string,
     channelRef: string,
   ) {
+    const pageId = channelRef.slice(0, 128);
     const existing = await this.prisma.chatbotConversation.findUnique({
       where: { botId_sessionId: { botId, sessionId } },
     });
@@ -327,7 +807,7 @@ export class ChatbotFacebookWebhookService {
         where: { id: existing.id },
         data: {
           externalUserId: psid,
-          channelRef: channelRef.slice(0, 128),
+          channelRef: pageId,
           channel: 'facebook',
         },
       });
@@ -340,8 +820,9 @@ export class ChatbotFacebookWebhookService {
         sessionId,
         channel: 'facebook',
         externalUserId: psid,
-        channelRef: channelRef.slice(0, 128),
+        channelRef: pageId,
         status: ChatbotConversationStatus.OPEN,
+        visitorName: 'Khách Messenger',
       },
     });
   }
@@ -359,6 +840,24 @@ export class ChatbotFacebookWebhookService {
     if (now - last < this.minReplyIntervalMs) return false;
     this.lastReplyAt.set(key, now);
     return true;
+  }
+
+  private isDuplicateMid(eventId: string): boolean {
+    this.pruneMids();
+    if (this.recentMids.has(eventId)) return true;
+    return false;
+  }
+
+  private markMid(eventId: string) {
+    this.recentMids.set(eventId, Date.now());
+    this.pruneMids();
+  }
+
+  private pruneMids() {
+    const cutoff = Date.now() - this.midTtlMs;
+    for (const [k, t] of this.recentMids) {
+      if (t < cutoff) this.recentMids.delete(k);
+    }
   }
 
   private withinMessagingWindow(lastUserAt: Date): boolean {
@@ -379,12 +878,18 @@ export class ChatbotFacebookWebhookService {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           recipient: { id: psid },
+          messaging_type: 'RESPONSE',
           message: { text: String(text || '').slice(0, 2000) },
         }),
       });
       if (!res.ok) {
         const body = await res.text();
         this.logger.warn(`Send FB message failed page=${pageId}: ${body.slice(0, 300)}`);
+        if (body.includes('190') || body.toLowerCase().includes('session has expired')) {
+          this.lastWebhookError = 'token_expired';
+        } else if (body.includes('10') || body.includes('permission')) {
+          this.lastWebhookError = 'missing_permission';
+        }
         return false;
       }
       return true;
