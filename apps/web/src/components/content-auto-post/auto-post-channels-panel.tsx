@@ -137,6 +137,18 @@ export function AutoPostChannelsPanel() {
           </div>
         )}
         {errorMsg && <ErrorState message={errorMsg} onRetry={() => setErrorMsg('')} />}
+        {(fbStatus?.needsReconnect || fbStatus?.status === 'NEEDS_RECONNECT') && (
+          <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            Trạng thái: <strong>NEEDS_RECONNECT</strong> — Token Facebook đã hết hạn. Bấm
+            &quot;Kết nối lại&quot; để cấp lại quyền.
+          </div>
+        )}
+        {fbStatus?.status === 'MISSING_PERMISSION' && (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+            Trạng thái: <strong>MISSING_PERMISSION</strong> — thiếu{' '}
+            <code>pages_manage_posts</code>. Kết nối lại và cấp đủ quyền đăng bài.
+          </div>
+        )}
         {fbStatus?.lastError && (
           <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
             Lỗi gần nhất: {fbStatus.lastError}
@@ -144,13 +156,18 @@ export function AutoPostChannelsPanel() {
         )}
 
         <div className="flex flex-wrap gap-2">
-          {fbStatus?.connected ? (
+          {fbStatus?.connected ||
+          fbStatus?.needsReconnect ||
+          fbStatus?.status === 'NEEDS_RECONNECT' ||
+          fbStatus?.status === 'MISSING_PERMISSION' ||
+          fbStatus?.status === 'TOKEN_EXPIRED' ||
+          fbStatus?.status === 'ERROR' ? (
             <>
               {needsOauthPageSelection ? (
                 <Button variant="outline" onClick={() => setOauthPickOpen(true)}>
                   Chọn Fanpage
                 </Button>
-              ) : (
+              ) : fbStatus?.connected ? (
                 <Button variant="outline" onClick={handleRefreshPages}>
                   {mutations.refreshPages.isPending ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -159,7 +176,18 @@ export function AutoPostChannelsPanel() {
                   )}
                   Làm mới Fanpage
                 </Button>
-              )}
+              ) : null}
+              <Button
+                onClick={handleConnectFacebook}
+                disabled={mutations.connectFacebook.isPending || !canConnect}
+              >
+                {mutations.connectFacebook.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Facebook className="mr-2 h-4 w-4" />
+                )}
+                Kết nối lại
+              </Button>
               <Button
                 variant="destructive"
                 onClick={handleDisconnect}

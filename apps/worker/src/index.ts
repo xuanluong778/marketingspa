@@ -12,17 +12,23 @@ import { initSentry, captureException } from './sentry';
 import { registerRepeatableJobs } from './schedulers/register-jobs';
 import {
   processAppointmentReminders,
-  processAutomationMessage,
   processBackup,
   processCampaignSend,
   processDailyReport,
   processLeadAlertScan,
 } from './processors/jobs';
-import {
-  processAutoPostPublish,
-  processAutoPostScheduledScan,
-} from './processors/auto-post';
+import { processAutomationMessage } from './processors/automation-run';
+import { processAutoPostPublish, processAutoPostScheduledScan } from './processors/auto-post';
 import { processHrmAttendanceRebuild } from './processors/hrm-attendance';
+import { processOfflineConversion } from './processors/offline-conversion';
+import { processMessagingWebhook } from './processors/messaging-webhook';
+import { processMessagingCampaignPlan } from './processors/messaging-campaign-plan';
+import { processMessagingCampaignDispatch } from './processors/messaging-campaign-dispatch';
+import { processMessagingSend } from './processors/messaging-send';
+import { processMessagingCampaignScheduledScan } from './processors/messaging-campaign-scheduled-scan';
+import { processAdsSync } from './processors/ads-sync';
+import { processAdsAction } from './processors/ads-action';
+import { processAffiliateHoldRelease } from './processors/affiliate-hold';
 
 initSentry();
 
@@ -64,18 +70,65 @@ async function start() {
       concurrency: 1,
     }),
     new Worker(QUEUE_NAMES.BACKUP, () => processBackup(), { ...opts, concurrency: 1 }),
-    new Worker(QUEUE_NAMES.AUTO_POST_PUBLISH, (job) => {
-      if (job.name === 'scan-due-scheduled') return processAutoPostScheduledScan();
-      // Job chuẩn bị cho lịch đăng env-token Fanpage — chưa bật processor publish.
-      if (job.name === 'meta-fanpage-publish') {
-        console.warn(
-          '[auto-post] meta-fanpage-publish nhận job nhưng chưa kích hoạt schedule processor — bỏ qua.',
-        );
-        return { skipped: true, reason: 'meta_fanpage_schedule_not_enabled' };
-      }
-      return processAutoPostPublish(job);
-    }, opts),
+    new Worker(
+      QUEUE_NAMES.AUTO_POST_PUBLISH,
+      async (job) => {
+        if (job.name === 'scan-due-scheduled') return processAutoPostScheduledScan(redis);
+        if (job.name === 'meta-fanpage-publish') {
+          console.warn(
+            '[auto-post] meta-fanpage-publish nhận job nhưng chưa kích hoạt schedule processor — bỏ qua.',
+          );
+          return { skipped: true, reason: 'meta_fanpage_schedule_not_enabled' };
+        }
+        return processAutoPostPublish(job, redis);
+      },
+      opts,
+    ),
     new Worker(QUEUE_NAMES.HRM_ATTENDANCE_REBUILD, (job) => processHrmAttendanceRebuild(job), {
+      ...opts,
+      concurrency: 2,
+    }),
+    new Worker(QUEUE_NAMES.OFFLINE_CONVERSION, (job) => processOfflineConversion(job), {
+      ...opts,
+      concurrency: 2,
+    }),
+    new Worker(QUEUE_NAMES.MESSAGING_WEBHOOK, (job) => processMessagingWebhook(job, redis), {
+      ...opts,
+      concurrency: 4,
+    }),
+    new Worker(
+      QUEUE_NAMES.MESSAGING_CAMPAIGN_PLAN,
+      async (job) => {
+        if (job.name === 'scan-due-scheduled-campaigns') {
+          return processMessagingCampaignScheduledScan(job);
+        }
+        return processMessagingCampaignPlan(job, redis);
+      },
+      {
+        ...opts,
+        concurrency: 2,
+      },
+    ),
+    new Worker(
+      QUEUE_NAMES.MESSAGING_CAMPAIGN_DISPATCH,
+      (job) => processMessagingCampaignDispatch(job, redis),
+      { ...opts, concurrency: 3 },
+    ),
+    new Worker(QUEUE_NAMES.MESSAGING_SEND, (job) => processMessagingSend(job, redis), {
+      ...opts,
+      concurrency: 5,
+    }),
+    new Worker(QUEUE_NAMES.ADS_SYNC, (job) => processAdsSync(job, redis), {
+      ...opts,
+      concurrency: 2,
+      // Timeout cứng bổ sung ở processor (ADS_SYNC_TIMEOUT_MS); BullMQ lockDuration rộng hơn
+      lockDuration: Number(process.env.ADS_SYNC_TIMEOUT_MS ?? 180_000) + 60_000,
+    }),
+    new Worker(QUEUE_NAMES.ADS_ACTION, (job) => processAdsAction(job, redis), {
+      ...opts,
+      concurrency: 2,
+    }),
+    new Worker(QUEUE_NAMES.AFFILIATE_HOLD, (job) => processAffiliateHoldRelease(job), {
       ...opts,
       concurrency: 2,
     }),
@@ -87,6 +140,16 @@ async function start() {
 
   console.log('🔄 Worker started — queues:');
   Object.values(QUEUE_NAMES).forEach((q) => console.log(`   • ${q}`));
+
+  const heartbeat = async () => {
+    try {
+      await redis.set('marketingspa:worker:heartbeat', String(Date.now()), 'EX', 120);
+    } catch {
+      /* ignore */
+    }
+  };
+  await heartbeat();
+  setInterval(heartbeat, 30_000);
 }
 
 start().catch((err) => {

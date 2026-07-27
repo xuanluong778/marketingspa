@@ -298,6 +298,7 @@ export class AutoPostFacebookService {
       return {
         connected: false,
         status: 'DISCONNECTED' as const,
+        needsReconnect: false,
         facebookUserName: null,
         pages: [] as Array<{
           id: string;
@@ -312,21 +313,42 @@ export class AutoPostFacebookService {
     }
 
     const isTokenExpired =
-      conn.status === AutoPostFacebookConnectionStatus.CONNECTED &&
+      (conn.status === AutoPostFacebookConnectionStatus.CONNECTED ||
+        conn.status === AutoPostFacebookConnectionStatus.TOKEN_EXPIRED) &&
       conn.tokenExpiresAt &&
       conn.tokenExpiresAt.getTime() < Date.now();
 
-    const status = isTokenExpired
-      ? AutoPostFacebookConnectionStatus.TOKEN_EXPIRED
-      : conn.status;
+    const missingManagePosts =
+      !conn.scopes?.includes('env_page_token') &&
+      !conn.scopes?.includes('pages_manage_posts') &&
+      conn.status === AutoPostFacebookConnectionStatus.CONNECTED;
 
-    const lastError = isTokenExpired
-      ? conn.lastError ?? 'Token Facebook đã hết hạn — vui lòng kết nối lại'
-      : conn.lastError;
+    // API surface: TOKEN_EXPIRED / thiếu quyền → NEEDS_RECONNECT hoặc MISSING_PERMISSION
+    let status: string = conn.status;
+    let lastError = conn.lastError;
+    if (isTokenExpired) {
+      status = 'NEEDS_RECONNECT';
+      lastError = lastError ?? 'NEEDS_RECONNECT: Token Facebook đã hết hạn — vui lòng kết nối lại';
+      if (conn.status !== AutoPostFacebookConnectionStatus.TOKEN_EXPIRED) {
+        await this.prisma.autoPostFacebookConnection
+          .update({
+            where: { userId_organizationId: { userId, organizationId } },
+            data: {
+              status: AutoPostFacebookConnectionStatus.TOKEN_EXPIRED,
+              lastError,
+            },
+          })
+          .catch(() => undefined);
+      }
+    } else if (missingManagePosts) {
+      status = 'MISSING_PERMISSION';
+      lastError = lastError ?? 'MISSING_PERMISSION: pages_manage_posts';
+    }
 
     return {
       connected: status === AutoPostFacebookConnectionStatus.CONNECTED,
       status,
+      needsReconnect: status === 'NEEDS_RECONNECT',
       facebookUserName: conn.facebookUserName,
       tokenExpiresAt: conn.tokenExpiresAt?.toISOString() ?? null,
       lastError,
@@ -501,9 +523,12 @@ export class AutoPostFacebookService {
     const conn = await this.prisma.autoPostFacebookConnection.findUnique({
       where: { userId_organizationId: { userId, organizationId } },
     });
-    const isEnv = conn?.scopes?.includes('env_page_token') || this.metaFanpage.getEnvCredentials();
 
-    if (isEnv) {
+    // Không fallback OAuth → SERVER_ENV: chỉ sync env khi connection là env_page_token
+    // hoặc chưa có connection và user thuộc allowlist.
+    const isEnvConnection = Boolean(conn?.scopes?.includes('env_page_token'));
+
+    if (isEnvConnection) {
       const orgUser =
         user ??
         (await this.prisma.user.findUnique({ where: { id: userId } }).then((u) =>
@@ -521,58 +546,91 @@ export class AutoPostFacebookService {
       return this.syncEnvPageConnection(orgUser);
     }
 
-    const required = await this.requireConnection(userId, organizationId);
-    const accessToken = decryptSecret(required.encryptedAccessToken, this.getEncryptionKey());
-    const pages = await this.meta.getManagedPages(accessToken);
+    if (conn) {
+      const required = await this.requireConnection(userId, organizationId);
+      const accessToken = decryptSecret(required.encryptedAccessToken, this.getEncryptionKey());
+      const pages = await this.meta.getManagedPages(accessToken);
 
-    await this.prisma.autoPostFacebookPage.deleteMany({
-      where: { userId, connectionId: required.id },
-    });
-
-    if (pages.length > 0) {
-      await this.prisma.autoPostFacebookPage.createMany({
-        data: pages.map((p) => ({
-          userId,
-          connectionId: required.id,
-          pageId: p.id,
-          pageName: p.name,
-          pagePictureUrl: p.picture?.data?.url ?? null,
-          encryptedPageAccessToken: encryptSecret(p.access_token, this.getEncryptionKey()),
-        })),
+      await this.prisma.autoPostFacebookPage.deleteMany({
+        where: { userId, connectionId: required.id },
       });
+
+      if (pages.length > 0) {
+        await this.prisma.autoPostFacebookPage.createMany({
+          data: pages.map((p) => ({
+            userId,
+            connectionId: required.id,
+            pageId: p.id,
+            pageName: p.name,
+            pagePictureUrl: p.picture?.data?.url ?? null,
+            encryptedPageAccessToken: encryptSecret(p.access_token, this.getEncryptionKey()),
+          })),
+        });
+      }
+
+      return this.getConnectionStatus(userId, organizationId);
     }
 
-    return this.getConnectionStatus(userId, organizationId);
+    // Chưa có connection: chỉ allowlist mới được sync SERVER_ENV
+    const envCreds = this.metaFanpage.getEnvCredentials();
+    if (envCreds && user) {
+      const allowedOrgIds = parseMetaFanpageAllowedOrgIds(
+        (k) => this.config.get<string>(k) ?? process.env[k],
+      );
+      if (canUseServerEnvFanpage({ role: user.role, organizationId }, allowedOrgIds)) {
+        return this.syncEnvPageConnection(user);
+      }
+    }
+
+    throw new NotFoundException('Chưa kết nối Facebook');
   }
 
-  async getPageAccessToken(userId: string, fanpageId: string): Promise<{
+  /** Preflight trước schedule/publish — không trả token. */
+  async assertCanPublish(userId: string, organizationId: string, fanpageId: string) {
+    await this.getPageAccessToken(userId, organizationId, fanpageId);
+  }
+
+  async getPageAccessToken(
+    userId: string,
+    organizationId: string,
+    fanpageId: string,
+  ): Promise<{
     pageId: string;
     pageName: string;
     accessToken: string;
   }> {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { organizationId: true },
-    });
-    if (!user) throw new NotFoundException('User không tồn tại');
-
-    const organizationId = user.organizationId;
     const page = await this.prisma.autoPostFacebookPage.findFirst({
       where: { id: fanpageId, userId, connection: { organizationId } },
     });
     if (!page) throw new NotFoundException('Fanpage không tồn tại');
 
     const conn = await this.requireConnection(userId, organizationId);
-    if (conn.status !== AutoPostFacebookConnectionStatus.CONNECTED) {
-      throw new UnauthorizedException('Kết nối Facebook chưa sẵn sàng');
+    if (
+      conn.status === AutoPostFacebookConnectionStatus.DISCONNECTED ||
+      conn.status === AutoPostFacebookConnectionStatus.ERROR
+    ) {
+      throw new UnauthorizedException('NEEDS_RECONNECT: Kết nối Facebook chưa sẵn sàng');
     }
 
-    if (conn.tokenExpiresAt && conn.tokenExpiresAt.getTime() < Date.now()) {
+    if (
+      conn.status === AutoPostFacebookConnectionStatus.TOKEN_EXPIRED ||
+      (conn.tokenExpiresAt && conn.tokenExpiresAt.getTime() < Date.now())
+    ) {
       await this.prisma.autoPostFacebookConnection.update({
         where: { userId_organizationId: { userId, organizationId } },
-        data: { status: AutoPostFacebookConnectionStatus.TOKEN_EXPIRED },
+        data: {
+          status: AutoPostFacebookConnectionStatus.TOKEN_EXPIRED,
+          lastError: 'NEEDS_RECONNECT: Token Facebook đã hết hạn',
+        },
       });
-      throw new UnauthorizedException('Token Facebook đã hết hạn — vui lòng kết nối lại');
+      throw new UnauthorizedException(
+        'NEEDS_RECONNECT: Token Facebook đã hết hạn — vui lòng kết nối lại',
+      );
+    }
+
+    const isEnv = conn.scopes?.includes('env_page_token');
+    if (!isEnv && !conn.scopes?.includes('pages_manage_posts')) {
+      throw new BadRequestException('MISSING_PERMISSION: pages_manage_posts');
     }
 
     return {

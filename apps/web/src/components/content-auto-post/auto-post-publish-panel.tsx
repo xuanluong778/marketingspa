@@ -5,7 +5,6 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { CalendarClock, Loader2, Save, Send } from 'lucide-react';
 import { ErrorState, LoadingState } from '@/components/shared/page-state';
-import { MetaFanpageAutoPostPanel } from '@/components/content-auto-post/meta-fanpage-auto-post-panel';
 import { FacebookFanpagePreview } from '@/components/auto-post/facebook-fanpage-preview';
 import { AiMarketingPostPicker } from '@/components/auto-post/ai-marketing-post-picker';
 import { Button } from '@/components/ui/button';
@@ -35,6 +34,7 @@ import {
 import { buildContentAutoPostHref } from '@/lib/content-auto-post-routes';
 import type { ContentStudioTab } from '@/types/content-marketing';
 import { formatMutationError } from '@/lib/format-mutation-error';
+import type { AutoPostType } from '@/types/auto-post';
 
 export function AutoPostPublishPanel({
   libraryRefreshKey = 0,
@@ -121,11 +121,14 @@ export function AutoPostPublishPanel({
     mutations.schedule.isPending;
 
   const buildDraftPayload = () => {
-    if (!selected) throw new Error('Chưa chọn bài');
+    const topic = selected?.title?.trim() || caption.trim().slice(0, 80) || 'Bài đăng Fanpage';
+    const postType: AutoPostType = selected
+      ? mapAiTabToAutoPostType(selected.tab)
+      : 'SPA_SALES';
     return {
       id: draftId,
-      postType: mapAiTabToAutoPostType(selected.tab),
-      topic: selected.title,
+      postType,
+      topic,
       caption,
       fanpageId: fanpageId || undefined,
       imageUrl: imageUrl || undefined,
@@ -134,8 +137,8 @@ export function AutoPostPublishPanel({
   };
 
   const handleSaveDraft = async () => {
-    if (!selected || !caption.trim()) {
-      setErrorMsg('Chọn bài và kiểm tra nội dung trước khi lưu');
+    if (!caption.trim()) {
+      setErrorMsg('Nhập nội dung caption trước khi lưu');
       return;
     }
     setErrorMsg('');
@@ -157,10 +160,6 @@ export function AutoPostPublishPanel({
   };
 
   const handlePublishNow = async () => {
-    if (!selected) {
-      setErrorMsg('Vui lòng chọn bài từ thư viện');
-      return;
-    }
     if (!fanpageId) {
       setErrorMsg('Vui lòng chọn Fanpage — kết nối tại tab Kết nối kênh nếu chưa có');
       return;
@@ -169,25 +168,33 @@ export function AutoPostPublishPanel({
       setErrorMsg('Nội dung bài đăng không được trống');
       return;
     }
+    if (fbStatus?.needsReconnect || fbStatus?.status === 'NEEDS_RECONNECT') {
+      setErrorMsg('NEEDS_RECONNECT: Token hết hạn — kết nối lại Fanpage tại tab Kết nối kênh');
+      return;
+    }
+    if (fbStatus?.status === 'MISSING_PERMISSION') {
+      setErrorMsg('MISSING_PERMISSION: Thiếu pages_manage_posts — kết nối lại và cấp đủ quyền');
+      return;
+    }
     if (!window.confirm('Bạn đã duyệt nội dung và muốn đăng ngay lên Fanpage?')) return;
 
     setErrorMsg('');
     try {
       const postId = await ensureDraft();
-      await mutations.publishNow.mutateAsync(postId);
-      setMsg('Đã đăng bài thành công!');
+      const published = await mutations.publishNow.mutateAsync(postId);
+      setMsg(
+        published.facebookPostUrl
+          ? `Đã đăng bài thành công! ${published.facebookPostUrl}`
+          : 'Đã đăng bài thành công!',
+      );
       onScheduled?.();
-      setTimeout(() => setMsg(''), 3000);
+      setTimeout(() => setMsg(''), 5000);
     } catch (e) {
       setErrorMsg(formatMutationError(e));
     }
   };
 
   const handleSchedule = async () => {
-    if (!selected) {
-      setErrorMsg('Vui lòng chọn bài từ thư viện');
-      return;
-    }
     if (!fanpageId) {
       setErrorMsg('Vui lòng chọn Fanpage');
       return;
@@ -202,6 +209,10 @@ export function AutoPostPublishPanel({
     }
     if (new Date(scheduledAt).getTime() <= Date.now()) {
       setErrorMsg('Không thể lên lịch ở thời gian quá khứ');
+      return;
+    }
+    if (fbStatus?.needsReconnect || fbStatus?.status === 'NEEDS_RECONNECT') {
+      setErrorMsg('NEEDS_RECONNECT: Token hết hạn — kết nối lại Fanpage trước khi lên lịch');
       return;
     }
     if (
@@ -229,14 +240,31 @@ export function AutoPostPublishPanel({
 
   return (
     <div className="space-y-6">
-      <MetaFanpageAutoPostPanel />
-
-      <div className="rounded-lg border border-violet-100 bg-violet-50/60 px-4 py-3 text-sm text-violet-900">
-        Quy trình (OAuth Fanpage): chọn bài từ thư viện → duyệt/sửa caption → chọn Fanpage → đăng ngay
-        hoặc lên lịch.
+      <div className="rounded-lg border border-slate-200 bg-slate-50/80 px-4 py-3 text-sm text-slate-800">
+        Cách đăng: chọn bài từ thư viện (tuỳ chọn) hoặc nhập caption → chọn Fanpage → xem preview →
+        lưu nháp / đăng ngay / lên lịch. Kết nối kênh tại tab{' '}
+        <Link href={buildContentAutoPostHref('channels')} className="font-medium underline">
+          Kết nối kênh
+        </Link>
+        {fbStatus?.connectionMode === 'env' ? ' (SERVER_ENV)' : ''}.
       </div>
 
-      {!fbStatus?.connected && (
+      {(fbStatus?.needsReconnect || fbStatus?.status === 'NEEDS_RECONNECT') && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          Token Facebook hết hạn — cần kết nối lại.{' '}
+          <Link href={buildContentAutoPostHref('channels')} className="font-medium underline">
+            Mở Kết nối kênh
+          </Link>
+        </div>
+      )}
+
+      {fbStatus?.status === 'MISSING_PERMISSION' && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+          Thiếu quyền <code>pages_manage_posts</code>. Kết nối lại Fanpage và cấp đủ quyền.
+        </div>
+      )}
+
+      {!fbStatus?.connected && !fbStatus?.needsReconnect && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           Chưa kết nối Facebook.{' '}
           <Link href={buildContentAutoPostHref('channels')} className="font-medium underline">

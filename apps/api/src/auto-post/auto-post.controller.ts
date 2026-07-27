@@ -81,43 +81,43 @@ export class AutoPostController {
   @Get('posts')
   @UseGuards(JwtAuthGuard, TenantGuard)
   listPosts(@CurrentUser() user: AuthUser, @Query('status') status?: AutoPostStatus) {
-    return this.service.listPosts(user.id, status);
+    return this.service.listPosts(user.id, user.organizationId, status);
   }
 
   @Get('posts/:id')
   @UseGuards(JwtAuthGuard, TenantGuard)
   getPost(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.service.getPost(user.id, id);
+    return this.service.getPost(user.id, user.organizationId, id);
   }
 
   @Delete('posts/:id')
   @UseGuards(JwtAuthGuard, TenantGuard)
   deletePost(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.service.deletePost(user.id, id);
+    return this.service.deletePost(user.id, user.organizationId, id);
   }
 
   @Post('publish')
   @UseGuards(JwtAuthGuard, TenantGuard)
   publishNow(@CurrentUser() user: AuthUser, @Body() dto: PublishAutoPostDto) {
-    return this.service.publishNow(user.id, dto.postId);
+    return this.service.publishNow(user.id, user.organizationId, dto.postId);
   }
 
   @Post('schedule')
   @UseGuards(JwtAuthGuard, TenantGuard)
   schedule(@CurrentUser() user: AuthUser, @Body() dto: ScheduleAutoPostDto) {
-    return this.service.schedule(user.id, dto);
+    return this.service.schedule(user.id, user.organizationId, dto);
   }
 
   @Post('schedule/:id/cancel')
   @UseGuards(JwtAuthGuard, TenantGuard)
   cancelSchedule(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.service.cancelSchedule(user.id, id);
+    return this.service.cancelSchedule(user.id, user.organizationId, id);
   }
 
   @Post('posts/:id/retry')
   @UseGuards(JwtAuthGuard, TenantGuard)
   retry(@CurrentUser() user: AuthUser, @Param('id') id: string) {
-    return this.service.retry(user.id, id);
+    return this.service.retry(user.id, user.organizationId, id);
   }
 
   @Get('facebook/status')

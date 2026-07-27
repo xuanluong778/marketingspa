@@ -48,6 +48,7 @@ export interface AutoPostFacebookPage {
 export interface AutoPostFacebookStatus {
   connected: boolean;
   status: string;
+  needsReconnect?: boolean;
   facebookUserName: string | null;
   pages: AutoPostFacebookPage[];
   tokenExpiresAt: string | null;
@@ -75,6 +76,7 @@ export interface AutoPostItem {
   scheduledAt: string | null;
   publishedAt: string | null;
   facebookPostId: string | null;
+  facebookPostUrl?: string | null;
   errorMessage: string | null;
   approvedAt: string | null;
   createdAt: string;

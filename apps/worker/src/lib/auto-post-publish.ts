@@ -1,4 +1,5 @@
 import { createDecipheriv, scryptSync } from 'crypto';
+import { sanitizePublishErrorMessage } from './auto-post-publish-errors';
 
 const SALT = 'marketingspa-integration-v1';
 
@@ -37,7 +38,9 @@ export async function publishToFacebookPage(
       { method: 'POST' },
     );
     const body = (await res.json()) as { id?: string; error?: { message: string } };
-    if (!res.ok || body.error) throw new Error(body.error?.message ?? 'Meta publish failed');
+    if (!res.ok || body.error) {
+      throw new Error(sanitizePublishErrorMessage(body.error?.message ?? 'Meta publish failed'));
+    }
     if (!body.id) throw new Error('Meta không trả về post id');
     return body.id;
   }
@@ -54,7 +57,9 @@ export async function publishToFacebookPage(
     body: JSON.stringify(reqBody),
   });
   const body = (await res.json()) as { id?: string; error?: { message: string } };
-  if (!res.ok || body.error) throw new Error(body.error?.message ?? 'Meta publish failed');
+  if (!res.ok || body.error) {
+    throw new Error(sanitizePublishErrorMessage(body.error?.message ?? 'Meta publish failed'));
+  }
   if (!body.id) throw new Error('Meta không trả về post id');
   return body.id;
 }

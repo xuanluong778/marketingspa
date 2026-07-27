@@ -9,7 +9,7 @@ import {
   type AutoPostStatus,
 } from '@/types/auto-post';
 import { cn } from '@/lib/utils';
-import { RefreshCw, RotateCcw, Trash2, XCircle } from 'lucide-react';
+import { ExternalLink, RotateCcw, Trash2, XCircle } from 'lucide-react';
 
 const STATUS_VARIANT: Record<AutoPostStatus, string> = {
   DRAFT: 'bg-slate-100 text-slate-700',
@@ -25,6 +25,12 @@ function formatDt(iso: string | null) {
   if (!iso) return '—';
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString('vi-VN');
+}
+
+function isPermanentFailure(errorMessage: string | null) {
+  if (!errorMessage) return false;
+  const m = errorMessage.toLowerCase();
+  return m.includes('needs_reconnect') || m.includes('missing_permission');
 }
 
 export function AutoPostHistoryTable({
@@ -57,71 +63,100 @@ export function AutoPostHistoryTable({
             <th className="text-left px-4 py-3 font-medium">Loại</th>
             <th className="text-left px-4 py-3 font-medium">Fanpage</th>
             <th className="text-left px-4 py-3 font-medium">Trạng thái</th>
+            <th className="text-left px-4 py-3 font-medium">Bài Facebook</th>
             <th className="text-left px-4 py-3 font-medium">Lịch / Đăng</th>
             <th className="text-right px-4 py-3 font-medium">Thao tác</th>
           </tr>
         </thead>
         <tbody>
-          {items.map((item) => (
-            <tr key={item.id} className="border-b last:border-0 hover:bg-slate-50/50">
-              <td className="px-4 py-3 max-w-[200px]">
-                <p className="font-medium truncate">{item.topic}</p>
-                {item.errorMessage && item.status === 'FAILED' && (
-                  <p className="text-xs text-red-600 mt-0.5 line-clamp-2">{item.errorMessage}</p>
-                )}
-              </td>
-              <td className="px-4 py-3 whitespace-nowrap">{autoPostTypeLabel(item.postType)}</td>
-              <td className="px-4 py-3 whitespace-nowrap">{item.fanpageName ?? '—'}</td>
-              <td className="px-4 py-3">
-                <Badge className={cn('font-normal', STATUS_VARIANT[item.status])}>
-                  {AUTO_POST_STATUS_LABELS[item.status]}
-                </Badge>
-              </td>
-              <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
-                {item.status === 'SCHEDULED'
-                  ? formatDt(item.scheduledAt)
-                  : formatDt(item.publishedAt ?? item.createdAt)}
-              </td>
-              <td className="px-4 py-3">
-                <div className="flex justify-end gap-1">
-                  {item.status === 'FAILED' && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() => onRetry(item.id)}
-                    >
-                      <RotateCcw className="h-3.5 w-3.5 mr-1" />
-                      Thử lại
-                    </Button>
+          {items.map((item) => {
+            const permanent = isPermanentFailure(item.errorMessage);
+            const postUrl =
+              item.facebookPostUrl ||
+              (item.facebookPostId
+                ? `https://www.facebook.com/${item.facebookPostId}`
+                : null);
+
+            return (
+              <tr key={item.id} className="border-b last:border-0 hover:bg-slate-50/50">
+                <td className="px-4 py-3 max-w-[200px]">
+                  <p className="font-medium truncate">{item.topic}</p>
+                  {item.errorMessage && item.status === 'FAILED' && (
+                    <p className="text-xs text-red-600 mt-0.5 line-clamp-2">{item.errorMessage}</p>
                   )}
-                  {item.status === 'SCHEDULED' && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() => onCancel(item.id)}
+                </td>
+                <td className="px-4 py-3 whitespace-nowrap">{autoPostTypeLabel(item.postType)}</td>
+                <td className="px-4 py-3 whitespace-nowrap">{item.fanpageName ?? '—'}</td>
+                <td className="px-4 py-3">
+                  <Badge className={cn('font-normal', STATUS_VARIANT[item.status])}>
+                    {AUTO_POST_STATUS_LABELS[item.status]}
+                  </Badge>
+                </td>
+                <td className="px-4 py-3 whitespace-nowrap">
+                  {postUrl ? (
+                    <a
+                      href={postUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-blue-700 hover:underline"
+                      title={item.facebookPostId ?? undefined}
                     >
-                      <XCircle className="h-3.5 w-3.5 mr-1" />
-                      Hủy lịch
-                    </Button>
+                      Xem bài
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
                   )}
-                  {(item.status === 'DRAFT' ||
-                    item.status === 'FAILED' ||
-                    item.status === 'CANCELLED') && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      disabled={busy}
-                      onClick={() => onDelete(item.id)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                </div>
-              </td>
-            </tr>
-          ))}
+                </td>
+                <td className="px-4 py-3 whitespace-nowrap text-muted-foreground">
+                  {item.status === 'SCHEDULED'
+                    ? formatDt(item.scheduledAt)
+                    : formatDt(item.publishedAt ?? item.createdAt)}
+                </td>
+                <td className="px-4 py-3">
+                  <div className="flex justify-end gap-1">
+                    {item.status === 'FAILED' && !permanent && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => onRetry(item.id)}
+                      >
+                        <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                        Thử lại
+                      </Button>
+                    )}
+                    {item.status === 'FAILED' && permanent && (
+                      <span className="text-xs text-amber-700 self-center px-1">Cần kết nối lại</span>
+                    )}
+                    {item.status === 'SCHEDULED' && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => onCancel(item.id)}
+                      >
+                        <XCircle className="h-3.5 w-3.5 mr-1" />
+                        Hủy lịch
+                      </Button>
+                    )}
+                    {(item.status === 'DRAFT' ||
+                      item.status === 'FAILED' ||
+                      item.status === 'CANCELLED') && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={busy}
+                        onClick={() => onDelete(item.id)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
