@@ -58,6 +58,10 @@ async function bootstrap() {
   }
 
   const config = app.get(ConfigService);
+  const { assertEncryptionKeyConfigured } = await import(
+    './common/utils/assert-encryption-key'
+  );
+  assertEncryptionKeyConfigured(config.get<string>('ENCRYPTION_KEY'));
   const port = config.get<number>('PORT', 4000);
 
   await app.listen(port);

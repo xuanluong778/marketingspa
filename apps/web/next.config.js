@@ -44,7 +44,12 @@ const nextConfig = {
     ];
   },
   async redirects() {
-    return [{ source: '/favicon.ico', destination: '/favicon.png', permanent: false }];
+    return [
+      { source: '/favicon.ico', destination: '/favicon.png', permanent: false },
+      // Public legal aliases for Meta / compliance URLs — do not overwrite existing pages
+      { source: '/privacy-policy', destination: '/privacy', permanent: true },
+      { source: '/data-deletion', destination: '/facebook/data-deletion', permanent: true },
+    ];
   },
 };
 

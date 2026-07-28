@@ -6,8 +6,12 @@ const AUTH_TAG_LENGTH = 16;
 const SALT = 'marketingspa-integration-v1';
 
 /**
- * Placeholder encryption helper — dùng ENCRYPTION_KEY từ env.
- * Không lưu API key plain text; production nên dùng KMS/Vault.
+ * AES-256-GCM secret storage (Facebook / Meta access tokens, credentials).
+ * - Key: scrypt(ENCRYPTION_KEY, salt) → 32 bytes
+ * - IV/nonce: random 16 bytes mỗi lần mã hóa
+ * - Auth tag: 16 bytes (GCM)
+ * - Wire format: base64(iv || authTag || ciphertext)
+ * Không fallback plaintext.
  */
 export function encryptSecret(plaintext: string, encryptionKey: string): string {
   if (!encryptionKey || encryptionKey.length < 16) {

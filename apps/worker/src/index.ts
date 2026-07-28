@@ -26,6 +26,19 @@ import { processHrmAttendanceRebuild } from './processors/hrm-attendance';
 
 initSentry();
 
+// Fail-fast: Auto Post / Meta tokens yêu cầu AES-256-GCM qua ENCRYPTION_KEY
+{
+  const key = (process.env.ENCRYPTION_KEY || '').trim();
+  if (!key || key.length < 16) {
+    throw new Error(
+      'ENCRYPTION_KEY chưa cấu hình hoặc quá ngắn (min 16 chars) — worker không được giải mã token plaintext.',
+    );
+  }
+  if (/^(change_me|changeme|test|todo|replace)/i.test(key)) {
+    throw new Error('ENCRYPTION_KEY vẫn là giá trị placeholder — đặt khóa production thật.');
+  }
+}
+
 const redis = createRedisPublisher();
 const workers: Worker[] = [];
 const WORKER_HEARTBEAT_KEY = 'marketingspa:worker:heartbeat';

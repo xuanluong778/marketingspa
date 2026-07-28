@@ -15,6 +15,7 @@ import { createHash, createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import type { Queue } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
 import { encryptSecret, decryptSecret } from '../common/utils/encryption.util';
+import { assertEncryptionKeyConfigured } from '../common/utils/assert-encryption-key';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { AUTO_POST_QUEUE } from '../queue/queue.constants';
 import { AutoPostMetaService } from './auto-post-meta.service';
@@ -872,9 +873,7 @@ export class AutoPostFacebookService {
   }
 
   private getEncryptionKey(): string {
-    const key = this.config.get<string>('ENCRYPTION_KEY');
-    if (!key || key.length < 16) throw new Error('ENCRYPTION_KEY chưa cấu hình');
-    return key;
+    return assertEncryptionKeyConfigured(this.config.get<string>('ENCRYPTION_KEY'));
   }
 
   private async createOAuthState(
