@@ -112,6 +112,8 @@ export class HrmTimesheetService {
     const period = await this.findPeriod(organizationId, id);
     if (period.status === TimesheetStatus.LOCKED) return period;
 
+    const before = { status: period.status, lockedAt: period.lockedAt, lockedById: period.lockedById };
+
     const updated = await this.prisma.timesheetPeriod.update({
       where: { id },
       data: {
@@ -128,7 +130,10 @@ export class HrmTimesheetService {
       action: 'hrm.timesheet.lock',
       entityType: 'TimesheetPeriod',
       entityId: id,
-      metadata: { after: { status: TimesheetStatus.LOCKED } },
+      metadata: {
+        before,
+        after: { status: TimesheetStatus.LOCKED, lockedAt: updated.lockedAt, lockedById: updated.lockedById },
+      },
       ipAddress: actor?.ipAddress,
     });
 
@@ -141,7 +146,21 @@ export class HrmTimesheetService {
     reason: string,
     actor?: HrmActor,
   ) {
+    const trimmed = reason?.trim();
+    if (!trimmed || trimmed.length < 3) {
+      throw new BadRequestException('Mở khóa kỳ công bắt buộc nhập lý do (≥ 3 ký tự)');
+    }
+
     const period = await this.findPeriod(organizationId, id);
+    if (period.status !== TimesheetStatus.LOCKED) {
+      throw new BadRequestException('Kỳ công chưa bị khóa');
+    }
+
+    const before = {
+      status: period.status,
+      lockedAt: period.lockedAt,
+      lockedById: period.lockedById,
+    };
 
     const updated = await this.prisma.timesheetPeriod.update({
       where: { id: period.id },
@@ -149,7 +168,7 @@ export class HrmTimesheetService {
         status: TimesheetStatus.OPEN,
         lockedAt: null,
         lockedById: null,
-        unlockReason: reason,
+        unlockReason: trimmed,
       },
     });
 
@@ -159,7 +178,11 @@ export class HrmTimesheetService {
       action: 'hrm.timesheet.unlock',
       entityType: 'TimesheetPeriod',
       entityId: id,
-      metadata: { after: { status: TimesheetStatus.OPEN, unlockReason: reason } },
+      metadata: {
+        before,
+        after: { status: TimesheetStatus.OPEN, unlockReason: trimmed },
+        reason: trimmed,
+      },
       ipAddress: actor?.ipAddress,
     });
 

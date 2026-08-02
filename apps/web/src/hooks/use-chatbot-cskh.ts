@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, apiUpload } from '@/lib/api-client';
 import type {
   ChatbotBot,
   ChatbotChannel,
@@ -48,6 +48,7 @@ export function useChatbotInbox() {
   return useQuery({
     queryKey: [...KEY, 'inbox'],
     queryFn: () => apiClient<ChatbotConversation[]>('/chatbot-cskh/inbox'),
+    refetchInterval: 10_000,
   });
 }
 
@@ -56,6 +57,7 @@ export function useChatbotConversation(id: string | null) {
     queryKey: [...KEY, 'inbox', id],
     queryFn: () => apiClient<ChatbotConversation>(`/chatbot-cskh/inbox/${id}`),
     enabled: !!id,
+    refetchInterval: id ? 5_000 : false,
   });
 }
 
@@ -94,10 +96,47 @@ export function useChatbotFacebookWebhookStatus() {
     queryFn: () =>
       apiClient<{
         ok: boolean;
-        webhookPath: string;
-        webhookUrl: string;
-        verifyTokenHint: string;
+        serverConfigured: boolean;
+        pageIdMasked?: string | null;
+        pageNameHint?: string | null;
+        webhookUrl?: string;
+        verifyTokenConfigured?: boolean;
+        appSecretConfigured?: boolean;
+        signatureMode?: string;
+        subscribedFields?: string[];
+        connectedPageCount?: number;
+        webhookSubscribed?: boolean;
+        botActive?: boolean;
+        tokenHealth?: string;
+        tokenError?: string | null;
+        lastWebhookAt?: string | null;
+        lastWebhookPageIdMasked?: string | null;
+        lastWebhookEventId?: string | null;
+        lastWebhookError?: string | null;
+        processedCount?: number;
+        skippedCount?: number;
+        hints?: string[];
+        pages?: Array<{
+          id: string;
+          pageIdMasked: string;
+          pageName: string;
+          status: string;
+          webhookSubscribed: boolean;
+          aiEnabled: boolean;
+          botName: string;
+          botStatus: string;
+          hasPageToken: boolean;
+          pageIdMatchesEnv: boolean | null;
+        }>;
+        realtime?: {
+          connected: boolean;
+          status: string;
+          subscribed: boolean;
+          lastError: string | null;
+          channel: string;
+        };
       }>('/chatbot-cskh/facebook/webhook-status'),
+    refetchInterval: 15_000,
   });
 }
 
@@ -159,6 +198,55 @@ export function useCreateKnowledge() {
   });
 }
 
+export function useUploadKnowledgeDiagram() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: {
+      botId: string;
+      file: File;
+      title?: string;
+      replaceExisting?: boolean;
+    }) => {
+      const fd = new FormData();
+      fd.append('file', params.file);
+      fd.append('botId', params.botId);
+      if (params.title) fd.append('title', params.title);
+      if (params.replaceExisting) fd.append('replaceExisting', 'true');
+      return apiUpload<{
+        success: boolean;
+        imported: number;
+        skipped: number;
+        filename: string;
+      }>('/chatbot-cskh/knowledge/diagram', fd);
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+  });
+}
+
+export function useCrawlKnowledgeUrl() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: {
+      botId: string;
+      url: string;
+      title?: string;
+      replaceExisting?: boolean;
+    }) =>
+      apiClient<{
+        success: boolean;
+        imported: number;
+        url: string;
+        title: string;
+        contentLength: number;
+        preview: string;
+      }>('/chatbot-cskh/knowledge/crawl', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+  });
+}
+
 export function useDeleteKnowledge() {
   const qc = useQueryClient();
   return useMutation({
@@ -204,9 +292,10 @@ export function useConnectFacebookPage() {
   return useMutation({
     mutationFn: (body: {
       botId: string;
-      pageId: string;
-      pageName: string;
-      pageAccessToken: string;
+      pageName?: string;
+      pageId?: string;
+      pageAccessToken?: string;
+      aiEnabled?: boolean;
     }) =>
       apiClient('/chatbot-cskh/facebook/pages', {
         method: 'POST',

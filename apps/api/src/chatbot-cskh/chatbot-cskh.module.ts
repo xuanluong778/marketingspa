@@ -6,8 +6,13 @@ import { ChatbotCskhService } from './chatbot-cskh.service';
 import { ChatbotCskhPublicService } from './chatbot-cskh-public.service';
 import { ChatbotSuggestService } from './chatbot-suggest.service';
 import { ChatbotFacebookWebhookService } from './chatbot-facebook-webhook.service';
+import { EventsModule } from '../events/events.module';
+import { AttributionModule } from '../attribution/attribution.module';
+import { LeadsModule } from '../leads/leads.module';
+import { MessagingModule } from '../messaging/messaging.module';
 
 @Module({
+  imports: [EventsModule, AttributionModule, LeadsModule, MessagingModule],
   controllers: [
     ChatbotCskhController,
     ChatbotCskhPublicController,

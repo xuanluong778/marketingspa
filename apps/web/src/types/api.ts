@@ -10,18 +10,21 @@ export interface AuthUser {
   id: string;
   email: string;
   name: string;
+  avatarUrl?: string | null;
+  authProvider?: string;
   role: string;
   roleName: string;
   organizationId: string;
   employeeId?: string | null;
   permissions?: string[];
+  emailVerified?: boolean;
   organization: { id: string; name: string; slug: string };
   employee: { id: string; name: string } | null;
 }
 
 export interface AuthResponse {
   accessToken: string;
-  refreshToken: string;
+  refreshToken?: string;
   user: AuthUser;
 }
 
@@ -49,8 +52,12 @@ export interface Lead {
   email: string | null;
   pipelineStatus: string;
   createdAt: string;
+  lastContactedAt?: string | null;
   note?: string | null;
   estimatedValue?: number | null;
+  tags?: string[];
+  serviceName?: string | null;
+  isStale?: boolean;
   assignedTo?: { id: string; name: string } | null;
   leadSource?: { id: string; name: string } | null;
   branch?: { id: string; name: string } | null;

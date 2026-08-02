@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import {
   fetchAllManagedPages,
   mergeGrantedScopes,
+  missingRequiredPageScopes,
   type MetaPageAccountParsed,
 } from './auto-post-meta-pages.util';
 import {
@@ -10,8 +11,20 @@ import {
   resolveMetaAppId,
   resolveMetaAppSecret,
   resolveMetaLoginConfigId,
-  resolveMetaOAuthRedirectUri,
 } from './auto-post-config';
+import {
+  assertAutoPostMetaOAuthConfig,
+  assertMetaAppSecretMatchesAppId,
+  resolveAutoPostOAuthRedirectUri,
+} from './assert-auto-post-meta-oauth';
+import { normalizePublishMedia } from './auto-post-media.util';
+import {
+  formatMetaGraphErrorTechnical,
+  formatMetaGraphErrorUserFacing,
+  type MetaGraphErrorShape,
+} from './auto-post-publish-errors';
+import { metaGraphFetchJson } from './meta-graph-http';
+import { MetaGraphUsageService } from './meta-graph-usage.service';
 
 export type { MetaPageAccountParsed as MetaPageAccount };
 
@@ -23,7 +36,10 @@ export interface MetaPublishResult {
 export class AutoPostMetaService {
   private readonly logger = new Logger(AutoPostMetaService.name);
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    private readonly usage: MetaGraphUsageService,
+  ) {}
 
   private env(key: string): string | undefined {
     return this.config.get<string>(key) ?? process.env[key];
@@ -50,10 +66,16 @@ export class AutoPostMetaService {
   }
 
   get redirectUri(): string {
-    return resolveMetaOAuthRedirectUri(
-      (k) => this.env(k),
-      '/api/v1/auto-post/facebook/oauth/callback',
-    );
+    return resolveAutoPostOAuthRedirectUri((k) => this.env(k));
+  }
+
+  /** Fail-fast App ID / config_id / redirect MarketingAutoAZ trước khi build OAuth URL. */
+  assertProductionOAuthConfig(): {
+    appId: string;
+    loginConfigId: string;
+    redirectUri: string;
+  } {
+    return assertAutoPostMetaOAuthConfig((k) => this.env(k));
   }
 
   getOAuthScopes(): string[] {
@@ -61,13 +83,16 @@ export class AutoPostMetaService {
   }
 
   /**
-   * Facebook Login for Business (app Business) — dùng config_id.
-   * Bổ sung scope + auth_type=rerequest để Meta hiển thị quyền Pages khi Configuration cho phép.
+   * Facebook Login for Business (app Business) — chỉ dùng config_id.
+   * Không truyền scope=pages_* kèm config_id: Meta sẽ báo "Invalid Scopes".
+   * Quyền Pages phải khai trong Login Configuration trên Meta Developer.
+   * Standard Login (không có config_id) vẫn dùng scope như cũ.
    */
   buildOAuthUrl(state: string): string {
+    const asserted = this.assertProductionOAuthConfig();
     const params = new URLSearchParams({
-      client_id: this.appId,
-      redirect_uri: this.redirectUri,
+      client_id: asserted.appId,
+      redirect_uri: asserted.redirectUri,
       state,
       response_type: 'code',
       display: 'page',
@@ -75,7 +100,7 @@ export class AutoPostMetaService {
       return_scopes: 'true',
     });
 
-    const configId = this.loginConfigId;
+    const configId = asserted.loginConfigId || this.loginConfigId;
     if (configId) {
       params.set('config_id', configId);
       const overrideDefault =
@@ -85,8 +110,10 @@ export class AutoPostMetaService {
       if (overrideDefault) {
         params.set('override_default_response_type', 'true');
       }
+      // Mặc định KHÔNG append scope khi có config_id (tránh Invalid Scopes).
+      // Chỉ bật META_OAUTH_APPEND_SCOPES=true nếu Configuration là loại hỗ trợ thêm scope.
       const appendScopes =
-        (this.env('META_OAUTH_APPEND_SCOPES') ?? 'true').trim().toLowerCase() === 'true';
+        (this.env('META_OAUTH_APPEND_SCOPES') ?? 'false').trim().toLowerCase() === 'true';
       if (appendScopes) {
         params.set('scope', this.getOAuthScopes().join(','));
       }
@@ -132,12 +159,31 @@ export class AutoPostMetaService {
   }
 
   async getGrantedPermissions(accessToken: string): Promise<string[]> {
+    const rows = await this.getPermissionStatuses(accessToken);
+    return rows.filter((r) => r.status === 'granted').map((r) => r.permission);
+  }
+
+  /** Toàn bộ /me/permissions (granted + declined) — không log token. */
+  async getPermissionStatuses(
+    accessToken: string,
+  ): Promise<Array<{ permission: string; status: 'granted' | 'declined' | 'expired' | 'unknown' }>> {
     const data = await this.getJson<{
       data: Array<{ permission?: string; status?: string }>;
     }>(`https://graph.facebook.com/${this.apiVersion}/me/permissions`, accessToken);
     return (data.data ?? [])
-      .filter((row) => row.status === 'granted' && row.permission)
-      .map((row) => row.permission!);
+      .filter((row) => Boolean(row.permission))
+      .map((row) => {
+        const statusRaw = String(row.status ?? '').toLowerCase();
+        const status: 'granted' | 'declined' | 'expired' | 'unknown' =
+          statusRaw === 'granted'
+            ? 'granted'
+            : statusRaw === 'declined'
+              ? 'declined'
+              : statusRaw === 'expired'
+                ? 'expired'
+                : 'unknown';
+        return { permission: row.permission!, status };
+      });
   }
 
   /** Quyền thực tế: union /me/permissions + debug_token.scopes. */
@@ -147,6 +193,47 @@ export class AutoPostMetaService {
       this.debugToken(accessToken).catch(() => ({ is_valid: false, scopes: [] as string[] })),
     ]);
     return mergeGrantedScopes(fromPermissions, debug.scopes);
+  }
+
+  /**
+   * Chẩn đoán quyền sau OAuth — log an toàn tên + status, không log token.
+   * Trả về granted + declined + missing required.
+   */
+  async diagnoseUserPermissions(accessToken: string): Promise<{
+    permissions: Array<{ permission: string; status: 'granted' | 'declined' | 'expired' | 'unknown' }>;
+    granted: string[];
+    declined: string[];
+    missingRequired: string[];
+  }> {
+    type PermRow = {
+      permission: string;
+      status: 'granted' | 'declined' | 'expired' | 'unknown';
+    };
+    const permissions: PermRow[] = await this.getPermissionStatuses(accessToken).catch(
+      () => [] as PermRow[],
+    );
+    const debug = await this.debugToken(accessToken).catch(() => ({
+      is_valid: false,
+      scopes: [] as string[],
+    }));
+    const grantedSet = new Set(
+      permissions.filter((p) => p.status === 'granted').map((p) => p.permission),
+    );
+    for (const s of debug.scopes ?? []) {
+      if (s && !grantedSet.has(s)) {
+        grantedSet.add(s);
+        permissions.push({ permission: s, status: 'granted' });
+      }
+    }
+    const granted = [...grantedSet];
+    const declined = permissions
+      .filter((p) => p.status === 'declined')
+      .map((p) => p.permission);
+    const missingRequired = missingRequiredPageScopes(granted);
+    this.logger.log(
+      `Meta permissions diag granted=[${granted.join(',')}] declined=[${declined.join(',')}] missing=[${missingRequired.join(',')}]`,
+    );
+    return { permissions, granted, declined, missingRequired };
   }
 
   /** Lấy toàn bộ Fanpage user quản trị — pagination, fields id/name/access_token/tasks. */
@@ -162,9 +249,17 @@ export class AutoPostMetaService {
     pageAccessToken: string,
     payload: { message: string; link?: string; imageUrl?: string },
   ): Promise<MetaPublishResult> {
-    if (payload.imageUrl?.trim()) {
+    const media = normalizePublishMedia({
+      imageUrl: payload.imageUrl,
+      linkUrl: payload.link,
+    });
+    if (media.note) {
+      this.logger.log(`publish media normalize: ${media.note}`);
+    }
+
+    if (media.imageUrl) {
       const params = new URLSearchParams({
-        url: payload.imageUrl.trim(),
+        url: media.imageUrl,
         caption: payload.message,
         access_token: pageAccessToken,
       });
@@ -179,8 +274,8 @@ export class AutoPostMetaService {
       message: payload.message,
       access_token: pageAccessToken,
     };
-    if (payload.link?.trim()) {
-      body.link = payload.link.trim();
+    if (media.linkUrl) {
+      body.link = media.linkUrl;
     }
 
     const res = await fetch(`https://graph.facebook.com/${this.apiVersion}/${pageId}/feed`, {
@@ -208,33 +303,28 @@ export class AutoPostMetaService {
 
   private async parsePublishResponse(res: Response): Promise<MetaPublishResult> {
     const body = (await res.json()) as MetaPublishResult & {
-      error?: { message: string; code?: number; type?: string };
+      error?: MetaGraphErrorShape;
     };
     if (!res.ok || body.error) {
-      const msg = body.error?.message ?? `Meta API error (${res.status})`;
-      this.logger.warn(`Meta publish failed: ${msg}`);
-      throw new Error(msg);
+      const err = body.error ?? { message: `Meta API error (${res.status})` };
+      const user = formatMetaGraphErrorUserFacing(err);
+      const tech = formatMetaGraphErrorTechnical(err);
+      this.logger.warn(`Meta publish failed: ${tech}`);
+      throw new Error(user === tech ? user : `${user} (${tech})`);
     }
     if (!body.id) throw new Error('Meta không trả về post id');
     return { id: body.id };
   }
 
   private async getJson<T>(url: string, accessToken?: string): Promise<T> {
-    const fullUrl = accessToken
-      ? `${url}${url.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(accessToken)}`
-      : url;
-
-    const res = await fetch(fullUrl);
-    const body = (await res.json()) as T & {
-      error?: { message: string; code?: number; type?: string };
-    };
-
-    if (!res.ok || body.error) {
-      const msg = body.error?.message ?? `Meta API error (${res.status})`;
-      this.logger.warn(`Meta API request failed: ${msg}`);
-      throw new Error(msg);
-    }
-
-    return body;
+    const result = await metaGraphFetchJson<T>(url, {
+      accessToken,
+      maxRetries: 2,
+      onUsage: (u) => {
+        void this.usage.record(u);
+      },
+      logger: this.logger,
+    });
+    return result.data;
   }
 }

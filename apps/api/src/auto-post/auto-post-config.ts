@@ -1,4 +1,7 @@
-import { AutoPostType } from '@marketingspa/database';
+import type { AutoPostType } from '@marketingspa/database';
+import {
+  resolveAutoPostOAuthRedirectUri,
+} from './assert-auto-post-meta-oauth';
 
 export const AUTO_POST_TYPE_LABELS: Record<AutoPostType, string> = {
   SPA_SALES: 'Bài bán hàng spa',
@@ -73,26 +76,15 @@ export function isMarketingAutoazOAuthState(state: string | undefined): boolean 
 }
 
 /**
- * Redirect URI đã whitelist trên Meta App (META_FACEBOOK_OAUTH_REDIRECT_URI).
+ * Redirect URI Auto Post Fanpage OAuth.
+ * Production MarketingAutoAZ: chỉ META_AUTO_POST_REDIRECT_URI (không relay seoauto).
+ * @deprecated Prefer resolveAutoPostOAuthRedirectUri from assert-auto-post-meta-oauth.
  */
 export function resolveMetaOAuthRedirectUri(
   getEnv: (key: string) => string | undefined,
-  fallbackPath: string,
+  _fallbackPath: string,
 ): string {
-  const whitelisted =
-    getEnv('META_FACEBOOK_OAUTH_REDIRECT_URI')?.trim() ||
-    getEnv('FACEBOOK_REDIRECT_URI')?.trim();
-  if (whitelisted) return whitelisted;
-
-  const shared = getEnv('META_REDIRECT_URI')?.trim();
-  const dedicated = getEnv('META_AUTO_POST_REDIRECT_URI')?.trim();
-  const useShared =
-    (getEnv('META_OAUTH_USE_SHARED_REDIRECT') ?? 'false').trim().toLowerCase() === 'true';
-
-  if (useShared && shared) return shared;
-  if (dedicated) return dedicated;
-  const apiUrl = getEnv('API_URL') ?? 'http://localhost:4000';
-  return `${apiUrl.replace(/\/$/, '')}${fallbackPath}`;
+  return resolveAutoPostOAuthRedirectUri(getEnv);
 }
 
 export function resolveAutoPostMetaScopes(

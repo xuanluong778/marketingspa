@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: change_me_strong_password
       POSTGRES_DB: marketingspa
     ports:
-      - '5433:5432'
+      - '5434:5432'
     volumes:
       - marketingspa_postgres_dev:/var/lib/postgresql/data
     healthcheck:

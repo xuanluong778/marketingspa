@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { LeadPipelineStatus, OrderStatus, Prisma } from '@marketingspa/database';
 import { PrismaService } from '../prisma/prisma.service';
+import { TenantOwnershipService } from '../common/services/tenant-ownership.service';
 import {
   CreateLeadSourceDto,
   UpdateLeadSourceDto,
@@ -18,7 +19,10 @@ import { leadSourceCodesForPlatform } from '../common/utils/platform-lead-source
 
 @Injectable()
 export class MarketingService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly tenant: TenantOwnershipService,
+  ) {}
 
   // --- Lead Sources ---
   async listLeadSources(organizationId: string, query: LeadSourceQueryDto) {
@@ -74,7 +78,8 @@ export class MarketingService {
     return buildPaginatedResult(items, total, page, pageSize);
   }
 
-  createAdCampaign(organizationId: string, dto: CreateAdCampaignDto) {
+  async createAdCampaign(organizationId: string, dto: CreateAdCampaignDto) {
+    await this.tenant.assertAdAccount(organizationId, dto.adAccountId);
     return this.prisma.adCampaign.create({
       data: {
         organizationId,
@@ -89,7 +94,8 @@ export class MarketingService {
     });
   }
 
-  createAdDailyStat(organizationId: string, dto: CreateAdDailyStatDto) {
+  async createAdDailyStat(organizationId: string, dto: CreateAdDailyStatDto) {
+    await this.tenant.assertAdCampaign(organizationId, dto.adCampaignId);
     return this.prisma.adDailyStat.create({
       data: {
         organizationId,

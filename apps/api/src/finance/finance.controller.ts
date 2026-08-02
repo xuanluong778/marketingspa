@@ -40,7 +40,12 @@ export class FinanceController {
 
   @Post('orders')
   createOrder(@CurrentUser() user: AuthUser, @Body() dto: CreateOrderDto) {
-    return this.service.createOrder(user.organizationId, dto);
+    return this.service.createOrder(user.organizationId, dto, user.id);
+  }
+
+  @Post('orders/:id/cancel')
+  cancelOrder(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.service.cancelOrder(user.organizationId, id, user.id);
   }
 
   @Get('payments')
@@ -50,7 +55,12 @@ export class FinanceController {
 
   @Post('payments')
   createPayment(@CurrentUser() user: AuthUser, @Body() dto: CreatePaymentDto) {
-    return this.service.createPayment(user.organizationId, dto);
+    return this.service.createPayment(user.organizationId, dto, user.id);
+  }
+
+  @Post('payments/:id/refund')
+  refundPayment(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.service.refundPayment(user.organizationId, id, user.id);
   }
 
   @Get('expenses')

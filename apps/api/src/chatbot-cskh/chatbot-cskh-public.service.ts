@@ -1,8 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { ChatbotBotStatus } from '@marketingspa/database';
+import { AdPlatform, ChatbotBotStatus } from '@marketingspa/database';
 import { PrismaService } from '../prisma/prisma.service';
 import { OpenAiService } from '../openai/openai.service';
 import { ChatbotCskhService } from './chatbot-cskh.service';
+import { EventsGateway } from '../events/events.gateway';
+import { LeadsService } from '../leads/leads.service';
 import { PublicLeadDto, PublicMessageDto } from './dto/chatbot-cskh.dto';
 import { generateAiReply } from './utils/chatbot-ai.util';
 import { CREDIT_EXHAUSTED_MESSAGE, defaultGreeting } from './utils/chatbot-constants';
@@ -10,6 +12,33 @@ import { CREDIT_EXHAUSTED_MESSAGE, defaultGreeting } from './utils/chatbot-const
 interface RateBucket {
   count: number;
   resetAt: number;
+}
+
+function parseAttributionFromPageUrl(pageUrl?: string) {
+  if (!pageUrl) return undefined;
+  try {
+    const u = new URL(pageUrl);
+    const q = u.searchParams;
+    const get = (k: string) => q.get(k) || undefined;
+    return {
+      channel: (get('gclid')
+        ? AdPlatform.GOOGLE
+        : get('fbclid')
+          ? AdPlatform.META
+          : AdPlatform.OTHER) as AdPlatform,
+      utmSource: get('utm_source'),
+      utmMedium: get('utm_medium'),
+      utmCampaign: get('utm_campaign'),
+      utmContent: get('utm_content'),
+      utmTerm: get('utm_term'),
+      fbclid: get('fbclid'),
+      gclid: get('gclid'),
+      landingPage: pageUrl,
+      referrer: get('referrer') || get('utm_referrer'),
+    };
+  } catch {
+    return { landingPage: pageUrl, channel: AdPlatform.OTHER };
+  }
 }
 
 @Injectable()
@@ -21,6 +50,8 @@ export class ChatbotCskhPublicService {
     private readonly prisma: PrismaService,
     private readonly chatbot: ChatbotCskhService,
     private readonly openAi: OpenAiService,
+    private readonly events: EventsGateway,
+    private readonly leads: LeadsService,
   ) {}
 
   async getPublicConfig(botId: string, pageUrl = '', origin = '') {
@@ -67,6 +98,37 @@ export class ChatbotCskhPublicService {
         message: dto.message.trim(),
       },
     });
+
+    try {
+      this.events.broadcastChatbotMessageNew(bot.organizationId, {
+        conversationId: conversation.id,
+        channel: 'website',
+        preview: dto.message.trim().slice(0, 120),
+        visitorName: conversation.visitorName || undefined,
+        botId: bot.id,
+      });
+    } catch {
+      /* ignore realtime errors */
+    }
+
+    if (conversation.humanTakeover) {
+      const staffMsg =
+        'Nhân viên đang hỗ trợ bạn. Bot đã tạm dừng — vui lòng chờ phản hồi từ spa.';
+      await this.prisma.chatbotMessage.create({
+        data: {
+          conversationId: conversation.id,
+          role: 'system',
+          message: staffMsg,
+        },
+      });
+      return {
+        ok: true,
+        reply: staffMsg,
+        human_takeover: true,
+        conversation_id: conversation.id,
+        linked_lead_id: conversation.linkedLeadId,
+      };
+    }
 
     const [sources, history, settings, usage] = await Promise.all([
       this.prisma.chatbotKnowledgeSource.findMany({
@@ -178,15 +240,16 @@ export class ChatbotCskhPublicService {
     });
 
     if (leadSource) {
-      await this.prisma.lead.create({
-        data: {
-          organizationId: bot.organizationId,
-          leadSourceId: leadSource.id,
-          name: dto.name || 'Khách chatbot',
-          phone: dto.phone,
-          note: dto.need || 'Lead từ Chatbot CSKH',
-          pipelineStatus: 'NEW',
-        },
+      const crmLead = await this.leads.create(bot.organizationId, {
+        leadSourceId: leadSource.id,
+        name: dto.name || 'Khách chatbot',
+        phone: dto.phone,
+        note: dto.need || 'Lead từ Chatbot CSKH',
+        attribution: parseAttributionFromPageUrl(dto.pageUrl),
+      });
+      await this.prisma.chatbotConversation.update({
+        where: { id: conversation.id },
+        data: { linkedLeadId: crmLead.id, visitorPhone: dto.phone },
       });
     }
 

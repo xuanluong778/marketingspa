@@ -1,15 +1,19 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
-import { Inject } from '@nestjs/common';
 import { AutoPostStatus } from '@marketingspa/database';
+import type Redis from 'ioredis';
+import type { Queue } from 'bullmq';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { OpenAiService } from '../openai/openai.service';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { AUTO_POST_QUEUE } from '../queue/queue.constants';
-import type { Queue } from 'bullmq';
+import { REDIS_CLIENT } from '../redis/redis.constants';
 import { QueueEnqueueService } from '../common/services/queue-enqueue.service';
 import { AutoPostFacebookService } from './auto-post-facebook.service';
 import { AutoPostMetaService } from './auto-post-meta.service';
@@ -21,11 +25,18 @@ import {
   buildFacebookPostUrl,
   friendlyPublishError,
   isPermanentPublishError,
+  sanitizePublishErrorMessage,
 } from './auto-post-publish-errors';
+import { normalizePublishMedia } from './auto-post-media.util';
 import {
   canUseServerEnvFanpage,
   parseMetaFanpageAllowedOrgIds,
 } from '../meta-fanpage/meta-fanpage-access';
+import {
+  acquireAutoPostPublishLock,
+  releaseAutoPostPublishLock,
+} from './auto-post-publish-lock';
+import { MetaGraphMetricsService } from './meta-graph-metrics.service';
 import type {
   GenerateAutoPostDto,
   PublishAutoPostDto,
@@ -56,8 +67,10 @@ export class AutoPostService {
     private readonly openai: OpenAiService,
     private readonly facebook: AutoPostFacebookService,
     private readonly meta: AutoPostMetaService,
+    private readonly metrics: MetaGraphMetricsService,
     @Inject(AUTO_POST_QUEUE) private readonly autoPostQueue: Queue,
     private readonly queueEnqueue: QueueEnqueueService,
+    @Optional() @Inject(REDIS_CLIENT) private readonly redis?: Redis,
   ) {}
 
   status(user?: AuthUser) {
@@ -65,14 +78,19 @@ export class AutoPostService {
       (process.env.META_APP_ID || process.env.FACEBOOK_APP_ID) &&
         (process.env.META_APP_SECRET || process.env.FACEBOOK_APP_SECRET),
     );
-    const metaLoginConfigId = Boolean(
-      process.env.META_LOGIN_CONFIG_ID ||
-        process.env.FACEBOOK_LOGIN_CONFIG_ID ||
-        process.env.FACEBOOK_CONFIG_ID,
-    );
+    const metaLoginConfigIdValue =
+      process.env.META_LOGIN_CONFIG_ID?.trim() ||
+      process.env.FACEBOOK_LOGIN_CONFIG_ID?.trim() ||
+      process.env.FACEBOOK_CONFIG_ID?.trim() ||
+      '';
+    const metaLoginConfigId = Boolean(metaLoginConfigIdValue);
     const metaPageEnvConfigured = Boolean(
       process.env.META_PAGE_ID?.trim() && process.env.META_PAGE_ACCESS_TOKEN?.trim(),
     );
+    const oauthConnectionEnabled =
+      (process.env.OAUTH_CONNECTION ?? '').trim().toLowerCase() === 'true';
+    const oauthCanary =
+      (process.env.AUTO_POST_OAUTH_CANARY ?? '').trim().toLowerCase() === 'true';
 
     const allowedOrgIds = parseMetaFanpageAllowedOrgIds((k) => process.env[k]);
     const canUseServerEnv = user
@@ -82,17 +100,36 @@ export class AutoPostService {
         )
       : false;
 
-    return {
+    // USER: chỉ biết có thể kết nối Facebook hay không — không lộ env/config kỹ thuật
+    const facebookConnectAvailable =
+      oauthConnectionEnabled && metaConfigured && metaLoginConfigId;
+
+    const publicStatus = {
       aiConfigured: this.openai.isConfigured(),
+      facebookConnectAvailable,
+    };
+
+    if (!canUseServerEnv) {
+      return publicStatus;
+    }
+
+    // SUPER_ADMIN / allowlist: khu vực cấu hình nâng cao + chẩn đoán
+    return {
+      ...publicStatus,
       metaConfigured,
       metaLoginConfigId,
-      // Chỉ báo env sẵn sàng cho admin/allowlist — SaaS không thấy SERVER_ENV UI
-      metaPageEnvConfigured: metaPageEnvConfigured && canUseServerEnv,
-      canUseServerEnv,
-      oauthConnectionEnabled:
-        (process.env.OAUTH_CONNECTION ?? '').trim().toLowerCase() === 'true',
-      oauthCanary:
-        (process.env.AUTO_POST_OAUTH_CANARY ?? '').trim().toLowerCase() === 'true',
+      metaLoginConfigIdValue,
+      metaAppId:
+        process.env.META_APP_ID?.trim() || process.env.FACEBOOK_APP_ID?.trim() || null,
+      metaPageEnvConfigured,
+      canUseServerEnv: true,
+      oauthConnectionEnabled,
+      oauthCanary,
+      allowlistOrgCount: allowedOrgIds.length,
+      currentOrgAllowlisted: Boolean(
+        user?.organizationId && allowedOrgIds.includes(user.organizationId),
+      ),
+      isSuperAdmin: user?.role === 'SUPER_ADMIN',
     };
   }
 
@@ -106,7 +143,7 @@ export class AutoPostService {
 
   async saveDraft(user: AuthUser, dto: SaveAutoPostDraftDto) {
     const fanpage = await this.resolveFanpage(user.id, user.organizationId, dto.fanpageId);
-    const data = this.buildPostData(user, dto, fanpage);
+    const data = await this.buildPostData(user, dto, fanpage);
 
     if (dto.id) {
       const existing = await this.requireOwnedPost(user.id, user.organizationId, dto.id);
@@ -132,7 +169,7 @@ export class AutoPostService {
       throw new BadRequestException('Không thể cập nhật bài ở trạng thái hiện tại');
     }
     const fanpage = await this.resolveFanpage(user.id, user.organizationId, dto.fanpageId);
-    const data = this.buildPostData(user, dto, fanpage);
+    const data = await this.buildPostData(user, dto, fanpage);
     const updated = await this.prisma.autoPost.update({
       where: { id: dto.id },
       data,
@@ -140,9 +177,24 @@ export class AutoPostService {
     return this.serializePost(updated);
   }
 
-  async listPosts(userId: string, organizationId: string, status?: AutoPostStatus) {
+  async listPosts(
+    userId: string,
+    organizationId: string,
+    status?: AutoPostStatus,
+    industryFilter?: { industryId?: string; customIndustry?: string },
+  ) {
+    const custom = industryFilter?.customIndustry?.trim();
     const items = await this.prisma.autoPost.findMany({
-      where: { userId, organizationId, ...(status ? { status } : {}) },
+      where: {
+        userId,
+        organizationId,
+        ...(status ? { status } : {}),
+        ...(industryFilter?.industryId
+          ? { industryId: industryFilter.industryId }
+          : custom
+            ? { customIndustry: { equals: custom, mode: 'insensitive' } }
+            : {}),
+      },
       orderBy: { createdAt: 'desc' },
       take: 100,
     });
@@ -237,84 +289,117 @@ export class AutoPostService {
 
     // Idempotent: đã đăng thành công thì trả về bài hiện có (không gọi Graph lại)
     if (post.status === AutoPostStatus.PUBLISHED && post.facebookPostId) {
+      this.metrics.duplicatePublishPrevented();
       return this.serializePost(post);
     }
 
     this.assertPublishable(post);
 
-    const claimed = await this.prisma.autoPost.updateMany({
-      where: {
-        id: postId,
-        userId,
-        organizationId,
-        status: { in: CLAIMABLE_FOR_PUBLISH },
-        facebookPostId: null,
-      },
-      data: {
-        status: AutoPostStatus.PUBLISHING,
-        approvedAt: new Date(),
-        errorMessage: null,
-      },
-    });
-
-    if (claimed.count !== 1) {
-      const current = await this.requireOwnedPost(userId, organizationId, postId);
-      if (current.status === AutoPostStatus.PUBLISHED && current.facebookPostId) {
-        return this.serializePost(current);
-      }
-      if (current.status === AutoPostStatus.PUBLISHING) {
+    const owner = `api:${randomUUID()}:${process.pid}`;
+    let lockKey: string | null = null;
+    if (this.redis) {
+      const lock = await acquireAutoPostPublishLock(this.redis, organizationId, postId, owner);
+      if (!lock.ok) {
+        this.metrics.duplicatePublishPrevented();
+        const current = await this.requireOwnedPost(userId, organizationId, postId);
+        if (current.status === AutoPostStatus.PUBLISHED && current.facebookPostId) {
+          return this.serializePost(current);
+        }
         throw new BadRequestException('Bài đang được đăng');
       }
-      throw new BadRequestException('Không thể đăng bài ở trạng thái hiện tại');
-    }
-
-    // Hủy delayed job nếu đang SCHEDULED
-    try {
-      const job = await this.autoPostQueue.getJob(`auto-post-${postId}`);
-      if (job) await job.remove();
-    } catch {
-      /* ignore */
+      lockKey = lock.key;
     }
 
     try {
-      const fbPostId = await this.executePublish(userId, organizationId, post);
-      const updated = await this.prisma.autoPost.update({
-        where: { id: postId },
+      // Re-check after lock — worker có thể vừa publish
+      const latest = await this.requireOwnedPost(userId, organizationId, postId);
+      if (latest.status === AutoPostStatus.PUBLISHED && latest.facebookPostId) {
+        return this.serializePost(latest);
+      }
+
+      const claimed = await this.prisma.autoPost.updateMany({
+        where: {
+          id: postId,
+          userId,
+          organizationId,
+          status: { in: CLAIMABLE_FOR_PUBLISH },
+          facebookPostId: null,
+        },
         data: {
-          status: AutoPostStatus.PUBLISHED,
-          publishedAt: new Date(),
-          facebookPostId: fbPostId,
-          scheduledAt: null,
+          status: AutoPostStatus.PUBLISHING,
+          approvedAt: new Date(),
           errorMessage: null,
         },
       });
-      await this.prisma.autoPostPublishLog.create({
-        data: {
-          userId,
-          postId,
-          action: 'publish_now',
-          status: 'success',
-          facebookPostId: fbPostId,
-        },
-      });
-      return this.serializePost(updated);
-    } catch (e) {
-      const msg = friendlyPublishError(e instanceof Error ? e.message : 'Đăng bài thất bại');
-      await this.facebook.logApiError(userId, 'publish_now', msg, postId);
-      await this.prisma.autoPost.update({
-        where: { id: postId },
-        data: { status: AutoPostStatus.FAILED, errorMessage: msg },
-      });
-      await this.prisma.autoPostPublishLog.create({
-        data: {
-          userId,
-          postId,
-          action: 'publish_now',
-          status: 'failed',
-          errorMessage: msg,
-        },
-      });
-      throw new BadRequestException(msg);
+
+      if (claimed.count !== 1) {
+        const current = await this.requireOwnedPost(userId, organizationId, postId);
+        if (current.status === AutoPostStatus.PUBLISHED && current.facebookPostId) {
+          return this.serializePost(current);
+        }
+        if (current.status === AutoPostStatus.PUBLISHING) {
+          throw new BadRequestException('Bài đang được đăng');
+        }
+        throw new BadRequestException('Không thể đăng bài ở trạng thái hiện tại');
+      }
+
+      // Hủy delayed job nếu đang SCHEDULED
+      try {
+        const job = await this.autoPostQueue.getJob(`auto-post-${postId}`);
+        if (job) await job.remove();
+      } catch {
+        /* ignore */
+      }
+
+      try {
+        const fbPostId = await this.executePublish(userId, organizationId, latest);
+        const updated = await this.prisma.autoPost.update({
+          where: { id: postId },
+          data: {
+            status: AutoPostStatus.PUBLISHED,
+            publishedAt: new Date(),
+            facebookPostId: fbPostId,
+            scheduledAt: null,
+            errorMessage: null,
+          },
+        });
+        await this.prisma.autoPostPublishLog.create({
+          data: {
+            userId,
+            postId,
+            action: 'publish_now',
+            status: 'success',
+            facebookPostId: fbPostId,
+          },
+        });
+        return this.serializePost(updated);
+      } catch (e) {
+        const raw = e instanceof Error ? e.message : 'Đăng bài thất bại';
+        const msg = sanitizePublishErrorMessage(raw);
+        const userMsg = friendlyPublishError(msg);
+        await this.facebook.logApiError(userId, 'publish_now', msg, postId);
+        await this.prisma.autoPost.update({
+          where: { id: postId },
+          data: { status: AutoPostStatus.FAILED, errorMessage: msg },
+        });
+        await this.prisma.autoPostPublishLog.create({
+          data: {
+            userId,
+            postId,
+            action: 'publish_now',
+            status: 'failed',
+            errorMessage: msg,
+          },
+        });
+        if (isPermanentPublishError(msg)) {
+          throw new BadRequestException(userMsg);
+        }
+        throw new BadRequestException(userMsg);
+      }
+    } finally {
+      if (this.redis && lockKey) {
+        await releaseAutoPostPublishLock(this.redis, lockKey, owner);
+      }
     }
   }
 
@@ -416,6 +501,9 @@ export class AutoPostService {
       hashtags: string | null;
       cta: string | null;
       spaService: string | null;
+      industryId: string | null;
+      industryName: string | null;
+      customIndustry: string | null;
       targetAudience: string | null;
       tone: string | null;
       promotion: string | null;
@@ -463,6 +551,9 @@ export class AutoPostService {
           hashtags: source.hashtags,
           cta: source.cta,
           spaService: source.spaService,
+          industryId: source.industryId,
+          industryName: source.industryName,
+          customIndustry: source.customIndustry,
           targetAudience: source.targetAudience,
           tone: source.tone,
           promotion: source.promotion,
@@ -564,7 +655,8 @@ export class AutoPostService {
       });
       return { ok: true, facebookPostId: fbPostId };
     } catch (e) {
-      const msg = friendlyPublishError(e instanceof Error ? e.message : 'Đăng bài thất bại');
+      const raw = e instanceof Error ? e.message : 'Đăng bài thất bại';
+      const msg = sanitizePublishErrorMessage(raw);
       await this.facebook.logApiError(userId, 'scheduled_publish', msg, postId);
       await this.prisma.autoPost.update({
         where: { id: postId },
@@ -655,11 +747,39 @@ export class AutoPostService {
     }
   }
 
-  private buildPostData(
+  private async buildPostData(
     user: AuthUser,
     dto: SaveAutoPostDraftDto,
     fanpage: { id: string; pageId: string; pageName: string } | null,
   ) {
+    let media: { imageUrl?: string; linkUrl?: string };
+    try {
+      media = normalizePublishMedia({
+        imageUrl: dto.imageUrl,
+        linkUrl: dto.linkUrl,
+      });
+    } catch (e) {
+      throw new BadRequestException(e instanceof Error ? e.message : 'Media không hợp lệ');
+    }
+
+    const custom = dto.customIndustry?.trim() || null;
+    let industryId: string | null = null;
+    let industryName: string | null = null;
+    let customIndustry: string | null = null;
+    if (custom) {
+      customIndustry = custom;
+      industryName = custom;
+    } else if (dto.industryId) {
+      const industry = await this.prisma.contentIndustry.findFirst({
+        where: { id: dto.industryId, isActive: true },
+      });
+      if (!industry) throw new BadRequestException('industryId không hợp lệ hoặc đã ẩn');
+      industryId = industry.id;
+      industryName = industry.name;
+    } else if (dto.industryName?.trim()) {
+      industryName = dto.industryName.trim();
+    }
+
     return {
       userId: user.id,
       organizationId: user.organizationId,
@@ -669,11 +789,14 @@ export class AutoPostService {
       postType: dto.postType,
       topic: dto.topic.trim(),
       caption: dto.caption.trim(),
-      imageUrl: dto.imageUrl?.trim() || null,
-      linkUrl: dto.linkUrl?.trim() || null,
+      imageUrl: media.imageUrl ?? null,
+      linkUrl: media.linkUrl ?? null,
       hashtags: dto.hashtags?.trim() || null,
       cta: dto.cta?.trim() || null,
       spaService: dto.spaService?.trim() || null,
+      industryId,
+      industryName,
+      customIndustry,
       targetAudience: dto.targetAudience?.trim() || null,
       tone: dto.tone?.trim() || null,
       promotion: dto.promotion?.trim() || null,
@@ -714,6 +837,9 @@ export class AutoPostService {
     hashtags: string | null;
     cta: string | null;
     spaService: string | null;
+    industryId?: string | null;
+    industryName?: string | null;
+    customIndustry?: string | null;
     targetAudience: string | null;
     tone: string | null;
     promotion: string | null;
@@ -728,6 +854,9 @@ export class AutoPostService {
   }) {
     return {
       ...post,
+      industryId: post.industryId ?? null,
+      industryName: post.industryName ?? null,
+      customIndustry: post.customIndustry ?? null,
       facebookPostUrl: buildFacebookPostUrl(post.facebookPostId, post.fanpagePageId),
       scheduledAt: post.scheduledAt?.toISOString() ?? null,
       publishedAt: post.publishedAt?.toISOString() ?? null,

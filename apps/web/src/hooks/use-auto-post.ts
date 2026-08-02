@@ -5,6 +5,7 @@ import type {
   AutoPostFormState,
   AutoPostItem,
   AutoPostOAuthPagesResponse,
+  AutoPostPlatformStatus,
   AutoPostStatus,
   AutoPostType,
 } from '@/types/auto-post';
@@ -14,16 +15,7 @@ const BASE = '/auto-post';
 export function useAutoPostStatus() {
   return useQuery({
     queryKey: ['auto-post', 'status'],
-    queryFn: () =>
-      apiClient<{
-        aiConfigured: boolean;
-        metaConfigured: boolean;
-        metaLoginConfigId?: boolean;
-        metaPageEnvConfigured?: boolean;
-        canUseServerEnv?: boolean;
-        oauthConnectionEnabled?: boolean;
-        oauthCanary?: boolean;
-      }>(`${BASE}/status`),
+    queryFn: () => apiClient<AutoPostPlatformStatus>(`${BASE}/status`),
   });
 }
 
@@ -31,22 +23,79 @@ export function useAutoPostFacebookStatus() {
   return useQuery({
     queryKey: ['auto-post', 'facebook'],
     queryFn: () => apiClient<AutoPostFacebookStatus>(`${BASE}/facebook/status`),
+    staleTime: 60_000,
+    refetchOnMount: false,
+    retry: 1,
   });
 }
 
 export function useAutoPostOauthPages(enabled = false) {
   return useQuery({
     queryKey: ['auto-post', 'facebook', 'oauth', 'pages'],
-    queryFn: () =>
-      apiClient<AutoPostOAuthPagesResponse>(`${BASE}/facebook/oauth/pages`),
+    queryFn: () => apiClient<AutoPostOAuthPagesResponse>(`${BASE}/facebook/oauth/pages`),
     enabled,
+    staleTime: 60_000,
+    refetchOnMount: false,
+    retry: false,
   });
 }
 
-export function useAutoPostList(status?: AutoPostStatus) {
-  const qs = status ? `?status=${status}` : '';
+/** Chi tiết Fanpage — key theo fanpageId; server cache theo org+fanpage. */
+export function useFanpageDetails(
+  fanpageId: string | null,
+  enabled = true,
+  organizationId?: string | null,
+) {
   return useQuery({
-    queryKey: ['auto-post', 'posts', status ?? 'all'],
+    queryKey: [
+      'auto-post',
+      'facebook',
+      'page-details',
+      organizationId ?? 'org',
+      fanpageId,
+    ],
+    queryFn: () =>
+      apiClient<import('@/types/auto-post').FanpageDetailsResponse>(
+        `${BASE}/facebook/pages/${fanpageId}/details`,
+      ),
+    enabled: Boolean(fanpageId) && enabled,
+    staleTime: 4 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: false,
+  });
+}
+
+/** Bỏ cache server + lấy dữ liệu mới. */
+export async function fetchFanpageDetailsRefresh(fanpageId: string) {
+  return apiClient<import('@/types/auto-post').FanpageDetailsResponse>(
+    `${BASE}/facebook/pages/${fanpageId}/details?refresh=true`,
+  );
+}
+
+/** Chẩn đoán quyền Fanpage — không token. */
+export function useFanpagePermissionsDiagnostics(enabled = false) {
+  return useQuery({
+    queryKey: ['auto-post', 'facebook', 'permissions-diagnostics'],
+    queryFn: () =>
+      apiClient<import('@/types/auto-post').FanpagePermissionsDiagnostics>(
+        `${BASE}/facebook/permissions-diagnostics`,
+      ),
+    enabled,
+    staleTime: 60_000,
+    retry: false,
+  });
+}
+
+export function useAutoPostList(status?: AutoPostStatus, industryId?: string) {
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  if (industryId) params.set('industryId', industryId);
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  return useQuery({
+    queryKey: ['auto-post', 'posts', status ?? 'all', industryId ?? 'all'],
     queryFn: () => apiClient<{ items: AutoPostItem[] }>(`${BASE}/posts${qs}`),
   });
 }
@@ -81,23 +130,28 @@ export function useAutoPostMutations() {
   });
 
   const disconnectFacebook = useMutation({
-    mutationFn: () =>
-      apiClient(`${BASE}/facebook/disconnect`, { method: 'POST' }),
+    mutationFn: () => apiClient(`${BASE}/facebook/disconnect`, { method: 'POST' }),
     onSuccess: invalidate,
   });
 
   const refreshPages = useMutation({
     mutationFn: () =>
-      apiClient(`${BASE}/facebook/pages/refresh`, { method: 'POST' }),
+      apiClient<import('@/types/auto-post').AutoPostRefreshPagesResult>(
+        `${BASE}/facebook/pages/refresh`,
+        { method: 'POST' },
+      ),
     onSuccess: invalidate,
   });
 
   const selectOauthPages = useMutation({
     mutationFn: (pageIds: string[]) =>
-      apiClient(`${BASE}/facebook/oauth/select`, {
-        method: 'POST',
-        body: JSON.stringify({ pageIds }),
-      }),
+      apiClient<import('@/types/auto-post').AutoPostSelectPagesResult>(
+        `${BASE}/facebook/oauth/select`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ pageIds }),
+        },
+      ),
     onSuccess: invalidate,
   });
 
@@ -118,22 +172,24 @@ export function useAutoPostMutations() {
   });
 
   const generateAi = useMutation({
-    mutationFn: (body: Pick<
-      AutoPostFormState,
-      | 'postType'
-      | 'topic'
-      | 'spaService'
-      | 'targetAudience'
-      | 'tone'
-      | 'promotion'
-      | 'linkUrl'
-      | 'hashtags'
-      | 'cta'
-    > & { postType: AutoPostType }) =>
-      apiClient<{ caption: string; hashtags: string[]; cta: string }>(
-        `${BASE}/ai/generate`,
-        { method: 'POST', body: JSON.stringify(body) },
-      ),
+    mutationFn: (
+      body: Pick<
+        AutoPostFormState,
+        | 'postType'
+        | 'topic'
+        | 'spaService'
+        | 'targetAudience'
+        | 'tone'
+        | 'promotion'
+        | 'linkUrl'
+        | 'hashtags'
+        | 'cta'
+      > & { postType: AutoPostType },
+    ) =>
+      apiClient<{ caption: string; hashtags: string[]; cta: string }>(`${BASE}/ai/generate`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
   });
 
   const rewriteAi = useMutation({
@@ -142,10 +198,10 @@ export function useAutoPostMutations() {
       caption: string;
       cta?: string;
     }) =>
-      apiClient<{ caption: string; hashtags: string[]; cta: string }>(
-        `${BASE}/ai/rewrite`,
-        { method: 'POST', body: JSON.stringify(body) },
-      ),
+      apiClient<{ caption: string; hashtags: string[]; cta: string }>(`${BASE}/ai/rewrite`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
   });
 
   const saveDraft = useMutation({
@@ -163,6 +219,9 @@ export function useAutoPostMutations() {
       targetAudience?: string;
       tone?: string;
       promotion?: string;
+      industryId?: string;
+      industryName?: string;
+      customIndustry?: string;
     }) =>
       apiClient<AutoPostItem>(`${BASE}/drafts`, {
         method: 'POST',
@@ -173,8 +232,7 @@ export function useAutoPostMutations() {
 
   const publishNow = useMutation({
     mutationFn: (body: string | { postId: string; fanpageIds?: string[] }) => {
-      const payload =
-        typeof body === 'string' ? { postId: body } : body;
+      const payload = typeof body === 'string' ? { postId: body } : body;
       return apiClient<AutoPostItem | { items: AutoPostItem[] }>(`${BASE}/publish`, {
         method: 'POST',
         body: JSON.stringify(payload),
@@ -209,8 +267,7 @@ export function useAutoPostMutations() {
   });
 
   const deletePost = useMutation({
-    mutationFn: (postId: string) =>
-      apiClient(`${BASE}/posts/${postId}`, { method: 'DELETE' }),
+    mutationFn: (postId: string) => apiClient(`${BASE}/posts/${postId}`, { method: 'DELETE' }),
     onSuccess: invalidate,
   });
 

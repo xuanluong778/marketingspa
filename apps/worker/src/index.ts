@@ -23,6 +23,9 @@ import {
   processAutoPostScheduledScan,
 } from './processors/auto-post';
 import { processHrmAttendanceRebuild } from './processors/hrm-attendance';
+import { processAdsSync } from './processors/ads-sync';
+import { processAdsAction } from './processors/ads-action';
+import { processVideoTranscription } from './processors/video-transcription';
 
 initSentry();
 
@@ -43,6 +46,7 @@ const redis = createRedisPublisher();
 const workers: Worker[] = [];
 const WORKER_HEARTBEAT_KEY = 'marketingspa:worker:heartbeat';
 const HEARTBEAT_INTERVAL_MS = 30_000;
+const VIDEO_TRANSCRIPTION_LOCK_MS = 3 * 60 * 60 * 1000;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
 function attachWorkerHandlers(worker: Worker, name: string) {
@@ -106,6 +110,23 @@ async function start() {
     new Worker(QUEUE_NAMES.HRM_ATTENDANCE_REBUILD, (job) => processHrmAttendanceRebuild(job), {
       ...opts,
       concurrency: 2,
+    }),
+    // Meta/Google Ads sync — hierarchy + insights → DB (backoff on Queue job options)
+    new Worker(QUEUE_NAMES.ADS_SYNC, (job) => processAdsSync(job, redis), {
+      ...opts,
+      concurrency: 1,
+    }),
+    // AdsActionRequest — pause/resume/budget (gated by ADS_ACTIONS_LIVE)
+    new Worker(QUEUE_NAMES.ADS_ACTION, (job) => processAdsAction(job, redis), {
+      ...opts,
+      concurrency: 1,
+    }),
+    new Worker(QUEUE_NAMES.VIDEO_TRANSCRIPTION, (job) => processVideoTranscription(job), {
+      ...opts,
+      concurrency: 1,
+      lockDuration: VIDEO_TRANSCRIPTION_LOCK_MS,
+      stalledInterval: 60_000,
+      maxStalledCount: 3,
     }),
   );
 

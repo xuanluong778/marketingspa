@@ -99,8 +99,67 @@ export type BrandVoiceIntensity =
   | 'strong'
   | 'very_strong';
 
+/** Mode trong tab Xây dựng thương hiệu */
+export type PersonalCreationMode = 'topic' | 'opinion';
+
+/** Quan điểm với sự việc */
+export type OpinionStance =
+  | 'agree'
+  | 'disagree'
+  | 'neutral'
+  | 'multi'
+  | 'custom';
+
+/** Góc nhìn bài viết */
+export type OpinionAngle =
+  | 'life'
+  | 'ethics'
+  | 'community'
+  | 'business'
+  | 'celebrity'
+  | 'personal_lesson';
+
+/** Xưng hô cho Góc nhìn & Chính kiến */
+export type OpinionPronoun =
+  | 'toi_cac_ban'
+  | 'minh_moi_nguoi'
+  | 'anh_em'
+  | 'co_chu_anh_chi';
+
+/** Mức độ giọng */
+export type OpinionIntensity =
+  | 'gentle'
+  | 'deep'
+  | 'frank'
+  | 'emotional'
+  | 'motivational'
+  | 'strong';
+
+/** Độ dài bài opinion */
+export type OpinionLength = '1min' | '3min' | '5min' | 'facebook';
+
 export interface PersonalFormState {
+  /** topic = luồng chủ đề hiện có; opinion = Góc nhìn & Chính kiến */
+  creationMode: PersonalCreationMode;
+  /** Nhóm chủ đề lớn (config brand-topic-themes) */
+  topicGroupId: string;
+  topicGroupLabel: string;
+  /** Batch chủ đề nhỏ đang hiển thị (5–8) */
+  suggestedTopics: string[];
+  /** Chủ đề nhỏ đã chọn (chip / nhập tay) — giữ khi đã chọn tiêu đề */
+  selectedSubtopic: string;
+  /** Chủ đề/tiêu đề bài viết dùng khi generate (sau khi chọn tiêu đề = selectedTitle) */
   postTopic: string;
+  /** true = người dùng đang nhập chủ đề riêng */
+  useCustomTopic: boolean;
+  /** Tiêu đề AI đã tạo */
+  generatedTitles: string[];
+  /** Tiêu đề đang chọn */
+  selectedTitle: string;
+  /** Số tiêu đề muốn tạo: 5 | 10 | 20 */
+  titleCount: 5 | 10 | 20;
+  /** Đang gọi API tạo tiêu đề (draft luôn reset false khi load) */
+  isGeneratingTitles: boolean;
   targetAudience: string;
   postGoal: PersonalPostGoal;
   personalPostType: PersonalPostType;
@@ -113,7 +172,207 @@ export interface PersonalFormState {
   storyIdea: string;
   videoUrl: string;
   transcript: string;
+  /** --- Góc nhìn & Chính kiến --- */
+  opinionSourceUrl: string;
+  opinionSourceText: string;
+  opinionSummary: string;
+  opinionDebateIssue: string;
+  opinionStance: OpinionStance;
+  opinionStanceCustom: string;
+  opinionAngle: OpinionAngle;
+  opinionPronoun: OpinionPronoun;
+  opinionIntensity: OpinionIntensity;
+  opinionLength: OpinionLength;
+  /** Chính kiến / luận điểm của người viết */
+  opinionThesis: string;
+  /** Dữ kiện đã xác nhận (từ analyze hoặc chỉnh tay) */
+  opinionConfirmedFacts: string[];
+  /** Thông tin chưa xác minh */
+  opinionUnverifiedClaims: string[];
+  /** Cụm từ người dùng thường nói (mỗi dòng / mỗi phần tử) */
+  opinionCommonPhrases: string;
+  /** Ẩn tên nhân vật */
+  opinionHideNames: boolean;
+  /** Voice profile fields */
+  opinionAvoidWords: string;
+  opinionOpeningPhrases: string;
+  opinionClosingPhrases: string;
+  opinionSampleParagraph: string;
+  /** Nhóm chủ đề lớn (config opinion-topic-themes) */
+  opinionThemeId: string;
+  /** Chủ đề con đã chọn */
+  opinionSubtopic: string;
+  /** Góc nhìn nhanh (id từ config) */
+  opinionQuickAngleId: string;
+  /** Góc nhìn gợi ý từ phân tích (3–5) */
+  opinionSuggestedAngles: string[];
+  /** Góc nhìn gợi ý đã chọn */
+  opinionPickedSuggestedAngle: string;
+  /** Batch chủ đề con random 5–8 (nhóm đời sống) */
+  opinionSuggestedSubtopics: string[];
+  /** Tiêu đề / góc nhìn AI gợi ý (5–10) */
+  opinionGeneratedTitles: string[];
+  /** Tiêu đề đang chọn */
+  opinionSelectedTitle: string;
+  /** Số tiêu đề muốn tạo */
+  opinionTitleCount: 5 | 10;
+  /** Đang tạo tiêu đề */
+  opinionIsGeneratingTitles: boolean;
+  /** Đang nhập câu chuyện riêng */
+  opinionUseCustomStory: boolean;
 }
+
+export interface OpinionStoryAnalysis {
+  summary: string;
+  debateIssue: string;
+  suggestedAngles: string[];
+  keyPoints: string[];
+  source: 'ai' | 'template';
+}
+
+/** Response of POST /content-marketing/opinion/analyze */
+export interface OpinionAnalyzeResult {
+  sourceSummary: string;
+  confirmedFacts: string[];
+  unverifiedClaims: string[];
+  mainControversy: string;
+  suggestedAngles: string[];
+  missingInformation: string[];
+  warnings: string[];
+  extractedText?: string;
+  sourceType?: string;
+  insufficientData?: boolean;
+  message?: string;
+  analysisSource?: 'ai' | 'template';
+}
+
+export type OpinionRewriteMode =
+  | 'more_casual'
+  | 'more_natural'
+  | 'more_spoken'
+  | 'less_preachy'
+  | 'more_frank'
+  | 'more_deep'
+  | 'shorten'
+  | 'shorten_1min'
+  | 'rewrite_all';
+
+/** Response of POST /content-marketing/opinion/generate|rewrite */
+export interface OpinionGenerateResult {
+  facebookPost: string;
+  videoScript: string;
+  videoHook: string;
+  warnings: string[];
+  source: 'ai' | 'template';
+  rewriteMode?: OpinionRewriteMode;
+  /** Metadata tách riêng — không chèn vào nội dung bài */
+  meta?: {
+    themeId?: string;
+    subtopic?: string;
+    selectedAngle?: string;
+    length?: string;
+  };
+}
+
+export const OPINION_REWRITE_BUTTONS: { mode: OpinionRewriteMode; label: string }[] = [
+  { mode: 'more_natural', label: 'Tự nhiên hơn' },
+  { mode: 'more_casual', label: 'Dân dã hơn' },
+  { mode: 'more_spoken', label: 'Giống lời nói hơn' },
+  { mode: 'less_preachy', label: 'Bớt giảng đạo' },
+  { mode: 'more_deep', label: 'Sâu sắc hơn' },
+  { mode: 'shorten', label: 'Rút ngắn' },
+  { mode: 'rewrite_all', label: 'Viết lại toàn bộ' },
+];
+
+export type TeleprompterScriptRewriteMode =
+  | 'to_spoken'
+  | 'more_natural'
+  | 'more_casual'
+  | 'less_written'
+  | 'less_preachy'
+  | 'more_frank'
+  | 'more_deep'
+  | 'shorten_1min'
+  | 'shorten_3min'
+  | 'shorten_5min';
+
+export interface TeleprompterScriptRewriteResult {
+  script: string;
+  warnings: string[];
+  source: 'ai' | 'template';
+  rewriteMode: TeleprompterScriptRewriteMode;
+  wordCount: number;
+}
+
+export interface OpinionNaturalnessResult {
+  total: number;
+  criteria: {
+    spokenFeel: number;
+    casualTone: number;
+    sentenceLength: number;
+    clicheFree: number;
+    repetition: number;
+    naturalEmotion: number;
+    cameraReadiness: number;
+  };
+  suggestions: string[];
+  source: 'heuristic' | 'ai';
+}
+
+export interface OpinionVoiceProfile {
+  pronoun: string | null;
+  preferredWords: string[];
+  avoidWords: string[];
+  openingPhrases: string[];
+  closingPhrases: string[];
+  sampleParagraph: string | null;
+  source: 'user' | 'organization';
+}
+
+export interface OpinionVoiceProfileResponse {
+  user: OpinionVoiceProfile | null;
+  organization: OpinionVoiceProfile | null;
+  resolved: OpinionVoiceProfile | null;
+}
+
+export const OPINION_STANCE_OPTIONS: { value: OpinionStance; label: string }[] = [
+  { value: 'agree', label: 'Đồng tình' },
+  { value: 'disagree', label: 'Không đồng tình' },
+  { value: 'neutral', label: 'Trung lập' },
+  { value: 'multi', label: 'Nhiều chiều' },
+  { value: 'custom', label: 'Nhập riêng' },
+];
+
+export const OPINION_ANGLE_OPTIONS: { value: OpinionAngle; label: string }[] = [
+  { value: 'life', label: 'Cuộc sống' },
+  { value: 'ethics', label: 'Đạo đức' },
+  { value: 'community', label: 'Trách nhiệm cộng đồng' },
+  { value: 'business', label: 'Kinh doanh' },
+  { value: 'celebrity', label: 'Người nổi tiếng' },
+  { value: 'personal_lesson', label: 'Bài học cá nhân' },
+];
+
+export const OPINION_PRONOUN_OPTIONS: { value: OpinionPronoun; label: string }[] = [
+  { value: 'toi_cac_ban', label: 'Tôi – các bạn' },
+  { value: 'minh_moi_nguoi', label: 'Mình – mọi người' },
+  { value: 'anh_em', label: 'Anh em' },
+  { value: 'co_chu_anh_chi', label: 'Cô chú, anh chị' },
+];
+
+export const OPINION_INTENSITY_OPTIONS: { value: OpinionIntensity; label: string }[] = [
+  { value: 'gentle', label: 'Nhẹ nhàng' },
+  { value: 'deep', label: 'Sâu sắc' },
+  { value: 'frank', label: 'Thẳng thắn' },
+  { value: 'emotional', label: 'Xúc động' },
+  { value: 'motivational', label: 'Truyền động lực' },
+];
+
+export const OPINION_LENGTH_OPTIONS: { value: OpinionLength; label: string; hint: string }[] = [
+  { value: '1min', label: '1 phút', hint: '~120–180 từ' },
+  { value: '3min', label: '3 phút', hint: '~350–500 từ' },
+  { value: '5min', label: '5 phút', hint: '~600–800 từ' },
+  { value: 'facebook', label: 'Bài Facebook', hint: 'Dài vừa, sẵn sàng đăng' },
+];
 
 export type Platform = 'facebook' | 'tiktok' | 'zalo';
 
@@ -143,6 +402,9 @@ export interface ContentFormState {
   personalPostType: PersonalPostType;
   videoUrl: string;
   transcript: string;
+  industryId: string;
+  industryName: string;
+  customIndustry: string;
 }
 
 export interface PolicyFlag {
@@ -157,6 +419,9 @@ export interface PolicyCheckResult {
   flaggedPhrases: PolicyFlag[];
   saferVersion: string;
   disclaimer: string;
+  isRegulatedIndustry?: boolean;
+  regulatedWarning?: string | null;
+  requiresModerationAck?: boolean;
 }
 
 export interface ContentScoreCriteria {
@@ -219,6 +484,157 @@ export interface PersonalIdeasSuggestion {
   source: 'ai' | 'template';
 }
 
+export interface PersonalTitlesSuggestion {
+  titles: string[];
+  source: 'ai' | 'template';
+}
+
+export type FacebookPolicySeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+export type FacebookPolicyOverallStatus =
+  | 'PASS_CANDIDATE'
+  | 'REVIEW_REQUIRED'
+  | 'HIGH_RISK'
+  | 'PROHIBITED'
+  | 'INSUFFICIENT_DATA';
+export type SpecialAdCategory =
+  | 'NONE'
+  | 'CREDIT'
+  | 'EMPLOYMENT'
+  | 'HOUSING'
+  | 'SOCIAL_ISSUES_ELECTIONS_POLITICS';
+
+export interface FacebookPolicyMeta {
+  policyCode: string;
+  policyVersion: string;
+  sourceUrl: string;
+  reviewedAt: string;
+  label: string;
+}
+
+export interface FacebookPolicyFinding {
+  id: string;
+  field: string;
+  excerpt: string;
+  policyGroup: string;
+  policyCode: string;
+  severity: FacebookPolicySeverity;
+  reason: string;
+  remediation: string;
+  suggestedReplacement?: string;
+  signalCount: number;
+  signals: string[];
+  source: 'rule' | 'ai' | 'hybrid';
+  dismissedByAi?: boolean;
+}
+
+export interface FacebookPolicyCheckResult {
+  riskScore: number;
+  confidence: number;
+  overallStatus: FacebookPolicyOverallStatus;
+  findings: FacebookPolicyFinding[];
+  rewrittenContent: string | null;
+  policyMeta: FacebookPolicyMeta;
+  layers: {
+    ruleFindingCount: number;
+    aiReviewed: boolean;
+    aiSource: 'ai' | 'skipped' | 'fallback';
+    falsePositivesDismissed: number;
+  };
+  organizationId: string | null;
+  requiresRecheck: boolean;
+  summary: string;
+}
+
+export interface FacebookPolicyRewriteResult {
+  rewrittenContent: string;
+  preserved: {
+    brandName: boolean;
+    product: boolean;
+    price: boolean;
+    phone: boolean;
+    address: boolean;
+    offer: boolean;
+  };
+  changes: string[];
+  requiresRecheck: true;
+  policyMeta: FacebookPolicyMeta;
+  organizationId: string | null;
+  source: 'ai' | 'template';
+  preliminaryRiskScore: number;
+  preliminaryStatus: FacebookPolicyOverallStatus;
+}
+
+export interface FacebookPolicyCheckPayload {
+  headline?: string;
+  primaryText?: string;
+  description?: string;
+  cta?: string;
+  productService?: string;
+  audience?: string;
+  country?: string;
+  ageMin?: number;
+  ageMax?: number;
+  specialAdCategory?: SpecialAdCategory;
+  brandName?: string;
+  contentToRewrite?: string;
+  imageOcrText?: string;
+  transcript?: string;
+  landingPageText?: string;
+  landingUrl?: string;
+}
+
+export type FacebookPolicyUrlKind =
+  | 'website'
+  | 'facebook_post'
+  | 'facebook_video'
+  | 'facebook_reel'
+  | 'landing_page'
+  | 'unknown';
+
+export interface FacebookPolicyImportResult {
+  sourceType: FacebookPolicyUrlKind;
+  url: string;
+  finalUrl?: string;
+  editable: true;
+  headline?: string;
+  primaryText?: string;
+  description?: string;
+  permalink?: string;
+  thumbnailUrl?: string;
+  pageId?: string;
+  pageName?: string;
+  warnings: string[];
+  insufficientData: boolean;
+  statusHint?: 'INSUFFICIENT_DATA' | 'OK' | 'PERMISSION_REQUIRED';
+  message?: string;
+  landing?: {
+    productHints: string[];
+    priceHints: string[];
+    ctaHints: string[];
+    hasSensitiveForm: boolean;
+    phishingSignals: string[];
+  };
+}
+
+export interface FacebookPolicyMediaAnalysis {
+  mediaType: 'image' | 'video' | 'transcript';
+  ocrText: string;
+  transcript: string;
+  caption: string;
+  visualNotes: string[];
+  regions: Array<{
+    label: string;
+    box?: { x: number; y: number; w: number; h: number };
+    startSec?: number;
+    endSec?: number;
+  }>;
+  findings: FacebookPolicyFinding[];
+  insufficientData: boolean;
+  statusHint: 'OK' | 'INSUFFICIENT_DATA';
+  message?: string;
+  warnings: string[];
+}
+
 export interface VideoAnalysisResult {
   topic: string;
   insights: string[];
@@ -248,6 +664,25 @@ export interface ContentHistoryItem {
   variantCount: number;
   adsReadiness: string;
   createdAt: string;
+  industryId?: string | null;
+  industryName?: string | null;
+  customIndustry?: string | null;
+  /** Facebook / Meta policy check snapshot (client-persisted). */
+  policyCheckId?: string;
+  policyStatus?: FacebookPolicyOverallStatus;
+  riskScore?: number;
+  policyVersion?: string;
+  checkedAt?: string;
+  checkedContentHash?: string;
+  checkedMediaHash?: string;
+  checkedLandingPageHash?: string;
+  specialAdCategory?: SpecialAdCategory;
+  needsSpecialAdCategory?: boolean;
+  cta?: string;
+  landingUrl?: string;
+  /** Kịch bản camera (opinion mode) */
+  videoScript?: string;
+  videoHook?: string;
 }
 
 export type AdvancedWritingStyle =
@@ -309,6 +744,9 @@ export interface AdvancedFormState {
   demographic: AdvancedDemographic;
   articleGoal: AdvancedArticleGoal;
   postLength: PostLength;
+  industryId: string;
+  industryName: string;
+  customIndustry: string;
 }
 
 export interface AdvancedStepAnalysis {
@@ -413,8 +851,8 @@ export const BRAND_ARTICLE_GENRE_OPTIONS: { value: BrandArticleGenre; label: str
   { value: 'women_beauty', label: 'Phụ nữ & nhan sắc' },
   { value: 'marriage_family', label: 'Hôn nhân gia đình' },
   { value: 'success_failure', label: 'Thành công / thất bại' },
-  { value: 'spa_profession', label: 'Chuyện nghề spa' },
-  { value: 'spa_owner_brand', label: 'Thương hiệu cá nhân chủ spa' },
+  { value: 'spa_profession', label: 'Chuyện nghề' },
+  { value: 'spa_owner_brand', label: 'Thương hiệu chủ doanh nghiệp' },
   { value: 'intimate_story', label: 'Câu chuyện thân mật tế nhị' },
 ];
 

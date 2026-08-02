@@ -4,6 +4,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   Post,
   Put,
@@ -13,7 +14,6 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import type { Request, Response } from 'express';
-import { AutoPostStatus } from '@marketingspa/database';
 import { JwtAuthGuard } from '../common/guards/auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
@@ -23,6 +23,8 @@ import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { AutoPostService } from './auto-post.service';
 import { AutoPostFacebookService } from './auto-post-facebook.service';
 import { AutoPostMetaComplianceService } from './auto-post-meta-compliance.service';
+import { AutoPostFacebookPageDetailsService } from './auto-post-facebook-page-details.service';
+import { MetaGraphMetricsService } from './meta-graph-metrics.service';
 import {
   GenerateAutoPostDto,
   PublishAutoPostDto,
@@ -31,6 +33,7 @@ import {
   ScheduleAutoPostDto,
   SelectOAuthPagesDto,
   UpdateAutoPostDto,
+  AutoPostListQueryDto,
 } from './dto/auto-post.dto';
 
 type MetaCallbackRequest = Request & { requestId?: string };
@@ -43,6 +46,8 @@ export class AutoPostController {
     private readonly service: AutoPostService,
     private readonly facebook: AutoPostFacebookService,
     private readonly metaCompliance: AutoPostMetaComplianceService,
+    private readonly pageDetails: AutoPostFacebookPageDetailsService,
+    private readonly metrics: MetaGraphMetricsService,
   ) {}
 
   @Get('status')
@@ -81,8 +86,11 @@ export class AutoPostController {
 
   @Get('posts')
   @UseGuards(JwtAuthGuard, TenantGuard)
-  listPosts(@CurrentUser() user: AuthUser, @Query('status') status?: AutoPostStatus) {
-    return this.service.listPosts(user.id, user.organizationId, status);
+  listPosts(@CurrentUser() user: AuthUser, @Query() query: AutoPostListQueryDto) {
+    return this.service.listPosts(user.id, user.organizationId, query.status, {
+      industryId: query.industryId,
+      customIndustry: query.customIndustry,
+    });
   }
 
   @Get('posts/:id')
@@ -125,7 +133,26 @@ export class AutoPostController {
   @UseGuards(...FanpageGuards)
   @RequirePermissions('automation.view')
   facebookStatus(@CurrentUser() user: AuthUser) {
-    return this.facebook.getConnectionStatus(user.id, user.organizationId);
+    return this.facebook.getConnectionStatus(user.id, user.organizationId, user);
+  }
+
+  /** Metrics Graph an toàn (không token) — phục vụ canary / quan sát. */
+  @Get('facebook/meta-metrics')
+  @UseGuards(...FanpageGuards)
+  @RequirePermissions('automation.view')
+  facebookMetaMetrics() {
+    return this.metrics.snapshot();
+  }
+
+  /**
+   * Chẩn đoán quyền Fanpage: Configuration ID, granted/declined, Page ID, token type, updatedAt.
+   * Không trả token.
+   */
+  @Get('facebook/permissions-diagnostics')
+  @UseGuards(...FanpageGuards)
+  @RequirePermissions('automation.view')
+  facebookPermissionsDiagnostics(@CurrentUser() user: AuthUser) {
+    return this.facebook.getPermissionsDiagnostics(user.id, user.organizationId);
   }
 
   @Get('facebook/oauth/start')
@@ -161,6 +188,25 @@ export class AutoPostController {
     return this.facebook.disconnect(user.id, user.organizationId);
   }
 
+  /**
+   * Xem thông tin Fanpage (pages_read_engagement) — metadata + bài gần đây.
+   * Query `refresh=true` bỏ cache ngắn (3–5 phút).
+   */
+  @Get('facebook/pages/:fanpageId/details')
+  @UseGuards(...FanpageGuards)
+  @RequirePermissions('automation.view')
+  facebookPageDetails(
+    @CurrentUser() user: AuthUser,
+    @Param('fanpageId') fanpageId: string,
+    @Query('refresh') refresh?: string,
+  ) {
+    const forceRefresh =
+      refresh === '1' || refresh === 'true' || refresh === 'yes';
+    return this.pageDetails.getPageDetails(user.id, user.organizationId, fanpageId, {
+      refresh: forceRefresh,
+    });
+  }
+
   @Delete('facebook/pages/:fanpageId')
   @UseGuards(...FanpageGuards)
   @RequirePermissions('automation.integration.manage')
@@ -183,10 +229,11 @@ export class AutoPostController {
   @UseGuards(...FanpageGuards)
   @RequirePermissions('automation.integration.manage')
   oauthListPages(@CurrentUser() user: AuthUser) {
-    return this.facebook.listOAuthManagedPages(user.id, user.organizationId);
+    return this.facebook.listOAuthManagedPages(user.id, user.organizationId, user);
   }
 
   @Post('facebook/oauth/select')
+  @HttpCode(200)
   @UseGuards(...FanpageGuards)
   @RequirePermissions('automation.integration.manage')
   oauthSelectPage(@CurrentUser() user: AuthUser, @Body() dto: SelectOAuthPagesDto & { pageId?: string }) {

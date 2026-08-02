@@ -80,6 +80,110 @@ export class OpenAiService {
     return (data.choices?.[0]?.message?.content ?? '').trim();
   }
 
+  /**
+   * Multimodal chat (vision). `content` may be string or OpenAI content parts array.
+   */
+  async chatCompletionVision(params: {
+    model?: string;
+    maxTokens?: number;
+    temperature?: number;
+    messages: Array<{
+      role: string;
+      content:
+        | string
+        | Array<
+            | { type: 'text'; text: string }
+            | { type: 'image_url'; image_url: { url: string; detail?: string } }
+          >;
+    }>;
+  }): Promise<string> {
+    const apiKey = this.getApiKey();
+    if (!apiKey) {
+      throw new Error('OPENAI_API_KEY chưa được cấu hình');
+    }
+
+    const res = await fetch(`${this.getBaseUrl()}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: params.model || this.getDefaultModel(),
+        messages: params.messages,
+        max_tokens: params.maxTokens ?? 800,
+        temperature: params.temperature ?? 0.2,
+      }),
+    });
+
+    if (!res.ok) {
+      let detail = '';
+      try {
+        const err = (await res.json()) as { error?: { message?: string } };
+        detail = err.error?.message ?? '';
+      } catch {
+        detail = await res.text().catch(() => '');
+      }
+      throw new Error(`OpenAI vision ${res.status}${detail ? `: ${detail}` : ''}`);
+    }
+
+    const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+    return (data.choices?.[0]?.message?.content ?? '').trim();
+  }
+
+  /** Whisper / gpt-4o-mini-transcribe compatible audio transcription. */
+  async transcribeAudio(params: {
+    buffer: Buffer;
+    filename: string;
+    mimeType?: string;
+    language?: string;
+    model?: string;
+  }): Promise<{ text: string; language?: string }> {
+    const apiKey = this.getApiKey();
+    if (!apiKey) {
+      throw new Error('OPENAI_API_KEY chưa được cấu hình');
+    }
+
+    const model =
+      params.model?.trim() ||
+      this.config.get<string>('OPENAI_TRANSCRIBE_MODEL')?.trim() ||
+      'gpt-4o-mini-transcribe';
+
+    const form = new FormData();
+    const blob = new Blob([new Uint8Array(params.buffer)], {
+      type: params.mimeType || 'application/octet-stream',
+    });
+    form.append('file', blob, params.filename);
+    form.append('model', model);
+    const lang = params.language?.trim();
+    if (lang && lang !== 'auto') {
+      form.append('language', lang);
+    }
+
+    const res = await fetch(`${this.getBaseUrl()}/audio/transcriptions`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: form,
+    });
+
+    if (!res.ok) {
+      let detail = '';
+      try {
+        const err = (await res.json()) as { error?: { message?: string } };
+        detail = err.error?.message ?? '';
+      } catch {
+        detail = await res.text().catch(() => '');
+      }
+      throw new Error(`OpenAI transcribe ${res.status}${detail ? `: ${detail}` : ''}`);
+    }
+
+    const data = (await res.json()) as { text?: string; language?: string };
+    return {
+      text: (data.text ?? '').trim(),
+      language: data.language,
+    };
+  }
+
   async getStatus(testConnection = false): Promise<OpenAiStatus> {
     const base: OpenAiStatus = {
       configured: this.isConfigured(),

@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Plus, Pencil, Trash2, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -10,6 +11,13 @@ import { DataTable, StatusBadge } from '@/components/shared/data-table';
 import { LoadingState, EmptyState, ErrorState } from '@/components/shared/page-state';
 import { TemplateFormDialog } from '@/components/automation/template-form-dialog';
 import { FlowFormDialog } from '@/components/automation/flow-form-dialog';
+import { ChannelConnectionsPanel } from '@/components/automation/channel-connections-panel';
+import { AudiencePanel } from '@/components/automation/audience-panel';
+import {
+  BulkCampaignPanel,
+  type BulkCampaignPrefill,
+} from '@/components/automation/bulk-campaign-panel';
+import { MessagingPolicyPanel } from '@/components/automation/messaging-policy-panel';
 import { ConfirmDialog } from '@/components/crm/confirm-dialog';
 import {
   useAutomationTemplates,
@@ -41,12 +49,37 @@ function triggerLabel(v?: string) {
   return TRIGGER_OPTIONS.find((t) => t.value === v)?.label ?? v ?? '—';
 }
 
+const TAB_VALUES = ['audience', 'templates', 'campaigns', 'flows', 'logs', 'channels'] as const;
+type TabValue = (typeof TAB_VALUES)[number];
+
 export default function AutomationPage() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const tabParam = searchParams.get('tab');
+  const initialTab: TabValue =
+    tabParam && (TAB_VALUES as readonly string[]).includes(tabParam)
+      ? (tabParam as TabValue)
+      : 'campaigns';
+
+  const [activeTab, setActiveTab] = useState<TabValue>(initialTab);
+  const [campaignPrefill, setCampaignPrefill] = useState<BulkCampaignPrefill | null>(null);
   const [templateForm, setTemplateForm] = useState<MessageTemplateDetail | null | 'new'>(null);
   const [flowForm, setFlowForm] = useState<AutomationFlowDetail | null | 'new'>(null);
   const [deleteTemplateId, setDeleteTemplateId] = useState<string | null>(null);
   const [deleteFlowId, setDeleteFlowId] = useState<string | null>(null);
   const [simulatingId, setSimulatingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (tabParam && (TAB_VALUES as readonly string[]).includes(tabParam)) {
+      setActiveTab(tabParam as TabValue);
+    }
+  }, [tabParam]);
+
+  function changeTab(v: string) {
+    const next = (TAB_VALUES as readonly string[]).includes(v) ? (v as TabValue) : 'campaigns';
+    setActiveTab(next);
+    router.replace(`/automation?tab=${next}`, { scroll: false });
+  }
 
   const templates = useAutomationTemplates({ pageSize: '50' });
   const flows = useAutomationFlows();
@@ -67,21 +100,33 @@ export default function AutomationPage() {
   return (
     <div>
       <PageHeader
-        title="Tin nhắn tự động"
-        description="Mẫu tin, automation flow và nhật ký gửi (MVP placeholder)"
+        title="Nhắn tin hàng loạt & tự động"
+        description="Tệp khách hàng, chiến dịch blast Messenger/Zalo, mẫu tin, automation flow và kết nối kênh"
       />
 
-      <Tabs defaultValue="templates">
-        <TabsList className="mb-4">
+      <Tabs value={activeTab} onValueChange={changeTab}>
+        <TabsList className="mb-4 flex h-auto flex-wrap gap-1">
+          <TabsTrigger value="campaigns">Chiến dịch hàng loạt</TabsTrigger>
+          <TabsTrigger value="audience">Tệp khách hàng</TabsTrigger>
           <TabsTrigger value="templates">Mẫu tin</TabsTrigger>
           <TabsTrigger value="flows">Automation Flow</TabsTrigger>
           <TabsTrigger value="logs">Nhật ký</TabsTrigger>
+          <TabsTrigger value="channels">Kết nối kênh</TabsTrigger>
         </TabsList>
 
+        <TabsContent value="audience">
+          <AudiencePanel
+            onCreateBulkCampaign={(prefill) => {
+              setCampaignPrefill(prefill);
+              changeTab('campaigns');
+            }}
+          />
+        </TabsContent>
+
         <TabsContent value="templates">
-          <div className="flex justify-end mb-3">
+          <div className="mb-3 flex justify-end">
             <Button onClick={() => setTemplateForm('new')}>
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="mr-2 h-4 w-4" />
               Tạo mẫu tin
             </Button>
           </div>
@@ -93,11 +138,11 @@ export default function AutomationPage() {
           {!templates.isLoading && !templates.isError && templateItems.length > 0 && (
             <div className="grid gap-4 sm:grid-cols-2">
               {templateItems.map((t) => (
-                <div key={t.id} className="rounded-lg border p-4 space-y-2">
+                <div key={t.id} className="space-y-2 rounded-lg border p-4">
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <h3 className="font-semibold">{t.name}</h3>
-                      <div className="flex gap-1 mt-1">
+                      <div className="mt-1 flex gap-1">
                         <Badge variant="outline">{channelLabel(t.channel)}</Badge>
                         {!t.isActive && <Badge variant="secondary">Tắt</Badge>}
                       </div>
@@ -121,17 +166,24 @@ export default function AutomationPage() {
                       </Button>
                     </div>
                   </div>
-                  <p className="text-sm text-muted-foreground line-clamp-3">{t.body}</p>
+                  <p className="line-clamp-3 text-sm text-muted-foreground">{t.body}</p>
                 </div>
               ))}
             </div>
           )}
         </TabsContent>
 
+        <TabsContent value="campaigns">
+          <BulkCampaignPanel
+            prefill={campaignPrefill}
+            onPrefillConsumed={() => setCampaignPrefill(null)}
+          />
+        </TabsContent>
+
         <TabsContent value="flows">
-          <div className="flex justify-end mb-3">
+          <div className="mb-3 flex justify-end">
             <Button onClick={() => setFlowForm('new')}>
-              <Plus className="h-4 w-4 mr-2" />
+              <Plus className="mr-2 h-4 w-4" />
               Tạo flow
             </Button>
           </div>
@@ -157,7 +209,7 @@ export default function AutomationPage() {
                         {!f.isActive && <Badge variant="secondary">Tắt</Badge>}
                       </p>
                     </div>
-                    <div className="flex gap-1 shrink-0">
+                    <div className="flex shrink-0 gap-1">
                       <Button
                         variant="outline"
                         size="sm"
@@ -170,7 +222,7 @@ export default function AutomationPage() {
                           );
                         }}
                       >
-                        <Play className="h-3.5 w-3.5 mr-1" />
+                        <Play className="mr-1 h-3.5 w-3.5" />
                         Giả lập
                       </Button>
                       <Button
@@ -195,6 +247,13 @@ export default function AutomationPage() {
               ))}
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="channels">
+          <div className="space-y-6">
+            <ChannelConnectionsPanel />
+            <MessagingPolicyPanel />
+          </div>
         </TabsContent>
 
         <TabsContent value="logs">
@@ -261,7 +320,10 @@ export default function AutomationPage() {
         isPending={createFlow.isPending || updateFlow.isPending}
         onSubmit={(data) => {
           if (flowForm && flowForm !== 'new') {
-            updateFlow.mutate({ id: flowForm.id, ...data }, { onSuccess: () => setFlowForm(null) });
+            updateFlow.mutate(
+              { id: flowForm.id, ...data },
+              { onSuccess: () => setFlowForm(null) },
+            );
           } else {
             createFlow.mutate(data, { onSuccess: () => setFlowForm(null) });
           }
@@ -278,7 +340,9 @@ export default function AutomationPage() {
         isPending={deleteTemplate.isPending}
         onConfirm={() =>
           deleteTemplateId &&
-          deleteTemplate.mutate(deleteTemplateId, { onSuccess: () => setDeleteTemplateId(null) })
+          deleteTemplate.mutate(deleteTemplateId, {
+            onSuccess: () => setDeleteTemplateId(null),
+          })
         }
       />
 

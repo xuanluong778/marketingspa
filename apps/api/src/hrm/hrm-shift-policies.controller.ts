@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -18,7 +19,6 @@ import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { HrmShiftPoliciesService } from './hrm-shift-policies.service';
 import {
   CreateWorkShiftPolicyDto,
-  CreateWorkShiftPolicyVersionDto,
   UpdateWorkShiftPolicyDto,
 } from './dto/shift.dto';
 
@@ -29,8 +29,15 @@ export class HrmShiftPoliciesController {
 
   @Get()
   @RequirePermissions('hrm.attendance.read')
-  findAll(@CurrentUser() user: AuthUser, @Query('branchId') branchId?: string) {
-    return this.policies.findAll(user.organizationId, branchId);
+  findAll(
+    @CurrentUser() user: AuthUser,
+    @Query('branchId') branchId?: string,
+    @Query('includeInactive') includeInactive?: string,
+  ) {
+    return this.policies.findAll(user.organizationId, {
+      branchId,
+      includeInactive: includeInactive === 'true' || includeInactive === '1',
+    });
   }
 
   @Post()
@@ -43,6 +50,8 @@ export class HrmShiftPoliciesController {
     return this.policies.create(user.organizationId, dto, {
       userId: user.id,
       ipAddress,
+      role: user.role,
+      employeeId: user.employeeId,
     });
   }
 
@@ -63,20 +72,53 @@ export class HrmShiftPoliciesController {
     return this.policies.update(user.organizationId, id, dto, {
       userId: user.id,
       ipAddress,
+      role: user.role,
+      employeeId: user.employeeId,
     });
   }
 
-  @Post(':id/versions')
+  @Post(':id/deactivate')
   @RequirePermissions('hrm.attendance.write')
-  addVersion(
+  deactivate(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
-    @Body() dto: CreateWorkShiftPolicyVersionDto,
     @ClientIp() ipAddress?: string,
   ) {
-    return this.policies.addVersion(user.organizationId, id, dto, {
+    return this.policies.setActive(user.organizationId, id, false, {
       userId: user.id,
       ipAddress,
+      role: user.role,
+      employeeId: user.employeeId,
+    });
+  }
+
+  @Post(':id/activate')
+  @RequirePermissions('hrm.attendance.write')
+  activate(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @ClientIp() ipAddress?: string,
+  ) {
+    return this.policies.setActive(user.organizationId, id, true, {
+      userId: user.id,
+      ipAddress,
+      role: user.role,
+      employeeId: user.employeeId,
+    });
+  }
+
+  @Delete(':id')
+  @RequirePermissions('hrm.attendance.write')
+  remove(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @ClientIp() ipAddress?: string,
+  ) {
+    return this.policies.remove(user.organizationId, id, {
+      userId: user.id,
+      ipAddress,
+      role: user.role,
+      employeeId: user.employeeId,
     });
   }
 }

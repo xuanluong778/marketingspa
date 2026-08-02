@@ -6,10 +6,17 @@ import { AppProviders } from '@/providers/app-providers';
 const inter = Inter({ subsets: ['latin', 'vietnamese'] });
 
 export const metadata: Metadata = {
-  title: 'MarketingSpa - Nền tảng marketing cho spa',
-  description: 'SaaS marketing automation dành cho spa và wellness',
+  title: 'Marketing Auto AZ - Nền tảng marketing automation',
+  description: 'SaaS marketing automation dành cho spa, thẩm mỹ và doanh nghiệp dịch vụ',
   icons: {
-    icon: '/favicon.svg',
+    icon: [{ url: '/favicon.png', type: 'image/png' }],
+    shortcut: '/favicon.png',
+    apple: '/favicon.png',
+  },
+  openGraph: {
+    title: 'Marketing Auto AZ',
+    description: 'Nền tảng marketing automation',
+    images: [{ url: '/brand/logo.png', width: 1024, height: 1024, alt: 'Marketing Auto AZ' }],
   },
 };
 

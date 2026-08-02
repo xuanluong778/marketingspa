@@ -8,6 +8,15 @@ export const QUEUE_NAMES = {
   BACKUP: 'backup-queue',
   AUTO_POST_PUBLISH: 'auto-post-publish-queue',
   HRM_ATTENDANCE_REBUILD: 'hrm-attendance-rebuild-queue',
+  OFFLINE_CONVERSION: 'offline-conversion-queue',
+  MESSAGING_WEBHOOK: 'messaging-webhook-queue',
+  MESSAGING_CAMPAIGN_PLAN: 'messaging-campaign-plan-queue',
+  MESSAGING_CAMPAIGN_DISPATCH: 'messaging-campaign-dispatch-queue',
+  MESSAGING_SEND: 'messaging-send-queue',
+  ADS_SYNC: 'ads-sync-queue',
+  ADS_ACTION: 'ads-action-queue',
+  AFFILIATE_HOLD: 'affiliate-hold-queue',
+  VIDEO_TRANSCRIPTION: 'video-transcription-queue',
 } as const;
 
 /** Redis pub/sub channel — worker publishes, API forwards to Socket.IO */
@@ -22,6 +31,10 @@ export const WS_EVENTS = {
   APPOINTMENT_NEW: 'appointment:new',
   APPOINTMENT_REMINDER: 'appointment:reminder',
   DAILY_REPORT: 'daily-report:ready',
+  CHATBOT_MESSAGE_NEW: 'chatbot:message-new',
+  MESSAGING_CAMPAIGN_UPDATE: 'messaging-campaign:update',
+  MESSAGING_CAMPAIGN_RECIPIENT: 'messaging-campaign:recipient',
+  ADS_SYNC_PROGRESS: 'ads:sync-progress',
 } as const;
 
 /** Campaign status lifecycle */

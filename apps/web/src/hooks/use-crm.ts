@@ -164,6 +164,123 @@ export function useUpdateLeadStatus() {
         method: 'PATCH',
         body: JSON.stringify({ pipelineStatus, lostReason }),
       }),
+    onMutate: async (vars) => {
+      await qc.cancelQueries({ queryKey: ['leads', 'kanban'] });
+      const previous = qc.getQueriesData({ queryKey: ['leads', 'kanban'] });
+      qc.setQueriesData({ queryKey: ['leads', 'kanban'] }, (old: unknown) => {
+        if (!old || typeof old !== 'object' || !('columns' in (old as object))) return old;
+        const data = old as {
+          columns: Record<
+            string,
+            { total: number; items: Lead[]; nextCursor: string | null }
+          >;
+        };
+        const columns = { ...data.columns };
+        let moved: Lead | undefined;
+        for (const [status, col] of Object.entries(columns)) {
+          const idx = col.items.findIndex((l) => l.id === vars.id);
+          if (idx >= 0) {
+            moved = col.items[idx];
+            columns[status] = {
+              ...col,
+              total: Math.max(0, col.total - 1),
+              items: col.items.filter((l) => l.id !== vars.id),
+            };
+            break;
+          }
+        }
+        if (moved) {
+          const target = columns[vars.pipelineStatus] ?? {
+            total: 0,
+            items: [],
+            nextCursor: null,
+          };
+          columns[vars.pipelineStatus] = {
+            ...target,
+            total: target.total + 1,
+            items: [{ ...moved, pipelineStatus: vars.pipelineStatus }, ...target.items],
+          };
+        }
+        return { ...data, columns };
+      });
+      return { previous };
+    },
+    onError: (_err, _vars, ctx) => {
+      ctx?.previous?.forEach(([key, data]) => qc.setQueryData(key, data));
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['leads'] });
+      qc.invalidateQueries({ queryKey: ['dashboard'] });
+    },
+  });
+}
+
+export function useLeadKanban(params: Record<string, string>, enabled = true) {
+  const qs = new URLSearchParams({ limit: '20', ...params }).toString();
+  return useQuery({
+    queryKey: ['leads', 'kanban', params],
+    queryFn: () =>
+      apiClient<{
+        columns: Record<
+          string,
+          { total: number; items: Lead[]; nextCursor: string | null }
+        >;
+        limit: number;
+      }>(`/leads/kanban?${qs}`),
+    enabled,
+  });
+}
+
+export function useLeadSavedViews() {
+  return useQuery({
+    queryKey: ['leads', 'saved-views'],
+    queryFn: () =>
+      apiClient<
+        Array<{
+          id: string;
+          name: string;
+          viewMode: string;
+          filters: Record<string, unknown>;
+          tableColumns?: string[] | null;
+          isDefault: boolean;
+        }>
+      >('/leads/saved-views'),
+  });
+}
+
+export function useCreateLeadSavedView() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: {
+      name: string;
+      viewMode?: string;
+      filters?: Record<string, unknown>;
+      tableColumns?: string[];
+      isDefault?: boolean;
+    }) =>
+      apiClient('/leads/saved-views', { method: 'POST', body: JSON.stringify(body) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['leads', 'saved-views'] }),
+  });
+}
+
+export function useDeleteLeadSavedView() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => apiClient(`/leads/saved-views/${id}`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['leads', 'saved-views'] }),
+  });
+}
+
+export function useBulkLeadAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: {
+      leadIds: string[];
+      action: 'status' | 'assign' | 'tag';
+      pipelineStatus?: string;
+      assignedToId?: string;
+      tags?: string[];
+    }) => apiClient('/leads/bulk', { method: 'POST', body: JSON.stringify(body) }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['leads'] });
       qc.invalidateQueries({ queryKey: ['dashboard'] });

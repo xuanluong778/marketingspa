@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -17,8 +18,10 @@ import { ClientIp } from '../common/decorators/client-ip.decorator';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { HrmShiftAssignmentsService } from './hrm-shift-assignments.service';
 import {
+  BulkShiftAssignmentDto,
   CreateShiftAssignmentDto,
   ShiftAssignmentQueryDto,
+  ShiftCalendarQueryDto,
   UpdateShiftAssignmentDto,
 } from './dto/shift.dto';
 
@@ -27,10 +30,16 @@ import {
 export class HrmShiftAssignmentsController {
   constructor(private readonly assignments: HrmShiftAssignmentsService) {}
 
+  @Get('calendar')
+  @RequirePermissions('hrm.attendance.read')
+  calendar(@CurrentUser() user: AuthUser, @Query() query: ShiftCalendarQueryDto) {
+    return this.assignments.calendar(user.organizationId, query, user);
+  }
+
   @Get()
   @RequirePermissions('hrm.attendance.read')
   findAll(@CurrentUser() user: AuthUser, @Query() query: ShiftAssignmentQueryDto) {
-    return this.assignments.findAll(user.organizationId, query);
+    return this.assignments.findAll(user.organizationId, query, user);
   }
 
   @Post()
@@ -43,6 +52,23 @@ export class HrmShiftAssignmentsController {
     return this.assignments.create(user.organizationId, dto, {
       userId: user.id,
       ipAddress,
+      role: user.role,
+      employeeId: user.employeeId,
+    });
+  }
+
+  @Post('bulk')
+  @RequirePermissions('hrm.attendance.write')
+  bulk(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: BulkShiftAssignmentDto,
+    @ClientIp() ipAddress?: string,
+  ) {
+    return this.assignments.bulkAssign(user.organizationId, dto, {
+      userId: user.id,
+      ipAddress,
+      role: user.role,
+      employeeId: user.employeeId,
     });
   }
 
@@ -57,6 +83,23 @@ export class HrmShiftAssignmentsController {
     return this.assignments.update(user.organizationId, id, dto, {
       userId: user.id,
       ipAddress,
+      role: user.role,
+      employeeId: user.employeeId,
+    });
+  }
+
+  @Delete(':id')
+  @RequirePermissions('hrm.attendance.write')
+  remove(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @ClientIp() ipAddress?: string,
+  ) {
+    return this.assignments.remove(user.organizationId, id, {
+      userId: user.id,
+      ipAddress,
+      role: user.role,
+      employeeId: user.employeeId,
     });
   }
 }

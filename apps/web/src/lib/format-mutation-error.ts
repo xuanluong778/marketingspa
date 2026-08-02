@@ -5,10 +5,13 @@ export function formatMutationError(error: unknown, fallback = ''): string {
   if (!error) return fallback;
   if (error instanceof ApiError) {
     if (error.errors?.length) {
-      return error.errors.join(' · ');
+      return `Dữ liệu không hợp lệ: ${error.errors.join(' · ')}`;
+    }
+    if (error.statusCode === 401) {
+      return 'Phiên đăng nhập hết hạn. Vui lòng tải lại trang hoặc đăng nhập lại.';
     }
     if (error.message === 'Validation failed' && error.statusCode === 400) {
-      return 'Dữ liệu không hợp lệ — thử tải lại trang hoặc restart API backend';
+      return 'Dữ liệu không hợp lệ — kiểm tra topic, caption, fanpageId (UUID) và postType.';
     }
     return error.message || fallback;
   }

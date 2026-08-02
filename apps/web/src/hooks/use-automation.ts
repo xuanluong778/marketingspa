@@ -16,6 +16,14 @@ export interface TemplateInput {
   body: string;
   variables?: string[];
   isActive?: boolean;
+  campaignKind?: string;
+  providerMode?: string;
+  providerTemplateId?: string;
+  approvalStatus?: string;
+  mediaUrl?: string;
+  ctaLabel?: string;
+  ctaUrl?: string;
+  variableFallbacks?: Record<string, string>;
 }
 
 export interface FlowInput {

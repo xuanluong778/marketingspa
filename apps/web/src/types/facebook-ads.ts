@@ -13,6 +13,17 @@ export interface FacebookAdsStatus {
   lastSyncError: string | null;
   tokenExpiresAt: string | null;
   facebookUserId?: string | null;
+  permissions?: {
+    ads_read: 'granted' | 'missing' | 'expired';
+    ads_management: 'granted' | 'missing' | 'expired';
+    granted: string[];
+    missing: string[];
+    expired: boolean;
+    checkedAt: string | null;
+    source: string;
+  };
+  canReadAds?: boolean;
+  canManageAds?: boolean;
 }
 
 export interface FacebookAdAccount {
@@ -53,4 +64,46 @@ export interface FacebookSyncLog {
   status: FacebookAdsSyncStatus;
   errorMessage: string | null;
   campaignsSynced: number;
+}
+
+export type FacebookCampaignObjective =
+  | 'OUTCOME_ENGAGEMENT'
+  | 'OUTCOME_TRAFFIC'
+  | 'OUTCOME_LEADS'
+  | 'OUTCOME_AWARENESS'
+  | 'OUTCOME_SALES';
+
+export interface CreateFacebookCampaignInput {
+  name: string;
+  objective: FacebookCampaignObjective;
+}
+
+export interface CreatedFacebookCampaign {
+  id: string;
+  name: string;
+  objective: string;
+  status: string;
+  adAccountId: string;
+  message: string;
+}
+
+export interface FacebookLiveCampaign {
+  id: string;
+  name: string;
+  status: string | null;
+  effectiveStatus: string | null;
+  objective: string | null;
+  createdTime: string | null;
+  updatedTime: string | null;
+}
+
+export interface FacebookLiveCampaignsResponse {
+  adAccountId: string;
+  summary: {
+    total: number;
+    active: number;
+    paused: number;
+    other: number;
+  };
+  items: FacebookLiveCampaign[];
 }

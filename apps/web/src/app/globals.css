@@ -82,10 +82,11 @@
     color: #ffffff !important;
   }
 
-  .content-create-tab .text-white,
-  .content-create-tab .text-white p,
-  .content-create-tab .text-white li,
-  .content-create-tab .text-white span {
+  /* Không áp dụng lên input/textarea — chúng dùng nền trắng + chữ đen */
+  .content-create-tab .text-white:not(input):not(textarea):not(select),
+  .content-create-tab .text-white:not(input):not(textarea):not(select) p,
+  .content-create-tab .text-white:not(input):not(textarea):not(select) li,
+  .content-create-tab .text-white:not(input):not(textarea):not(select) span {
     color: #ffffff !important;
   }
 
@@ -109,6 +110,13 @@
 
   .content-result-box button:not(.text-white) svg {
     color: #0f172a !important;
+  }
+
+  /* Xem lớn / Copy / Gửi Auto Post — hover chữ trắng, giữ nền ghost */
+  .content-result-box button:not(.text-white):hover,
+  .content-result-box button:not(.text-white):hover span,
+  .content-result-box button:not(.text-white):hover svg {
+    color: #ffffff !important;
   }
 
   .content-result-box button.text-white,
@@ -136,15 +144,23 @@
   .content-create-tab input,
   .content-create-tab textarea,
   .content-create-tab select,
+  .content-create-tab input.text-white,
+  .content-create-tab textarea.text-white,
+  .content-create-tab select.text-white,
   .content-create-tab [role='combobox'] {
     background-color: #ffffff !important;
     color: #0f172a !important;
     border-color: #cbd5e1 !important;
+    -webkit-text-fill-color: #0f172a;
   }
 
   .content-create-tab input::placeholder,
-  .content-create-tab textarea::placeholder {
+  .content-create-tab textarea::placeholder,
+  .content-create-tab input.text-white::placeholder,
+  .content-create-tab textarea.text-white::placeholder {
     color: #94a3b8 !important;
+    -webkit-text-fill-color: #94a3b8;
+    opacity: 1;
   }
 
   .content-create-tab [data-radix-select-trigger],
@@ -194,6 +210,29 @@
     color: rgba(15, 23, 42, 0.3) !important;
   }
 
+  /* Khung gợi ý AI (nền trắng): chữ đen — tránh bị rule text-white form ghi đè */
+  .content-create-tab .advanced-write-form .ai-suggest-options,
+  .content-create-tab .advanced-write-form .ai-suggest-options p,
+  .content-create-tab .advanced-write-form .ai-suggest-options span,
+  .content-create-tab .advanced-write-form .ai-suggest-options button,
+  .content-create-tab .advanced-write-form .ai-suggest-options li {
+    color: #0f172a !important;
+  }
+
+  .content-create-tab .advanced-write-form .ai-suggest-options p.text-emerald-800,
+  .content-create-tab .advanced-write-form .ai-suggest-options .text-emerald-800 {
+    color: #065f46 !important;
+  }
+
+  .content-create-tab .advanced-write-form .ai-suggest-options .text-slate-500,
+  .content-create-tab .advanced-write-form .ai-suggest-options .text-slate-600 {
+    color: #64748b !important;
+  }
+
+  .content-create-tab .advanced-write-form .ai-suggest-options button:hover {
+    color: #0f172a !important;
+  }
+
   .content-create-tab .advanced-write-tab > .flex button.text-white,
   .content-create-tab .advanced-write-tab > .flex button.text-white span,
   .content-create-tab .advanced-write-tab > .flex button.text-white svg,
@@ -202,4 +241,53 @@
   .content-create-tab .advanced-write-form button.text-white svg {
     color: #ffffff !important;
   }
+
+  /* Personal brand — title picker box must stay black on white (parent form is text-white) */
+  .personal-title-box,
+  .personal-title-box *:not(svg):not([data-title-num='active']):not(.text-destructive) {
+    color: #000000 !important;
+    -webkit-text-fill-color: #000000;
+  }
+  .personal-title-box .text-destructive {
+    color: hsl(var(--destructive)) !important;
+    -webkit-text-fill-color: hsl(var(--destructive));
+  }
+  .personal-title-box [data-title-num='active'] {
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff;
+  }
+  /* Brand CTA on orange — keep light label */
+  .personal-title-box > .flex > button,
+  .personal-title-box > .flex > button * {
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff;
+  }
+
+  /* Check Content Ads — white label on action buttons (except primary CTA) */
+  .check-content-ads-actions > button:not([data-check-ads-primary]),
+  .check-content-ads-actions > button:not([data-check-ads-primary]) *,
+  .check-content-ads-actions > button:not([data-check-ads-primary]):hover,
+  .check-content-ads-actions > button:not([data-check-ads-primary]):hover *,
+  .content-create-tab .check-content-ads-actions > button:not([data-check-ads-primary]),
+  .content-create-tab .check-content-ads-actions > button:not([data-check-ads-primary]) *,
+  .content-create-tab .check-content-ads-actions > button:not([data-check-ads-primary]):hover,
+  .content-create-tab .check-content-ads-actions > button:not([data-check-ads-primary]):hover *,
+  .content-result-box .check-content-ads-actions > button:not([data-check-ads-primary]),
+  .content-result-box .check-content-ads-actions > button:not([data-check-ads-primary]) *,
+  .content-result-box .check-content-ads-actions > button:not([data-check-ads-primary]):hover,
+  .content-result-box .check-content-ads-actions > button:not([data-check-ads-primary]):hover * {
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+  }
+}
+
+/* Affiliate partner dashboard — dark navy + neon accent (scoped) */
+.affiliate-dashboard {
+  --aff-navy: #0b1220;
+  --aff-neon: #39ff14;
+  color: #fff;
+}
+
+.affiliate-dashboard input::placeholder {
+  color: rgba(255, 255, 255, 0.35);
 }

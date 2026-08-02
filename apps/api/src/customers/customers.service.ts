@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import type { Customer, Prisma } from '@marketingspa/database';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { TenantOwnershipService } from '../common/services/tenant-ownership.service';
 import { CreateCustomerDto, UpdateCustomerDto, CustomerQueryDto } from './dto/customer.dto';
 import { buildPaginatedResult, getPaginationParams } from '../common/utils/pagination.util';
 
@@ -10,6 +11,7 @@ export class CustomersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly tenant: TenantOwnershipService,
   ) {}
 
   async findAll(organizationId: string, query: CustomerQueryDto) {
@@ -118,7 +120,29 @@ export class CustomersService {
     };
   }
 
-  create(organizationId: string, dto: CreateCustomerDto): Promise<Customer> {
+  async create(organizationId: string, dto: CreateCustomerDto): Promise<Customer> {
+    await this.tenant.validateBranchBoundRelations(organizationId, {
+      branchId: dto.branchId,
+      leadSourceId: dto.leadSourceId,
+    });
+
+    const phone = dto.phone?.trim() || null;
+    const email = dto.email?.trim() || null;
+    if (phone) {
+      const dup = await this.prisma.customer.findFirst({
+        where: { organizationId, phone, isActive: true },
+        include: { leadSource: true, branch: true },
+      });
+      if (dup) return dup;
+    }
+    if (email) {
+      const dup = await this.prisma.customer.findFirst({
+        where: { organizationId, email: { equals: email, mode: 'insensitive' }, isActive: true },
+        include: { leadSource: true, branch: true },
+      });
+      if (dup) return dup;
+    }
+
     return this.prisma.customer.create({
       data: {
         organizationId,
@@ -139,6 +163,10 @@ export class CustomersService {
 
   async update(organizationId: string, id: string, dto: UpdateCustomerDto) {
     await this.findOne(organizationId, id);
+    await this.tenant.validateBranchBoundRelations(organizationId, {
+      branchId: dto.branchId,
+      leadSourceId: dto.leadSourceId,
+    });
     return this.prisma.customer.update({
       where: { id },
       data: {

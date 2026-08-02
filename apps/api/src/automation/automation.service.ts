@@ -1,6 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { AutomationLogStatus, MessageChannel, Prisma } from '@marketingspa/database';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+import { TenantOwnershipService } from '../common/services/tenant-ownership.service';
+import { MessagingEligibilityService } from '../messaging/messaging-eligibility.service';
+import { redactForAudit } from '../common/utils/token-security.util';
 import {
   CreateMessageTemplateDto,
   UpdateMessageTemplateDto,
@@ -16,10 +20,17 @@ import {
   renderTemplate,
   TEMPLATE_VARIABLES,
 } from './template-renderer.util';
+import { previewTemplateContent } from '@marketingspa/shared';
+import type { PreviewMessageTemplateDto } from './dto/automation.dto';
 
 @Injectable()
 export class AutomationService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+    private readonly tenant: TenantOwnershipService,
+    private readonly eligibility: MessagingEligibilityService,
+  ) {}
 
   getVariableCatalog() {
     return TEMPLATE_VARIABLES;
@@ -27,7 +38,10 @@ export class AutomationService {
 
   async listTemplates(organizationId: string, query: TemplateQueryDto) {
     const { page, pageSize, skip, take } = getPaginationParams(query);
-    const where = { organizationId };
+    const where: Prisma.MessageTemplateWhereInput = { organizationId };
+    if (query.channel) {
+      where.channel = query.channel;
+    }
     const [items, total] = await Promise.all([
       this.prisma.messageTemplate.findMany({ where, skip, take, orderBy: { name: 'asc' } }),
       this.prisma.messageTemplate.count({ where }),
@@ -35,9 +49,9 @@ export class AutomationService {
     return buildPaginatedResult(items, total, page, pageSize);
   }
 
-  createTemplate(organizationId: string, dto: CreateMessageTemplateDto) {
+  async createTemplate(organizationId: string, dto: CreateMessageTemplateDto, userId?: string) {
     const variables = dto.variables ?? extractTemplateVariables(dto.body);
-    return this.prisma.messageTemplate.create({
+    const template = await this.prisma.messageTemplate.create({
       data: {
         organizationId,
         name: dto.name,
@@ -46,14 +60,37 @@ export class AutomationService {
         body: dto.body,
         variables,
         isActive: dto.isActive ?? true,
+        campaignKind: dto.campaignKind,
+        providerMode: dto.providerMode,
+        providerTemplateId: dto.providerTemplateId,
+        approvalStatus: dto.approvalStatus ?? 'DRAFT',
+        mediaUrl: dto.mediaUrl,
+        ctaLabel: dto.ctaLabel,
+        ctaUrl: dto.ctaUrl,
+        variableFallbacks: (dto.variableFallbacks ?? {}) as Prisma.InputJsonValue,
+        contentBlocks: (dto.contentBlocks ?? []) as Prisma.InputJsonValue,
       },
     });
+    await this.audit.log({
+      organizationId,
+      userId,
+      action: 'AUTOMATION_TEMPLATE_CREATED',
+      entityType: 'MESSAGE_TEMPLATE',
+      entityId: template.id,
+      metadata: redactForAudit({ name: dto.name, channel: dto.channel }) as Prisma.InputJsonValue,
+    });
+    return template;
   }
 
-  async updateTemplate(organizationId: string, id: string, dto: UpdateMessageTemplateDto) {
+  async updateTemplate(
+    organizationId: string,
+    id: string,
+    dto: UpdateMessageTemplateDto,
+    userId?: string,
+  ) {
     await this.ensureTemplate(organizationId, id);
-    const { variables, body, ...rest } = dto;
-    return this.prisma.messageTemplate.update({
+    const { variables, body, variableFallbacks, contentBlocks, ...rest } = dto;
+    const template = await this.prisma.messageTemplate.update({
       where: { id },
       data: {
         ...rest,
@@ -63,13 +100,51 @@ export class AutomationService {
           : body !== undefined
             ? { variables: extractTemplateVariables(body) }
             : {}),
+        ...(variableFallbacks !== undefined && {
+          variableFallbacks: variableFallbacks as Prisma.InputJsonValue,
+        }),
+        ...(contentBlocks !== undefined && {
+          contentBlocks: contentBlocks as Prisma.InputJsonValue,
+        }),
       },
+    });
+    await this.audit.log({
+      organizationId,
+      userId,
+      action: 'AUTOMATION_TEMPLATE_UPDATED',
+      entityType: 'MESSAGE_TEMPLATE',
+      entityId: id,
+      metadata: redactForAudit(dto) as Prisma.InputJsonValue,
+    });
+    return template;
+  }
+
+  async previewTemplate(organizationId: string, id: string, dto: PreviewMessageTemplateDto) {
+    const template = await this.ensureTemplate(organizationId, id);
+    return previewTemplateContent({
+      body: template.body,
+      context: dto.context ?? {},
+      fallbacks: (template.variableFallbacks ?? {}) as Record<string, string>,
+      mediaUrl: template.mediaUrl,
+      ctaLabel: template.ctaLabel,
+      ctaUrl: template.ctaUrl,
     });
   }
 
-  async deleteTemplate(organizationId: string, id: string) {
+  async deleteTemplate(organizationId: string, id: string, userId?: string) {
     await this.ensureTemplate(organizationId, id);
-    return this.prisma.messageTemplate.update({ where: { id }, data: { isActive: false } });
+    const template = await this.prisma.messageTemplate.update({
+      where: { id },
+      data: { isActive: false },
+    });
+    await this.audit.log({
+      organizationId,
+      userId,
+      action: 'AUTOMATION_TEMPLATE_DELETED',
+      entityType: 'MESSAGE_TEMPLATE',
+      entityId: id,
+    });
+    return template;
   }
 
   listFlows(organizationId: string) {
@@ -80,8 +155,21 @@ export class AutomationService {
     });
   }
 
-  createFlow(organizationId: string, dto: CreateAutomationFlowDto) {
-    return this.prisma.automationFlow.create({
+  async createFlow(
+    organizationId: string,
+    dto: CreateAutomationFlowDto,
+    userId?: string,
+    canApprove = false,
+  ) {
+    if (dto.messageTemplateId) {
+      await this.ensureTemplate(organizationId, dto.messageTemplateId);
+    }
+    const isActive = dto.isActive !== undefined ? dto.isActive : canApprove;
+    if (isActive && !canApprove) {
+      throw new BadRequestException('Cần quyền automation.campaign.approve để kích hoạt flow');
+    }
+
+    const flow = await this.prisma.automationFlow.create({
       data: {
         organizationId,
         name: dto.name,
@@ -90,44 +178,172 @@ export class AutomationService {
         channel: dto.channel,
         delayMinutes: dto.delayMinutes ?? 0,
         triggerConfig: (dto.triggerConfig ?? {}) as Prisma.InputJsonValue,
-        isActive: dto.isActive ?? true,
+        actions: (dto.actions ?? []) as Prisma.InputJsonValue,
+        isActive,
+        isPaused: dto.isPaused ?? false,
+        quietHoursStart: dto.quietHoursStart,
+        quietHoursEnd: dto.quietHoursEnd,
+        maxSendsPerDay: dto.maxSendsPerDay,
+        cooldownMinutes: dto.cooldownMinutes ?? 0,
       },
       include: { messageTemplate: true },
     });
+    await this.audit.log({
+      organizationId,
+      userId,
+      action: 'AUTOMATION_FLOW_CREATED',
+      entityType: 'AUTOMATION_FLOW',
+      entityId: flow.id,
+      metadata: redactForAudit({
+        name: dto.name,
+        triggerType: dto.triggerType,
+      }) as Prisma.InputJsonValue,
+    });
+    return flow;
   }
 
-  async updateFlow(organizationId: string, id: string, dto: UpdateAutomationFlowDto) {
-    await this.ensureFlow(organizationId, id);
-    const { triggerConfig, ...rest } = dto;
-    return this.prisma.automationFlow.update({
+  async updateFlow(
+    organizationId: string,
+    id: string,
+    dto: UpdateAutomationFlowDto,
+    userId?: string,
+    canApprove = false,
+  ) {
+    const existing = await this.ensureFlow(organizationId, id);
+    if (dto.messageTemplateId) {
+      await this.ensureTemplate(organizationId, dto.messageTemplateId);
+    }
+    if (dto.isActive === true && !canApprove) {
+      throw new BadRequestException('Dùng endpoint approve để kích hoạt flow');
+    }
+    if (dto.isActive === false && existing.isActive) {
+      // allowed — deactivate without approve
+    }
+
+    const { triggerConfig, actions, ...rest } = dto;
+    const flow = await this.prisma.automationFlow.update({
       where: { id },
       data: {
         ...rest,
         ...(triggerConfig !== undefined && {
           triggerConfig: triggerConfig as Prisma.InputJsonValue,
         }),
+        ...(actions !== undefined && { actions: actions as Prisma.InputJsonValue }),
       },
       include: { messageTemplate: true },
     });
+    await this.audit.log({
+      organizationId,
+      userId,
+      action: 'AUTOMATION_FLOW_UPDATED',
+      entityType: 'AUTOMATION_FLOW',
+      entityId: id,
+      metadata: redactForAudit(dto) as Prisma.InputJsonValue,
+    });
+    return flow;
   }
 
-  async deleteFlow(organizationId: string, id: string) {
+  async approveFlow(organizationId: string, id: string, userId?: string) {
     await this.ensureFlow(organizationId, id);
-    return this.prisma.automationFlow.update({
+    const flow = await this.prisma.automationFlow.update({
+      where: { id },
+      data: { isActive: true },
+      include: { messageTemplate: true },
+    });
+    await this.audit.log({
+      organizationId,
+      userId,
+      action: 'AUTOMATION_FLOW_APPROVED',
+      entityType: 'AUTOMATION_FLOW',
+      entityId: id,
+    });
+    return flow;
+  }
+
+  async pauseFlow(organizationId: string, id: string, isPaused: boolean, userId?: string) {
+    await this.ensureFlow(organizationId, id);
+    const flow = await this.prisma.automationFlow.update({
+      where: { id },
+      data: { isPaused },
+      include: { messageTemplate: true },
+    });
+    await this.audit.log({
+      organizationId,
+      userId,
+      action: isPaused ? 'AUTOMATION_FLOW_PAUSED' : 'AUTOMATION_FLOW_RESUMED',
+      entityType: 'AUTOMATION_FLOW',
+      entityId: id,
+    });
+    return flow;
+  }
+
+  async deleteFlow(organizationId: string, id: string, userId?: string) {
+    await this.ensureFlow(organizationId, id);
+    const flow = await this.prisma.automationFlow.update({
       where: { id },
       data: { isActive: false },
     });
+    await this.audit.log({
+      organizationId,
+      userId,
+      action: 'AUTOMATION_FLOW_CANCELLED',
+      entityType: 'AUTOMATION_FLOW',
+      entityId: id,
+    });
+    return flow;
   }
 
   /** Placeholder: giả lập gửi tin — render template + ghi AutomationLog */
-  async simulate(organizationId: string, flowId: string, dto: SimulateAutomationDto) {
+  async simulate(
+    organizationId: string,
+    flowId: string,
+    dto: SimulateAutomationDto,
+    userId?: string,
+  ) {
     const flow = await this.ensureFlow(organizationId, flowId);
+    if (!flow.isActive) {
+      throw new BadRequestException('Flow chưa được duyệt/kích hoạt');
+    }
     const template = flow.messageTemplate;
     const channel = flow.channel ?? template?.channel ?? MessageChannel.ZALO;
+
+    const eligibility = await this.eligibility.check({
+      organizationId,
+      channel,
+      campaignType: 'automation',
+      flowId: flow.id,
+      leadId: dto.leadId,
+      customerId: dto.customerId,
+      templateId: template?.id,
+    });
+
+    if (!eligibility.eligible) {
+      const skippedLog = await this.prisma.automationLog.create({
+        data: {
+          organizationId,
+          automationFlowId: flow.id,
+          customerId: dto.customerId,
+          leadId: dto.leadId,
+          channel,
+          status: AutomationLogStatus.SKIPPED,
+          executedAt: new Date(),
+          result: {
+            eligibility: JSON.parse(JSON.stringify(eligibility)),
+            simulated: true,
+          } as Prisma.InputJsonValue,
+        },
+      });
+      return {
+        message: eligibility.reasonMessage ?? 'Không đủ điều kiện gửi',
+        eligibility,
+        log: skippedLog,
+      };
+    }
 
     let context: Record<string, string> = { ...(dto.context ?? {}) };
 
     if (dto.customerId) {
+      await this.tenant.assertCustomer(organizationId, dto.customerId);
       const customer = await this.prisma.customer.findFirst({
         where: { id: dto.customerId, organizationId },
         include: { branch: true },
@@ -142,6 +358,7 @@ export class AutomationService {
     }
 
     if (dto.leadId) {
+      await this.tenant.assertLead(organizationId, dto.leadId);
       const lead = await this.prisma.lead.findFirst({
         where: { id: dto.leadId, organizationId },
       });
@@ -171,9 +388,25 @@ export class AutomationService {
           channel,
           delayMinutes: flow.delayMinutes,
           message: 'Tin nhắn giả lập — chưa gửi thật ở MVP',
-        },
+          eligibility: JSON.parse(JSON.stringify(eligibility)),
+        } as Prisma.InputJsonValue,
       },
       include: { customer: true, lead: true, automationFlow: true },
+    });
+
+    await this.audit.log({
+      organizationId,
+      userId,
+      action: 'AUTOMATION_FLOW_SENT',
+      entityType: 'AUTOMATION_FLOW',
+      entityId: flow.id,
+      metadata: redactForAudit({
+        logId: log.id,
+        channel,
+        customerId: dto.customerId,
+        leadId: dto.leadId,
+        simulated: true,
+      }) as Prisma.InputJsonValue,
     });
 
     return { message: 'Automation đã chạy giả lập', log };

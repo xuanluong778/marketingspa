@@ -1,8 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
 import type {
+  CreatedFacebookCampaign,
+  CreateFacebookCampaignInput,
   FacebookAdAccount,
   FacebookAdsStatus,
+  FacebookLiveCampaignsResponse,
   FacebookSyncedCampaign,
   FacebookSyncLog,
 } from '@/types/facebook-ads';
@@ -44,6 +47,14 @@ export function useFacebookCampaigns(
   });
 }
 
+export function useFacebookLiveCampaigns(enabled: boolean) {
+  return useQuery({
+    queryKey: ['facebook-ads', 'campaigns-live'],
+    queryFn: () => apiClient<FacebookLiveCampaignsResponse>(`${BASE}/campaigns/live`),
+    enabled,
+  });
+}
+
 export function useFacebookSyncLogs(enabled: boolean) {
   return useQuery({
     queryKey: ['facebook-ads', 'sync-logs'],
@@ -65,6 +76,21 @@ export function useFacebookAdsMutations() {
     },
   });
 
+  const connectToken = useMutation({
+    mutationFn: (body: { accessToken?: string; useEnvToken?: boolean; adAccountId?: string }) =>
+      apiClient<{
+        connected: boolean;
+        message: string;
+        selectedAdAccountId: string;
+        selectedAdAccountName: string;
+        adAccountsCount: number;
+      }>(`${BASE}/connect-token`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: invalidate,
+  });
+
   const selectAdAccount = useMutation({
     mutationFn: (body: { adAccountId: string; adAccountName?: string }) =>
       apiClient(`${BASE}/ad-account`, { method: 'POST', body: JSON.stringify(body) }),
@@ -80,10 +106,19 @@ export function useFacebookAdsMutations() {
     onSuccess: invalidate,
   });
 
+  const createCampaign = useMutation({
+    mutationFn: (body: CreateFacebookCampaignInput) =>
+      apiClient<CreatedFacebookCampaign>(`${BASE}/campaigns`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: invalidate,
+  });
+
   const disconnect = useMutation({
     mutationFn: () => apiClient(`${BASE}/disconnect`, { method: 'DELETE' }),
     onSuccess: invalidate,
   });
 
-  return { connect, selectAdAccount, sync, disconnect };
+  return { connect, connectToken, selectAdAccount, sync, createCampaign, disconnect };
 }

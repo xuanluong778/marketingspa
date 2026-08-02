@@ -32,7 +32,7 @@ export function assertCanUseServerEnvFanpage(
   if (user.organizationId && allowlist.includes(user.organizationId)) return;
 
   throw new ForbiddenException(
-    'Đăng bài bằng SERVER_ENV Page Token chỉ dành cho admin nền tảng hoặc tổ chức trong allowlist (META_FANPAGE_ALLOWED_ORG_IDS).',
+    'Tính năng này chỉ dành cho quản trị viên hệ thống.',
   );
 }
 

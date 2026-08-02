@@ -56,6 +56,14 @@ export interface MessageTemplateDetail {
   body: string;
   variables: string[];
   isActive: boolean;
+  campaignKind?: string | null;
+  providerMode?: string | null;
+  providerTemplateId?: string | null;
+  approvalStatus?: string;
+  mediaUrl?: string | null;
+  ctaLabel?: string | null;
+  ctaUrl?: string | null;
+  variableFallbacks?: Record<string, string>;
 }
 
 export interface AutomationFlowDetail {
@@ -82,7 +90,12 @@ export interface AutomationLogDetail {
 
 export type IntegrationProvider = 'META_ADS' | 'GOOGLE_ADS' | 'ZALO_OA' | 'SMS' | 'EMAIL';
 
-export type IntegrationStatus = 'DISCONNECTED' | 'CONNECTED' | 'ERROR';
+export type IntegrationStatus =
+  | 'DISCONNECTED'
+  | 'ACTIVE'
+  | 'EXPIRED'
+  | 'REAUTH_REQUIRED'
+  | 'ERROR';
 
 export interface IntegrationItem {
   provider: IntegrationProvider;
@@ -96,6 +109,8 @@ export interface IntegrationItem {
 
 export const INTEGRATION_STATUS_LABELS: Record<IntegrationStatus, string> = {
   DISCONNECTED: 'Chưa kết nối',
-  CONNECTED: 'Đã kết nối',
+  ACTIVE: 'Đang hoạt động',
+  EXPIRED: 'Token hết hạn',
+  REAUTH_REQUIRED: 'Cần xác thực lại',
   ERROR: 'Lỗi kết nối',
 };

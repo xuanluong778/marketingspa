@@ -6,6 +6,7 @@ import { decryptSecret, publishToFacebookPage } from '../lib/auto-post-publish';
 import {
   friendlyPublishError,
   isPermanentPublishError,
+  sanitizePublishErrorMessage,
 } from '../lib/auto-post-publish-errors';
 import {
   acquireAutoPostPublishLock,
@@ -25,7 +26,7 @@ export async function processAutoPostPublish(
   let lockKey: string | null = null;
 
   if (redis) {
-    const lock = await acquireAutoPostPublishLock(redis, postId, owner);
+    const lock = await acquireAutoPostPublishLock(redis, organizationId, postId, owner);
     if (!lock.ok) {
       return { skipped: true, reason: 'locked' };
     }
@@ -135,7 +136,9 @@ export async function processAutoPostPublish(
 
       return { ok: true, facebookPostId: fbPostId };
     } catch (e) {
-      const msg = friendlyPublishError(e instanceof Error ? e.message : 'Đăng bài thất bại');
+      const raw = e instanceof Error ? e.message : 'Đăng bài thất bại';
+      const msg = sanitizePublishErrorMessage(raw);
+      const display = friendlyPublishError(msg);
       await prisma.autoPostApiLog.create({
         data: { userId, postId, action: 'scheduled_publish', message: msg },
       });
@@ -153,8 +156,8 @@ export async function processAutoPostPublish(
         },
       });
 
-      // Lỗi vĩnh viễn (token/quyền): không throw → BullMQ không retry vô hạn
-      if (isPermanentPublishError(msg)) {
+      // Lỗi vĩnh viễn (token/quyền/media): không throw → BullMQ không retry vô hạn
+      if (isPermanentPublishError(msg) || isPermanentPublishError(display)) {
         return { failed: true, permanent: true, error: msg };
       }
       throw e;

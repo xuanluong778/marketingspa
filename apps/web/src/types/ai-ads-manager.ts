@@ -19,43 +19,88 @@ export interface AdManagerDashboard {
   dateTo: string;
   totalSpend: number;
   totalRevenue: number;
+  conversionValue: number;
   roas: number | null;
-  cpa: number;
-  cpl: number;
+  cpa: number | null;
+  cpl: number | null;
   totalConversions: number;
   activeCampaigns: number;
   poorCampaigns: number;
   profit: number;
+  source?: string;
+}
+
+export interface AdConversionAction {
+  type: string;
+  count: number;
+  value?: number;
 }
 
 export interface AdManagerCampaignRow {
   id: string;
   insightId: string;
+  organizationId: string;
   platform: string;
   name: string;
+  campaignName: string;
   status: string;
   budget: number | null;
-  externalId: string;
-  spend: number;
+  externalCampaignId: string;
+  dateFrom: string;
+  dateTo: string;
+  date: string;
   impressions: number;
+  reach: number;
   clicks: number;
-  ctr: number;
-  cpc: number;
-  cpm: number;
+  spend: number;
   conversions: number;
-  leads: number;
-  cpa: number;
-  cpl: number;
+  conversionValue: number;
+  ctr: number | null;
+  cpc: number | null;
+  cpm: number | null;
+  cpa: number | null;
   roas: number | null;
+  currency: string;
+  timezone: string;
+  conversionActions: AdConversionAction[];
   efficiencyScore: number | null;
   aiSuggestion: string | null;
+  /** legacy alias */
+  leads?: number;
+  externalId?: string;
+}
+
+export interface AdManagerCampaignsPage {
+  total: number;
+  page: number;
+  pageSize: number;
+  items: AdManagerCampaignRow[];
+}
+
+export type AdsPlatformFilter = 'ALL' | 'META' | 'GOOGLE';
+export type AdsStatusFilter = 'ALL' | 'ACTIVE' | 'PAUSED' | 'OTHER';
+
+export interface AdsCampaignFilters {
+  dateFrom: string;
+  dateTo: string;
+  platform?: AdsPlatformFilter;
+  /** accountKey = provider META|GOOGLE (map từ connection) */
+  account?: string;
+  status?: AdsStatusFilter;
+  page?: number;
+  pageSize?: number;
 }
 
 export interface AdManagerSettings {
   autoModeEnabled: boolean;
+  mcpMode?: 'OBSERVE' | 'SUGGEST' | 'AUTO';
   dailyBudgetLimit: number | null;
   maxTogglesPerDay: number;
   togglesToday: number;
+  maxBudgetChangePercent?: number;
+  ruleLookbackDays?: number;
+  ruleCooldownMinutes?: number;
+  minSpendForAction?: number | null;
   emergencyStop: boolean;
 }
 

@@ -4,6 +4,9 @@ import { AutoPostService } from './auto-post.service';
 import { AutoPostFacebookService } from './auto-post-facebook.service';
 import { AutoPostMetaService } from './auto-post-meta.service';
 import { AutoPostMetaComplianceService } from './auto-post-meta-compliance.service';
+import { AutoPostFacebookPageDetailsService } from './auto-post-facebook-page-details.service';
+import { MetaGraphUsageService } from './meta-graph-usage.service';
+import { MetaGraphMetricsService } from './meta-graph-metrics.service';
 import { MetaFanpageModule } from '../meta-fanpage/meta-fanpage.module';
 import { MessagingModule } from '../messaging/messaging.module';
 
@@ -15,6 +18,9 @@ import { MessagingModule } from '../messaging/messaging.module';
     AutoPostFacebookService,
     AutoPostMetaService,
     AutoPostMetaComplianceService,
+    AutoPostFacebookPageDetailsService,
+    MetaGraphUsageService,
+    MetaGraphMetricsService,
   ],
   exports: [AutoPostService, AutoPostFacebookService, AutoPostMetaComplianceService],
 })

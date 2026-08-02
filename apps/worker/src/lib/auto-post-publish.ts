@@ -1,5 +1,10 @@
 import { createDecipheriv, scryptSync } from 'crypto';
-import { sanitizePublishErrorMessage } from './auto-post-publish-errors';
+import {
+  formatMetaGraphErrorTechnical,
+  formatMetaGraphErrorUserFacing,
+  type MetaGraphErrorShape,
+} from './auto-post-publish-errors';
+import { normalizePublishMedia } from './auto-post-media';
 
 const SALT = 'marketingspa-integration-v1';
 
@@ -21,15 +26,28 @@ export function decryptSecret(encrypted: string): string {
   return Buffer.concat([decipher.update(data), decipher.final()]).toString('utf8');
 }
 
+function throwMetaError(err: MetaGraphErrorShape | undefined, fallback: string): never {
+  const shape = err ?? { message: fallback };
+  // Lưu cả bản user + technical (redacted) trong message để admin đọc được từ DB
+  const user = formatMetaGraphErrorUserFacing(shape);
+  const tech = formatMetaGraphErrorTechnical(shape);
+  throw new Error(user === tech ? user : `${user} (${tech})`);
+}
+
 export async function publishToFacebookPage(
   pageId: string,
   pageAccessToken: string,
   payload: { message: string; link?: string; imageUrl?: string },
   apiVersion = process.env.META_API_VERSION ?? 'v21.0',
 ): Promise<string> {
-  if (payload.imageUrl?.trim()) {
+  const media = normalizePublishMedia({
+    imageUrl: payload.imageUrl,
+    linkUrl: payload.link,
+  });
+
+  if (media.imageUrl) {
     const params = new URLSearchParams({
-      url: payload.imageUrl.trim(),
+      url: media.imageUrl,
       caption: payload.message,
       access_token: pageAccessToken,
     });
@@ -37,9 +55,9 @@ export async function publishToFacebookPage(
       `https://graph.facebook.com/${apiVersion}/${pageId}/photos?${params.toString()}`,
       { method: 'POST' },
     );
-    const body = (await res.json()) as { id?: string; error?: { message: string } };
+    const body = (await res.json()) as { id?: string; error?: MetaGraphErrorShape };
     if (!res.ok || body.error) {
-      throw new Error(sanitizePublishErrorMessage(body.error?.message ?? 'Meta publish failed'));
+      throwMetaError(body.error, 'Meta publish failed');
     }
     if (!body.id) throw new Error('Meta không trả về post id');
     return body.id;
@@ -49,16 +67,16 @@ export async function publishToFacebookPage(
     message: payload.message,
     access_token: pageAccessToken,
   };
-  if (payload.link?.trim()) reqBody.link = payload.link.trim();
+  if (media.linkUrl) reqBody.link = media.linkUrl;
 
   const res = await fetch(`https://graph.facebook.com/${apiVersion}/${pageId}/feed`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(reqBody),
   });
-  const body = (await res.json()) as { id?: string; error?: { message: string } };
+  const body = (await res.json()) as { id?: string; error?: MetaGraphErrorShape };
   if (!res.ok || body.error) {
-    throw new Error(sanitizePublishErrorMessage(body.error?.message ?? 'Meta publish failed'));
+    throwMetaError(body.error, 'Meta publish failed');
   }
   if (!body.id) throw new Error('Meta không trả về post id');
   return body.id;

@@ -18,6 +18,7 @@ import {
   CreateAppointmentDto,
   UpdateAppointmentDto,
   UpdateAppointmentStatusDto,
+  RescheduleAppointmentDto,
   AppointmentQueryDto,
   CalendarQueryDto,
 } from './dto/appointment.dto';
@@ -68,6 +69,15 @@ export class AppointmentsController {
     @Body() dto: UpdateAppointmentStatusDto,
   ) {
     return this.service.updateStatus(user.organizationId, id, dto, user.id);
+  }
+
+  @Post(':id/reschedule')
+  reschedule(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: RescheduleAppointmentDto,
+  ) {
+    return this.service.reschedule(user.organizationId, id, dto, user.id);
   }
 
   @Post(':id/remind')

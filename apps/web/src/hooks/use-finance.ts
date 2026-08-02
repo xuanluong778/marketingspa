@@ -116,6 +116,59 @@ export function useDeleteExpense() {
   });
 }
 
+export function useCreateOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: {
+      customerId: string;
+      branchId?: string;
+      leadId?: string;
+      items: { serviceId?: string; name: string; quantity: number; unitPrice: number }[];
+      discount?: number;
+      note?: string;
+    }) => apiClient('/finance/orders', { method: 'POST', body: JSON.stringify(body) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['finance'] }),
+  });
+}
+
+export function useCreatePayment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: {
+      orderId: string;
+      amount: number;
+      method: string;
+      reference?: string;
+      idempotencyKey?: string;
+    }) => apiClient('/finance/payments', { method: 'POST', body: JSON.stringify(body) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['finance'] });
+      qc.invalidateQueries({ queryKey: ['attribution'] });
+    },
+  });
+}
+
+export function useRefundPayment() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiClient(`/finance/payments/${id}/refund`, { method: 'POST' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['finance'] });
+      qc.invalidateQueries({ queryKey: ['attribution'] });
+    },
+  });
+}
+
+export function useCancelOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiClient(`/finance/orders/${id}/cancel`, { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['finance'] }),
+  });
+}
+
 export function defaultFinanceFilters(): FinanceDateFilters {
   const to = new Date();
   const from = new Date();

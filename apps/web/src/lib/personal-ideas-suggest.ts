@@ -1,4 +1,4 @@
-import type { PersonalIdeasSuggestion } from '@/types/content-marketing';
+import type { PersonalIdeasSuggestion, PersonalTitlesSuggestion } from '@/types/content-marketing';
 
 const ANGLE_BY_GOAL: Record<string, string[]> = {
   engagement: [
@@ -21,12 +21,72 @@ const STORY_BY_TYPE: Record<string, string[]> = {
   knowledge_sharing: ['Một hiểu lầm phổ biến mà bạn từng mắc'],
   humor: ['Tình huống "dở khóc dở cười" trong ngày làm việc'],
   philosophy: ['Một câu hỏi bạn tự hỏi mỗi sáng'],
-  realistic_view: ['Sự thật "không ai nói" về ngành spa / làm đẹp'],
+  realistic_view: ['Sự thật "không ai nói" về cuộc sống và công việc'],
   personal_trend: ['Cách bạn bắt trend mà vẫn giữ chất riêng'],
   failure_lesson: ['Dự án sai lầm và bài học rút ra'],
   success_experience: ['Bước ngoặt giúp bạn đạt kết quả đầu tiên'],
   community_engagement: ['Câu hỏi mở để cộng đồng cùng thảo luận'],
 };
+
+/** Fallback khi API lỗi / mạng */
+export function suggestPersonalTitlesLocal(input: {
+  subtopicLabel: string;
+  topicGroupLabel?: string;
+  count: 5 | 10 | 20;
+  audience?: string;
+}): PersonalTitlesSuggestion {
+  const sub = input.subtopicLabel.trim() || 'Hành trình cá nhân';
+  const group = input.topicGroupLabel?.trim();
+  const audience = input.audience?.trim();
+  const patterns = [
+    `${sub} — góc nhìn tôi muốn giữ`,
+    `Điều tôi học được từ: ${sub}`,
+    `${sub}: câu chuyện chưa kể hết`,
+    `Khi ${sub.toLowerCase()} trở thành bài học`,
+    `${sub} — không hoàn hảo, nhưng thật`,
+    `Tôi từng nghĩ khác về ${sub.toLowerCase()}`,
+    `${sub}: lần đứng dậy sau khó khăn`,
+    `Chân thật về ${sub.toLowerCase()}`,
+    `${sub} — điều tôi muốn nói với chính mình`,
+    `Bài học nhỏ từ ${sub.toLowerCase()}`,
+    `${sub}: khoảnh khắc tôi thay đổi cách nhìn`,
+    `Không phải tip hay — chỉ là ${sub.toLowerCase()}`,
+    `${sub} và điều tôi sẽ không làm lại`,
+    `Một lần ${sub.toLowerCase()} đủ để tôi nhớ mãi`,
+    `${sub} — viết cho người đang cùng hành trình`,
+    `Điều mạng xã hội bỏ quên về ${sub.toLowerCase()}`,
+    `${sub}: chậm nhưng bền`,
+    `Tôi kể ${sub.toLowerCase()} vì ai đó cần nghe`,
+    `${sub} — không giật tít, chỉ thật`,
+    `Sau ${sub.toLowerCase()}, tôi chọn đi tiếp như thế này`,
+  ];
+  if (group) {
+    patterns.push(`${group}: ${sub}`, `${sub} — trong mạch ${group.toLowerCase()}`);
+  }
+  if (audience) {
+    patterns.push(`${sub} — gửi tới ${audience}`);
+  }
+  const seen = new Set<string>();
+  const titles: string[] = [];
+  for (const t of patterns) {
+    const key = t.toLowerCase().trim();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    titles.push(t);
+    if (titles.length >= input.count) break;
+  }
+  let i = 1;
+  while (titles.length < input.count) {
+    const t = `${sub} — góc nhìn ${i + 1}`;
+    if (!seen.has(t.toLowerCase())) {
+      seen.add(t.toLowerCase());
+      titles.push(t);
+    }
+    i += 1;
+    if (i > 40) break;
+  }
+  return { titles: titles.slice(0, input.count), source: 'template' };
+}
 
 /** Fallback khi API chưa có endpoint hoặc lỗi mạng */
 export function suggestPersonalIdeasLocal(input: {

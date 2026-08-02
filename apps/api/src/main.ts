@@ -4,10 +4,13 @@ import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
+import cookieParser from 'cookie-parser';
+import type { NextFunction, Request, Response } from 'express';
 import { AppModule } from './app.module';
 import { initSentry } from './sentry';
 import { GlobalExceptionFilter } from './common/filters/http-exception.filter';
 import { resolveChatbotWidgetPath } from './chatbot-cskh/utils/chatbot-widget';
+import { REQUEST_ID_HEADER } from './common/middleware/request-id.middleware';
 
 async function bootstrap() {
   initSentry();
@@ -15,7 +18,28 @@ async function bootstrap() {
     rawBody: true,
   });
 
+  // Đảm bảo rawBody có cho verify X-Hub-Signature-256 (Meta webhook)
+  app.useBodyParser('json', {
+    verify: (req: Request & { rawBody?: Buffer }, _res: Response, buf: Buffer) => {
+      if (Buffer.isBuffer(buf) && buf.length) {
+        req.rawBody = buf;
+      }
+    },
+  });
+  // Meta deauthorize / data-deletion gửi application/x-www-form-urlencoded
+  app.useBodyParser('urlencoded', { extended: true });
+
   app.setGlobalPrefix('api/v1');
+  app.use(cookieParser());
+  app.use((req: Request, res: Response, next: NextFunction) => {
+    const { randomUUID } = require('crypto');
+    const incoming = req.headers[REQUEST_ID_HEADER.toLowerCase()];
+    const requestId =
+      (typeof incoming === 'string' && incoming.trim()) || randomUUID();
+    (req as Request & { requestId?: string }).requestId = requestId;
+    res.setHeader(REQUEST_ID_HEADER, requestId);
+    next();
+  });
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -62,6 +86,13 @@ async function bootstrap() {
     './common/utils/assert-encryption-key'
   );
   assertEncryptionKeyConfigured(config.get<string>('ENCRYPTION_KEY'));
+
+  // Fail-fast OAuth Auto Post: App ID / config_id / redirect MarketingAutoAZ
+  const { assertAutoPostMetaOAuthConfig } = await import(
+    './auto-post/assert-auto-post-meta-oauth'
+  );
+  assertAutoPostMetaOAuthConfig((k) => config.get<string>(k) ?? process.env[k]);
+
   const port = config.get<number>('PORT', 4000);
 
   await app.listen(port);

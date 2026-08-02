@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useMemo, useCallback, Suspense } from 'react';
+import { useState, useMemo, useCallback, Suspense, useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { useQueries } from '@tanstack/react-query';
-import { Plus, AlertTriangle } from 'lucide-react';
+import { Bookmark, Columns3, LayoutGrid, List } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -21,16 +21,30 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Card, CardContent } from '@/components/ui/card';
-import { PageHeader } from '@/components/shared/page-header';
-import { DataTable } from '@/components/shared/data-table';
-import { PaginationBar } from '@/components/crm/pagination-bar';
-import { CrmFilterBar, type CrmFilters } from '@/components/crm/crm-filters';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { LeadPageHeader } from '@/components/crm/lead-page-header';
+import {
+  LeadFilterBar,
+  EMPTY_LEAD_FILTERS,
+  leadFiltersToQuery,
+  type LeadFilters,
+} from '@/components/crm/lead-filter-bar';
 import { LeadFormDialog } from '@/components/crm/lead-form-dialog';
-import { LeadKanban } from '@/components/crm/lead-kanban';
+import { LeadKanban, type KanbanColumnState } from '@/components/crm/lead-kanban';
+import { LeadDetailDrawer } from '@/components/crm/lead-detail-drawer';
 import { LeadStatusBadge } from '@/components/crm/lead-status-badge';
 import { AppointmentFromLeadDialog } from '@/components/crm/appointment-from-lead-dialog';
 import { ConfirmDialog } from '@/components/crm/confirm-dialog';
+import { PaginationBar } from '@/components/crm/pagination-bar';
+import { LoadingState, EmptyState, ErrorState } from '@/components/shared/page-state';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { useLeads, useEmployees } from '@/hooks/use-queries';
 import { apiClient } from '@/lib/api-client';
 import {
@@ -43,45 +57,67 @@ import {
   useDeleteLead,
   useCreateAppointment,
   useStaleLeads,
+  useLeadKanban,
+  useLeadSavedViews,
+  useCreateLeadSavedView,
+  useDeleteLeadSavedView,
+  useBulkLeadAction,
 } from '@/hooks/use-crm';
 import { PIPELINE_COLUMNS, type LeadPipelineStatus } from '@/types/crm';
 import type { Lead } from '@/types/api';
-import type { PaginatedResult } from '@/types/api';
 import { formatDateTime } from '@/lib/format';
+import { cn } from '@/lib/utils';
+import type { KanbanLead } from '@/components/crm/lead-card';
+
+const TABLE_COLUMNS = [
+  { key: 'name', label: 'Tên' },
+  { key: 'phone', label: 'SĐT' },
+  { key: 'status', label: 'Trạng thái' },
+  { key: 'source', label: 'Nguồn' },
+  { key: 'assigned', label: 'Phụ trách' },
+  { key: 'created', label: 'Ngày tạo' },
+] as const;
 
 function LeadsPageContent() {
   const searchParams = useSearchParams();
   const [page, setPage] = useState(1);
   const [view, setView] = useState<'table' | 'kanban'>('kanban');
-  const [filters, setFilters] = useState<CrmFilters>({
-    search: '',
-    tag: '',
-    leadSourceId: '',
-    branchId: '',
-  });
+  const [filters, setFilters] = useState<LeadFilters>({ ...EMPTY_LEAD_FILTERS });
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Lead | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [assignLead, setAssignLead] = useState<Lead | null>(null);
   const [assigneeId, setAssigneeId] = useState('');
   const [appointmentLead, setAppointmentLead] = useState<Lead | null>(null);
+  const [drawerLeadId, setDrawerLeadId] = useState<string | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [visibleCols, setVisibleCols] = useState<string[]>(TABLE_COLUMNS.map((c) => c.key));
+  const [saveViewOpen, setSaveViewOpen] = useState(false);
+  const [saveViewName, setSaveViewName] = useState('');
+  const [columnExtra, setColumnExtra] = useState<
+    Record<string, { items: Lead[]; nextCursor: string | null; loading?: boolean }>
+  >({});
+  const [bulkStatus, setBulkStatus] = useState('');
+  const [bulkTag, setBulkTag] = useState('');
+
+  const filterQuery = useMemo(() => leadFiltersToQuery(filters), [filters]);
 
   const queryParams = useMemo(
-    () => ({
-      page: String(page),
-      pageSize: '20',
-      ...(filters.search && { search: filters.search }),
-      ...(filters.leadSourceId && { leadSourceId: filters.leadSourceId }),
-      ...(filters.branchId && { branchId: filters.branchId }),
-    }),
-    [page, filters],
+    () => ({ page: String(page), pageSize: '20', ...filterQuery }),
+    [page, filterQuery],
   );
 
   const { data, isLoading, isError, refetch } = useLeads(queryParams);
+  const kanban = useLeadKanban(filterQuery, view === 'kanban');
   const { data: branches } = useBranches();
   const { data: leadSourcesData } = useLeadSources();
   const { data: employeesData } = useEmployees();
   const { data: staleLeads } = useStaleLeads(10);
+  const savedViews = useLeadSavedViews();
+  const createSavedView = useCreateLeadSavedView();
+  const deleteSavedView = useDeleteLeadSavedView();
+  const bulkAction = useBulkLeadAction();
 
   const createLead = useCreateLead();
   const updateLead = useUpdateLead();
@@ -94,35 +130,53 @@ function LeadsPageContent() {
   const branchList = Array.isArray(branches) ? branches : [];
   const employees = employeesData?.items ?? [];
 
-  const kanbanQueries = useQueries({
-    queries: PIPELINE_COLUMNS.map((col) => ({
-      queryKey: ['leads', 'kanban', col.status, filters],
-      queryFn: () => {
-        const qs = new URLSearchParams({
-          pipelineStatus: col.status,
-          pageSize: '50',
-          ...(filters.search && { search: filters.search }),
-          ...(filters.leadSourceId && { leadSourceId: filters.leadSourceId }),
-          ...(filters.branchId && { branchId: filters.branchId }),
-        });
-        return apiClient<PaginatedResult<Lead>>(`/leads?${qs}`);
-      },
-      enabled: view === 'kanban',
-    })),
-  });
+  useEffect(() => {
+    setColumnExtra({});
+    setSelectedIds([]);
+  }, [filterQuery]);
 
-  const leadsByStatus = useMemo(() => {
-    const map = {} as Record<LeadPipelineStatus, Lead[]>;
-    PIPELINE_COLUMNS.forEach((col, i) => {
-      map[col.status] = kanbanQueries[i]?.data?.items ?? [];
-    });
+  const kanbanColumns = useMemo(() => {
+    if (filters.pipelineStatus) {
+      return PIPELINE_COLUMNS.filter((c) => c.status === filters.pipelineStatus);
+    }
+    return PIPELINE_COLUMNS;
+  }, [filters.pipelineStatus]);
+
+  const columnData = useMemo(() => {
+    const map: Record<string, KanbanColumnState> = {};
+    for (const col of PIPELINE_COLUMNS) {
+      const base = kanban.data?.columns?.[col.status];
+      const extra = columnExtra[col.status];
+      const items = [
+        ...((base?.items as KanbanLead[]) ?? []),
+        ...((extra?.items as KanbanLead[]) ?? []),
+      ];
+      map[col.status] = {
+        items,
+        total: base?.total ?? 0,
+        nextCursor: extra?.nextCursor !== undefined ? extra.nextCursor : (base?.nextCursor ?? null),
+        isLoading: kanban.isLoading,
+        isLoadingMore: extra?.loading,
+        isError: kanban.isError,
+      };
+    }
     return map;
-  }, [kanbanQueries]);
+  }, [kanban.data, kanban.isLoading, kanban.isError, columnExtra]);
 
-  const kanbanLoading = kanbanQueries.some((q) => q.isLoading);
-  const kanbanError = kanbanQueries.some((q) => q.isError);
+  const kpis = useMemo(() => {
+    const cols = kanban.data?.columns;
+    const total = cols
+      ? Object.values(cols).reduce((s, c) => s + (c.total || 0), 0)
+      : data?.total ?? 0;
+    return {
+      total,
+      newCount: cols?.NEW?.total ?? 0,
+      booked: cols?.BOOKED?.total ?? 0,
+      stale: staleLeads?.length ?? 0,
+    };
+  }, [kanban.data, data?.total, staleLeads]);
 
-  const handleFilterChange = useCallback((f: CrmFilters) => {
+  const handleFilterChange = useCallback((f: LeadFilters) => {
     setFilters(f);
     setPage(1);
   }, []);
@@ -131,129 +185,368 @@ function LeadsPageContent() {
     updateStatus.mutate({ id: leadId, pipelineStatus: status });
   }
 
-  function handleCreateAppointment(data: Parameters<typeof createAppointment.mutate>[0]) {
-    createAppointment.mutate(data, {
+  async function handleLoadMore(status: LeadPipelineStatus) {
+    const current = columnData[status];
+    const cursor = current?.nextCursor;
+    if (!cursor || columnExtra[status]?.loading) return;
+    setColumnExtra((prev) => ({
+      ...prev,
+      [status]: { items: prev[status]?.items ?? [], nextCursor: cursor, loading: true },
+    }));
+    try {
+      const params = new URLSearchParams({
+        cursor,
+        limit: '20',
+        ...filterQuery,
+      });
+      params.delete('pipelineStatus');
+      const res = await apiClient<{
+        items: Lead[];
+        nextCursor: string | null;
+      }>(`/leads/kanban/${status}?${params}`);
+      setColumnExtra((prev) => ({
+        ...prev,
+        [status]: {
+          items: [...(prev[status]?.items ?? []), ...res.items],
+          nextCursor: res.nextCursor,
+          loading: false,
+        },
+      }));
+    } catch {
+      setColumnExtra((prev) => ({
+        ...prev,
+        [status]: { ...(prev[status] ?? { items: [], nextCursor: null }), loading: false },
+      }));
+    }
+  }
+
+  function handleCreateAppointment(payload: Parameters<typeof createAppointment.mutate>[0]) {
+    createAppointment.mutate(payload, {
       onSuccess: () => {
         setAppointmentLead(null);
-        if (data.leadId) {
-          updateStatus.mutate({ id: data.leadId, pipelineStatus: 'BOOKED' });
+        if (payload.leadId) {
+          updateStatus.mutate({ id: payload.leadId, pipelineStatus: 'BOOKED' });
         }
       },
     });
   }
 
+  function exportCsv() {
+    const rows = data?.items ?? [];
+    const header = ['name', 'phone', 'status', 'source', 'assigned', 'createdAt'];
+    const lines = [
+      header.join(','),
+      ...rows.map((r) =>
+        [
+          r.name,
+          r.phone ?? '',
+          r.pipelineStatus,
+          r.leadSource?.name ?? '',
+          r.assignedTo?.name ?? '',
+          r.createdAt,
+        ]
+          .map((c) => `"${String(c).replace(/"/g, '""')}"`)
+          .join(','),
+      ),
+    ];
+    const blob = new Blob(['\uFEFF' + lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `leads-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   const highlightId = searchParams.get('id');
+  useEffect(() => {
+    if (highlightId) setDrawerLeadId(highlightId);
+  }, [highlightId]);
+
+  const allSelected =
+    !!data?.items?.length && data.items.every((r) => selectedIds.includes(r.id));
 
   return (
-    <div>
-      <PageHeader title="Lead" description="Quản lý pipeline lead marketing">
-        <Button
-          onClick={() => {
-            setEditing(null);
-            setFormOpen(true);
-          }}
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          Thêm lead
-        </Button>
-      </PageHeader>
-
-      {staleLeads && staleLeads.length > 0 && (
-        <Card className="mb-4 border-amber-200 bg-amber-50/60">
-          <CardContent className="py-3 flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-medium text-amber-900">
-                {staleLeads.length} lead chưa xử lý quá 10 phút
-              </p>
-              <ul className="text-sm text-amber-800 mt-1 space-y-0.5">
-                {staleLeads.slice(0, 5).map((l) => (
-                  <li key={l.id}>
-                    {l.name} — {formatDateTime(l.createdAt)}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <CrmFilterBar
-        filters={filters}
-        onChange={handleFilterChange}
-        leadSources={leadSources}
-        branches={branchList}
-        showTag={false}
-        placeholder="Tìm lead theo tên hoặc SĐT..."
+    <div className="min-h-full w-full max-w-full overflow-x-hidden space-y-0">
+      <LeadPageHeader
+        kpis={kpis}
+        onAdd={() => {
+          setEditing(null);
+          setFormOpen(true);
+        }}
+        onImport={() => alert('Import CSV sẽ mở trong bản cập nhật tiếp theo. Hiện dùng Thêm lead.')}
+        onExport={exportCsv}
       />
 
-      <Tabs value={view} onValueChange={(v) => setView(v as 'table' | 'kanban')}>
-        <TabsList className="mb-4">
-          <TabsTrigger value="kanban">Kanban</TabsTrigger>
-          <TabsTrigger value="table">Bảng</TabsTrigger>
-        </TabsList>
+      <div className="rounded-xl border border-border/60 bg-card/50 p-3 sm:p-3.5 space-y-3 mb-4 shadow-sm">
+        <LeadFilterBar
+          filters={filters}
+          onChange={handleFilterChange}
+          leadSources={leadSources}
+          branches={branchList}
+          employees={employees}
+        />
 
-        <TabsContent value="kanban">
-          <LeadKanban
-            leadsByStatus={leadsByStatus}
-            isLoading={kanbanLoading}
-            isError={kanbanError}
-            onRetry={() => kanbanQueries.forEach((q) => q.refetch())}
-            onStatusChange={handleStatusChange}
-            onAssign={setAssignLead}
-            onCreateAppointment={setAppointmentLead}
-            onEdit={(lead) => {
-              setEditing(lead);
-              setFormOpen(true);
-            }}
-          />
-        </TabsContent>
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5 border-t border-border/40">
+          <div className="inline-flex rounded-lg border border-border/70 bg-background/80 p-0.5">
+            <Button
+              type="button"
+              size="sm"
+              variant={view === 'kanban' ? 'default' : 'ghost'}
+              className="h-8 px-3"
+              onClick={() => setView('kanban')}
+            >
+              <LayoutGrid className="h-3.5 w-3.5 mr-1.5" />
+              Kanban
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={view === 'table' ? 'default' : 'ghost'}
+              className="h-8 px-3"
+              onClick={() => setView('table')}
+            >
+              <List className="h-3.5 w-3.5 mr-1.5" />
+              Bảng
+            </Button>
+          </div>
 
-        <TabsContent value="table">
-          <DataTable
-            data={data?.items}
-            isLoading={isLoading}
-            isError={isError}
-            onRetry={refetch}
-            emptyTitle="Chưa có lead"
-            getRowKey={(r) => r.id}
-            columns={[
-              {
-                key: 'name',
-                header: 'Tên',
-                cell: (r) => (
-                  <span className={highlightId === r.id ? 'font-bold text-primary' : ''}>
-                    {r.name}
-                  </span>
-                ),
-              },
-              { key: 'phone', header: 'SĐT', cell: (r) => r.phone ?? '—' },
-              {
-                key: 'status',
-                header: 'Trạng thái',
-                cell: (r) => <LeadStatusBadge status={r.pipelineStatus} />,
-              },
-              { key: 'source', header: 'Nguồn', cell: (r) => r.leadSource?.name ?? '—' },
-              { key: 'assigned', header: 'Phụ trách', cell: (r) => r.assignedTo?.name ?? '—' },
-              { key: 'created', header: 'Ngày tạo', cell: (r) => formatDateTime(r.createdAt) },
-              {
-                key: 'actions',
-                header: '',
-                cell: (r) => (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setEditing(r);
-                      setFormOpen(true);
-                    }}
-                  >
-                    Sửa
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value=""
+              onValueChange={(id) => {
+                const v = savedViews.data?.find((x) => x.id === id);
+                if (!v) return;
+                const f = { ...EMPTY_LEAD_FILTERS, ...(v.filters as Partial<LeadFilters>) };
+                setFilters(f);
+                if (v.viewMode === 'table' || v.viewMode === 'kanban') setView(v.viewMode);
+                if (v.tableColumns?.length) setVisibleCols(v.tableColumns);
+              }}
+            >
+              <SelectTrigger className="h-8 w-[150px] bg-background/80">
+                <SelectValue placeholder="Saved view" />
+              </SelectTrigger>
+              <SelectContent>
+                {(savedViews.data ?? []).map((v) => (
+                  <SelectItem key={v.id} value={v.id}>
+                    {v.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8"
+              onClick={() => setSaveViewOpen(true)}
+            >
+              <Bookmark className="h-3.5 w-3.5 mr-1" />
+              Lưu view
+            </Button>
+            {view === 'table' && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" size="sm" variant="outline" className="h-8">
+                    <Columns3 className="h-3.5 w-3.5 mr-1" />
+                    Cột
                   </Button>
-                ),
-              },
-            ]}
-          />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {TABLE_COLUMNS.map((c) => (
+                    <DropdownMenuCheckboxItem
+                      key={c.key}
+                      checked={visibleCols.includes(c.key)}
+                      onCheckedChange={(checked) => {
+                        setVisibleCols((prev) =>
+                          checked ? [...prev, c.key] : prev.filter((k) => k !== c.key),
+                        );
+                      }}
+                    >
+                      {c.label}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {view === 'kanban' && (
+        <LeadKanban
+          columns={kanbanColumns}
+          columnData={columnData}
+          isLoading={kanban.isLoading}
+          isError={kanban.isError}
+          onRetry={() => kanban.refetch()}
+          onStatusChange={handleStatusChange}
+          onOpenLead={(lead) => setDrawerLeadId(lead.id)}
+          onLoadMore={handleLoadMore}
+          draggingId={draggingId}
+          onDragStart={setDraggingId}
+          onDragEnd={() => setDraggingId(null)}
+        />
+      )}
+
+      {view === 'table' && (
+        <div className="space-y-3">
+          {selectedIds.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2">
+              <span className="text-sm font-medium">{selectedIds.length} đã chọn</span>
+              <Select value={bulkStatus} onValueChange={setBulkStatus}>
+                <SelectTrigger className="h-8 w-[150px]">
+                  <SelectValue placeholder="Đổi trạng thái" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PIPELINE_COLUMNS.map((c) => (
+                    <SelectItem key={c.status} value={c.status}>
+                      {c.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm"
+                className="h-8"
+                disabled={!bulkStatus || bulkAction.isPending}
+                onClick={() =>
+                  bulkAction.mutate(
+                    {
+                      leadIds: selectedIds,
+                      action: 'status',
+                      pipelineStatus: bulkStatus,
+                    },
+                    { onSuccess: () => setSelectedIds([]) },
+                  )
+                }
+              >
+                Áp dụng TT
+              </Button>
+              <Select
+                value=""
+                onValueChange={(v) =>
+                  bulkAction.mutate(
+                    { leadIds: selectedIds, action: 'assign', assignedToId: v },
+                    { onSuccess: () => setSelectedIds([]) },
+                  )
+                }
+              >
+                <SelectTrigger className="h-8 w-[160px]">
+                  <SelectValue placeholder="Gán nhân viên" />
+                </SelectTrigger>
+                <SelectContent>
+                  {employees.map((e) => (
+                    <SelectItem key={e.id} value={e.id}>
+                      {e.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Input
+                className="h-8 w-[120px]"
+                placeholder="Tag"
+                value={bulkTag}
+                onChange={(e) => setBulkTag(e.target.value)}
+              />
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8"
+                disabled={!bulkTag.trim() || bulkAction.isPending}
+                onClick={() =>
+                  bulkAction.mutate(
+                    { leadIds: selectedIds, action: 'tag', tags: [bulkTag.trim()] },
+                    { onSuccess: () => setSelectedIds([]) },
+                  )
+                }
+              >
+                Thêm tag
+              </Button>
+            </div>
+          )}
+
+          {isLoading && <LoadingState />}
+          {isError && <ErrorState onRetry={refetch} />}
+          {!isLoading && !isError && !data?.items?.length && <EmptyState title="Chưa có lead" />}
+          {!isLoading && !isError && !!data?.items?.length && (
+            <div className="rounded-xl border bg-card overflow-auto max-h-[min(70vh,720px)]">
+              <Table>
+                <TableHeader className="sticky top-0 z-10 bg-card shadow-sm">
+                  <TableRow>
+                    <TableHead className="w-10">
+                      <Checkbox
+                        checked={allSelected}
+                        onCheckedChange={(c) =>
+                          setSelectedIds(c ? (data.items.map((i) => i.id) ?? []) : [])
+                        }
+                      />
+                    </TableHead>
+                    {TABLE_COLUMNS.filter((c) => visibleCols.includes(c.key)).map((c) => (
+                      <TableHead key={c.key}>{c.label}</TableHead>
+                    ))}
+                    <TableHead />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {data.items.map((r) => (
+                    <TableRow
+                      key={r.id}
+                      className={cn(
+                        'cursor-pointer',
+                        highlightId === r.id && 'bg-primary/5',
+                        selectedIds.includes(r.id) && 'bg-muted/40',
+                      )}
+                      onClick={() => setDrawerLeadId(r.id)}
+                    >
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          checked={selectedIds.includes(r.id)}
+                          onCheckedChange={(c) =>
+                            setSelectedIds((prev) =>
+                              c ? [...prev, r.id] : prev.filter((id) => id !== r.id),
+                            )
+                          }
+                        />
+                      </TableCell>
+                      {visibleCols.includes('name') && (
+                        <TableCell className="font-medium">{r.name}</TableCell>
+                      )}
+                      {visibleCols.includes('phone') && (
+                        <TableCell>{r.phone ?? '—'}</TableCell>
+                      )}
+                      {visibleCols.includes('status') && (
+                        <TableCell>
+                          <LeadStatusBadge status={r.pipelineStatus} />
+                        </TableCell>
+                      )}
+                      {visibleCols.includes('source') && (
+                        <TableCell>{r.leadSource?.name ?? '—'}</TableCell>
+                      )}
+                      {visibleCols.includes('assigned') && (
+                        <TableCell>{r.assignedTo?.name ?? '—'}</TableCell>
+                      )}
+                      {visibleCols.includes('created') && (
+                        <TableCell>{formatDateTime(r.createdAt)}</TableCell>
+                      )}
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setEditing(r);
+                            setFormOpen(true);
+                          }}
+                        >
+                          Sửa
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
           {data && (
             <PaginationBar
               page={data.page}
@@ -262,8 +555,41 @@ function LeadsPageContent() {
               onPageChange={setPage}
             />
           )}
-        </TabsContent>
-      </Tabs>
+        </div>
+      )}
+
+      <LeadDetailDrawer
+        leadId={drawerLeadId}
+        open={!!drawerLeadId}
+        onOpenChange={(o) => !o && setDrawerLeadId(null)}
+        onAssign={() => {
+          const lead =
+            data?.items.find((l) => l.id === drawerLeadId) ||
+            Object.values(columnData)
+              .flatMap((c) => c.items)
+              .find((l) => l.id === drawerLeadId);
+          if (lead) setAssignLead(lead);
+        }}
+        onCreateAppointment={() => {
+          const lead =
+            data?.items.find((l) => l.id === drawerLeadId) ||
+            Object.values(columnData)
+              .flatMap((c) => c.items)
+              .find((l) => l.id === drawerLeadId);
+          if (lead) setAppointmentLead(lead);
+        }}
+        onEdit={() => {
+          const lead =
+            data?.items.find((l) => l.id === drawerLeadId) ||
+            Object.values(columnData)
+              .flatMap((c) => c.items)
+              .find((l) => l.id === drawerLeadId);
+          if (lead) {
+            setEditing(lead);
+            setFormOpen(true);
+          }
+        }}
+      />
 
       <LeadFormDialog
         open={formOpen}
@@ -326,6 +652,63 @@ function LeadsPageContent() {
               Gán
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={saveViewOpen} onOpenChange={setSaveViewOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Lưu view hiện tại</DialogTitle>
+          </DialogHeader>
+          <Input
+            placeholder="Tên view"
+            value={saveViewName}
+            onChange={(e) => setSaveViewName(e.target.value)}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSaveViewOpen(false)}>
+              Hủy
+            </Button>
+            <Button
+              disabled={!saveViewName.trim() || createSavedView.isPending}
+              onClick={() =>
+                createSavedView.mutate(
+                  {
+                    name: saveViewName.trim(),
+                    viewMode: view,
+                    filters: { ...filters } as Record<string, unknown>,
+                    tableColumns: visibleCols,
+                  },
+                  {
+                    onSuccess: () => {
+                      setSaveViewOpen(false);
+                      setSaveViewName('');
+                    },
+                  },
+                )
+              }
+            >
+              Lưu
+            </Button>
+          </DialogFooter>
+          {(savedViews.data?.length ?? 0) > 0 && (
+            <div className="space-y-1 pt-2 border-t">
+              <p className="text-xs text-muted-foreground">View đã lưu</p>
+              {savedViews.data?.map((v) => (
+                <div key={v.id} className="flex items-center justify-between text-sm">
+                  <span>{v.name}</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-destructive"
+                    onClick={() => deleteSavedView.mutate(v.id)}
+                  >
+                    Xóa
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
