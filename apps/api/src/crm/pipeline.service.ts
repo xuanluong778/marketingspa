@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { LeadPipelineStatus } from '@marketingspa/database';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -77,6 +77,12 @@ export class PipelineService {
     },
   ) {
     if (data.id) {
+      const owned = await this.prisma.funnelStage.findFirst({
+        where: { id: data.id, organizationId },
+      });
+      if (!owned) {
+        throw new NotFoundException('Funnel stage not found');
+      }
       return this.prisma.funnelStage.update({
         where: { id: data.id },
         data: {

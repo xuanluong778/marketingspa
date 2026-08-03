@@ -1,4 +1,4 @@
-import { ConflictException, Injectable } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { LeadAssignmentMode, Prisma } from '@marketingspa/database';
 import { PrismaService } from '../prisma/prisma.service';
 
@@ -112,6 +112,14 @@ export class LeadAssignmentService {
     leadId: string,
     employeeId: string,
   ) {
+    const employee = await this.prisma.employee.findFirst({
+      where: { id: employeeId, organizationId },
+      select: { id: true },
+    });
+    if (!employee) {
+      throw new NotFoundException('Employee not found in organization');
+    }
+
     const now = new Date();
     const result = await this.prisma.lead.updateMany({
       where: {
@@ -159,6 +167,12 @@ export class LeadAssignmentService {
     },
   ) {
     if (data.id) {
+      const owned = await this.prisma.leadAssignmentRule.findFirst({
+        where: { id: data.id, organizationId },
+      });
+      if (!owned) {
+        throw new NotFoundException('Assignment rule not found');
+      }
       return this.prisma.leadAssignmentRule.update({
         where: { id: data.id },
         data: {
