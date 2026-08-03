@@ -78,7 +78,7 @@ export function VideoTranscriptionStudio() {
   const { data: user } = useCurrentUser();
   const [sourceUrl, setSourceUrl] = useState('');
   const [file, setFile] = useState<File | null>(null);
-  const [language, setLanguage] = useState('vi');
+  const [language, setLanguage] = useState('auto');
   const [glossary, setGlossary] = useState('');
   const [ownership, setOwnership] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
@@ -132,7 +132,7 @@ export function VideoTranscriptionStudio() {
       return;
     }
     if (!file && !sourceUrl.trim()) {
-      setMsg('Nhập link YouTube hoặc chọn file video/audio.');
+      setMsg('Nhập link YouTube hoặc tải lên file video/audio.');
       return;
     }
     try {
@@ -216,18 +216,18 @@ export function VideoTranscriptionStudio() {
         <div className="mb-4">
           <h2 className="text-lg font-semibold text-emerald-950">Lấy văn bản từ video</h2>
           <p className="mt-1 text-sm text-slate-600">
-            Dán link YouTube hoặc tải video/audio (tối đa{' '}
-            {Math.round((job?.maxDurationSeconds || 3 * 60 * 60) / 60)} phút, 500MB). Facebook/Reel:
-            tải file về máy rồi upload — hệ thống không scrape Facebook. Audio được chia chunk
-            5–10 phút (overlap) để lấy đủ nội dung.
+            Dán link YouTube, hoặc tải video/audio trực tiếp (tối đa{' '}
+            {Math.round((job?.maxDurationSeconds || 30 * 60) / 60)} phút, 500MB). Facebook video/Reel:
+            tải file về máy rồi upload — hệ thống không scrape Facebook. Chỉ xử lý video bạn sở hữu
+            hoặc có quyền sử dụng.
           </p>
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="space-y-2">
-            <Label>Link YouTube</Label>
+            <Label>Link YouTube / Facebook video hoặc Reel</Label>
             <Input
-              placeholder="https://www.youtube.com/watch?v=…"
+              placeholder="https://www.youtube.com/watch?v=… (Facebook: vui lòng upload file)"
               value={sourceUrl}
               disabled={busy || Boolean(file)}
               onChange={(e) => setSourceUrl(e.target.value)}
@@ -432,13 +432,25 @@ export function VideoTranscriptionStudio() {
               <FileText className="h-4 w-4" />
               Kết quả
             </h3>
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={() => void handleCopy()}>
+            <div className="video-transcription-actions flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="text-white [&_svg]:text-white"
+                onClick={() => void handleCopy()}
+              >
                 {copied ? <Check className="mr-1 h-3.5 w-3.5" /> : <Copy className="mr-1 h-3.5 w-3.5" />}
                 Sao chép
               </Button>
               {!editing ? (
-                <Button type="button" variant="outline" size="sm" onClick={() => setEditing(true)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="text-white [&_svg]:text-white"
+                  onClick={() => setEditing(true)}
+                >
                   <Pencil className="mr-1 h-3.5 w-3.5" />
                   Chỉnh sửa
                 </Button>
@@ -447,6 +459,7 @@ export function VideoTranscriptionStudio() {
                   type="button"
                   variant="outline"
                   size="sm"
+                  className="text-white [&_svg]:text-white"
                   disabled={busy}
                   onClick={() => void handleSaveEdit()}
                 >
@@ -454,11 +467,23 @@ export function VideoTranscriptionStudio() {
                   Lưu chỉnh sửa
                 </Button>
               )}
-              <Button type="button" variant="outline" size="sm" onClick={handleWriteArticle}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="text-white [&_svg]:text-white"
+                onClick={handleWriteArticle}
+              >
                 <Sparkles className="mr-1 h-3.5 w-3.5" />
                 Viết bài từ nội dung này
               </Button>
-              <Button type="button" variant="outline" size="sm" onClick={handleSave}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="text-white [&_svg]:text-white"
+                onClick={handleSave}
+              >
                 <Save className="mr-1 h-3.5 w-3.5" />
                 Lưu văn bản
               </Button>

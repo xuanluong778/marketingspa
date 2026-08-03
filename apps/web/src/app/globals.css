@@ -279,6 +279,19 @@
     color: #ffffff !important;
     -webkit-text-fill-color: #ffffff !important;
   }
+
+  /* Lấy văn bản từ video — chữ/icon trắng trên nút nền xanh đậm */
+  .video-transcription-actions > button,
+  .video-transcription-actions > button *,
+  .video-transcription-actions > button:hover,
+  .video-transcription-actions > button:hover *,
+  .content-create-tab .video-transcription-actions > button,
+  .content-create-tab .video-transcription-actions > button *,
+  .content-create-tab .video-transcription-actions > button:hover,
+  .content-create-tab .video-transcription-actions > button:hover * {
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+  }
 }
 
 /* Affiliate partner dashboard — dark navy + neon accent (scoped) */
