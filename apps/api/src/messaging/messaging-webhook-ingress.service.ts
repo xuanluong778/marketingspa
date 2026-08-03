@@ -105,14 +105,16 @@ export class MessagingWebhookIngressService {
     const credentials = this.channelConnections.decryptCredentials(connection.encryptedCredentials);
     const secret = credentials.webhookSecret ?? '';
     const provider = this.providers.get(MessagingProviderKind.ZALO_OA);
-    if (
-      secret &&
-      provider.verifyWebhookSignature &&
-      signature &&
-      !provider.verifyWebhookSignature(rawBody, signature, secret)
-    ) {
-      this.logger.warn(`Zalo webhook signature invalid oa=${oaId}`);
-      return;
+    // Fail-closed when webhook secret is configured: missing/invalid signature → drop
+    if (secret) {
+      if (
+        !signature ||
+        !provider.verifyWebhookSignature ||
+        !provider.verifyWebhookSignature(rawBody, signature, secret)
+      ) {
+        this.logger.warn(`Zalo webhook signature rejected oa=${oaId}`);
+        return;
+      }
     }
 
     const events = provider.normalizeWebhook(payload, oaId);
