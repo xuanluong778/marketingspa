@@ -35,16 +35,29 @@ function main() {
     /META_APP_ID sai|bị cấm|Bắt buộc/,
   );
 
-  assert.throws(
-    () =>
-      assertAutoPostMetaOAuthConfig(
-        env({
-          ...base,
-          META_FACEBOOK_OAUTH_REDIRECT_URI: 'https://seoauto.vn/api/social/facebook/oauth/callback',
-        }),
-      ),
-    /seoauto/,
-  );
+  // Legacy META_FACEBOOK_OAUTH_REDIRECT_URI may be polluted on PM2 — warn only when
+  // META_AUTO_POST_REDIRECT_URI is already the MarketingAutoAZ whitelist URI.
+  // Must NOT brick oauth/start (or Content Studio) for a stale relay env var.
+  const warnings: string[] = [];
+  const origWarn = console.warn;
+  console.warn = (...args: unknown[]) => {
+    warnings.push(args.map(String).join(' '));
+  };
+  try {
+    const withLegacyRelay = assertAutoPostMetaOAuthConfig(
+      env({
+        ...base,
+        META_FACEBOOK_OAUTH_REDIRECT_URI: 'https://seoauto.vn/api/social/facebook/oauth/callback',
+      }),
+    );
+    assert.equal(withLegacyRelay.redirectUri, MARKETINGAUTOAZ_AUTO_POST_OAUTH_REDIRECT_URI);
+    assert.ok(
+      warnings.some((w) => /META_FACEBOOK_OAUTH_REDIRECT_URI|seoauto/i.test(w)),
+      'expected console.warn about forbidden legacy redirect host',
+    );
+  } finally {
+    console.warn = origWarn;
+  }
 
   assert.throws(
     () =>
