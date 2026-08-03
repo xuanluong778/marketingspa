@@ -511,7 +511,7 @@ export class AppointmentsService {
     };
   }
 
-  private defaultInclude() {
+  private defaultInclude(): Prisma.AppointmentInclude {
     return {
       customer: true,
       lead: { include: { assignedTo: true } },

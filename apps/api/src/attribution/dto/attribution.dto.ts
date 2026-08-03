@@ -1,5 +1,5 @@
-import { IsArray, IsBoolean, IsNumber, IsOptional, IsString } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsBoolean, IsEnum, IsOptional, IsString } from 'class-validator';
+import { AdPlatform } from '@marketingspa/database';
 
 export class AttributionDashboardQueryDto {
   @IsOptional()
@@ -12,8 +12,8 @@ export class AttributionDashboardQueryDto {
   @IsString()
   branchId?: string;
   @IsOptional()
-  @IsString()
-  channel?: string;
+  @IsEnum(AdPlatform)
+  channel?: AdPlatform;
   @IsOptional()
   @IsString()
   customerType?: string;
@@ -48,8 +48,8 @@ export class AttributionInputDto {
   @IsString()
   adSetId?: string;
   @IsOptional()
-  @IsString()
-  channel?: string;
+  @IsEnum(AdPlatform)
+  channel?: AdPlatform;
   @IsOptional()
   @IsString()
   externalAdId?: string;
@@ -87,4 +87,3 @@ export class AttributionInputDto {
   @IsString()
   utmTerm?: string;
 }
-

@@ -1,33 +1,32 @@
-import { IsArray, IsBoolean, IsNumber, IsOptional, IsString } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
 
 export class ChangePasswordDto {
-  @IsOptional()
   @IsString()
-  currentPassword?: string;
-  @IsOptional()
+  @MinLength(1)
+  currentPassword!: string;
+
   @IsString()
-  newPassword?: string;
+  @MinLength(8)
+  newPassword!: string;
 }
 
 export class ForgotPasswordDto {
-  @IsOptional()
-  @IsString()
-  email?: string;
+  @IsEmail()
+  email!: string;
 }
 
 export class ResetPasswordDto {
-  @IsOptional()
   @IsString()
-  password?: string;
-  @IsOptional()
+  @MinLength(1)
+  token!: string;
+
   @IsString()
-  token?: string;
+  @MinLength(8)
+  password!: string;
 }
 
 export class VerifyEmailDto {
-  @IsOptional()
   @IsString()
-  token?: string;
+  @MinLength(1)
+  token!: string;
 }
-

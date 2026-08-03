@@ -227,9 +227,11 @@ export async function metaGraphFetchJson<T>(
   throw lastErr ?? new Error('Meta Graph request failed');
 }
 
-/** Redact token từ chuỗi log. */
+/** Redact Meta secrets from logs, error URLs, and UI-facing messages. */
 export function redactMetaSecrets(text: string): string {
-  return text
-    .replace(/access_token=[^&\s]+/gi, 'access_token=[REDACTED]')
+  return String(text ?? '')
+    .replace(/access_token\s*=\s*[^&\s#]+/gi, 'access_token=[REDACTED]')
+    .replace(/(fb_exchange_token|client_secret|app_secret)=[^&\s#]+/gi, '$1=[REDACTED]')
+    .replace(/([?&#])(code|state)=([^&#]*)/gi, '$1$2=[REDACTED]')
     .replace(/\b(?:EAAG|EAAD|EAA|EBA|EAAE)[A-Za-z0-9_-]{10,}\b/g, '[meta_token]');
 }

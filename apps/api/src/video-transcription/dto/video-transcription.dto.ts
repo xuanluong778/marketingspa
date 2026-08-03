@@ -1,4 +1,4 @@
-import { IsArray, IsBoolean, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsBoolean, IsNumber, IsOptional, IsString, MinLength } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateVideoTranscriptionDto {
@@ -17,15 +17,13 @@ export class CreateVideoTranscriptionDto {
 }
 
 export class PatchVideoTranscriptionTextDto {
-  @IsOptional()
   @IsString()
-  cleanedTranscript?: string;
+  @MinLength(1)
+  cleanedTranscript!: string;
 }
 
 export class RetryVideoTranscriptionChunkDto {
-  @IsOptional()
   @Type(() => Number)
   @IsNumber()
-  chunkIndex?: number;
+  chunkIndex!: number;
 }
-

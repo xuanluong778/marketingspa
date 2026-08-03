@@ -235,16 +235,18 @@ export class ConnectFacebookPageDto {
 }
 
 export class CrawlKnowledgeUrlDto {
-  @IsOptional()
   @IsString()
-  url?: string;
+  @MinLength(1)
+  url!: string;
+
   @IsOptional()
   @IsString()
   title?: string;
 
-  @IsOptional()
   @IsString()
-  botId?: string;
+  @MinLength(1)
+  botId!: string;
+
   @IsOptional()
   @IsString()
   replaceExisting?: string;

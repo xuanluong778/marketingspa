@@ -1,18 +1,17 @@
-import { IsArray, IsBoolean, IsNumber, IsOptional, IsString } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsString, MinLength } from 'class-validator';
 
 export class ResendRegistrationOtpDto {
-  @IsOptional()
   @IsString()
-  registrationId?: string;
+  @MinLength(1)
+  registrationId!: string;
 }
 
 export class VerifyRegistrationOtpDto {
-  @IsOptional()
   @IsString()
-  otp?: string;
-  @IsOptional()
-  @IsString()
-  registrationId?: string;
-}
+  @MinLength(1)
+  otp!: string;
 
+  @IsString()
+  @MinLength(1)
+  registrationId!: string;
+}

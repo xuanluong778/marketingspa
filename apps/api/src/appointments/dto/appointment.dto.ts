@@ -1,5 +1,5 @@
 import { IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min, MinLength } from 'class-validator';
-import { AppointmentStatus } from '@marketingspa/database';
+import { AppointmentDepositStatus, AppointmentStatus } from '@marketingspa/database';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { Type } from 'class-transformer';
 
@@ -47,8 +47,8 @@ export class CreateAppointmentDto {
   @IsNumber()
   depositAmount?: number;
   @IsOptional()
-  @IsString()
-  depositStatus?: string;
+  @IsEnum(AppointmentDepositStatus)
+  depositStatus?: AppointmentDepositStatus;
   @IsOptional()
   @IsString()
   equipmentId?: string;
@@ -168,14 +168,13 @@ export class CalendarQueryDto {
   @IsString()
   serviceId?: string;
   @IsOptional()
-  @IsString()
-  status?: string;
+  @IsEnum(AppointmentStatus)
+  status?: AppointmentStatus;
 }
 
 export class RescheduleAppointmentDto {
-  @IsOptional()
-  @IsString()
-  scheduledAt?: string;
+  @IsDateString()
+  scheduledAt!: string;
   @IsOptional()
   @IsString()
   startAt?: string;
@@ -196,8 +195,10 @@ export class RescheduleAppointmentDto {
   equipmentId?: string;
 
   @IsOptional()
-  @IsString()
-  durationMinutes?: string;
+  @Type(() => Number)
+  @IsInt()
+  @Min(15)
+  durationMinutes?: number;
   @IsOptional()
   @IsString()
   employeeId?: string;

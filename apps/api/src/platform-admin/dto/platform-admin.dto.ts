@@ -1,4 +1,4 @@
-import { IsArray, IsBoolean, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsBoolean, IsIn, IsNumber, IsOptional, IsString, Min, MinLength } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class AdminAuditQueryDto {
@@ -37,10 +37,10 @@ export class AdminAuditQueryDto {
 }
 
 export class AdminExtendSubscriptionDto {
-  @IsOptional()
   @Type(() => Number)
   @IsNumber()
-  days?: number;
+  @Min(1)
+  days!: number;
   @IsOptional()
   @IsString()
   idempotencyKey?: string;
@@ -50,19 +50,18 @@ export class AdminExtendSubscriptionDto {
 }
 
 export class AdminGiftTimeDto {
-  @IsOptional()
   @Type(() => Number)
   @IsNumber()
-  amount?: number;
-  @IsOptional()
+  @Min(1)
+  amount!: number;
   @IsString()
-  idempotencyKey?: string;
+  @MinLength(1)
+  idempotencyKey!: string;
   @IsOptional()
   @IsString()
   reason?: string;
-  @IsOptional()
-  @IsString()
-  unit?: string;
+  @IsIn(['days', 'months', 'years'])
+  unit!: 'days' | 'months' | 'years';
 }
 
 export class AdminJobsQueryDto {

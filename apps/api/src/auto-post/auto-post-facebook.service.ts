@@ -45,6 +45,7 @@ import { MetaGraphUsageService } from './meta-graph-usage.service';
 import { withRedisSingleFlight } from './meta-redis-cache';
 import { AutoPostFacebookPageDetailsService } from './auto-post-facebook-page-details.service';
 import { MetaGraphMetricsService } from './meta-graph-metrics.service';
+import { redactMetaSecrets } from './meta-graph-http';
 
 const STATE_TTL_MS = 10 * 60 * 1000;
 
@@ -306,7 +307,12 @@ export class AutoPostFacebookService {
     const base = `${appUrl}/content?tab=channels&facebook=`;
 
     if (error) {
-      return { redirectUrl: `${base}error&message=${encodeURIComponent(error)}` };
+      const safe = redactMetaSecrets(error).slice(0, 180);
+      return {
+        redirectUrl: `${base}error&message=${encodeURIComponent(
+          humanizeAutoPostFacebookError(safe) ?? 'Kết nối Facebook bị hủy hoặc thất bại.',
+        )}`,
+      };
     }
     if (!code || !state) {
       return { redirectUrl: `${base}error&message=missing_code` };
@@ -419,13 +425,11 @@ export class AutoPostFacebookService {
       return { redirectUrl: `${base}oauth_connected&mode=oauth` };
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'oauth_failed';
-      const safeMsg = msg
-        .replace(/access_token\\s*=\\s*[^\\s&]+/gi, 'access_token=[redacted]')
-        // Meta tokens thường bắt đầu bằng EAAG/EAA* và có độ dài lớn.
-        .replace(/\\b(?:EAAG|EAAD|EAA|EBA|EAAE)[A-Za-z0-9_-]{10,}\\b/g, '[meta_token]')
-        .slice(0, 300);
+      const safeMsg = redactMetaSecrets(msg).slice(0, 300);
 
-      this.logger.warn(`Auto Post OAuth failed for user ${userId}`); // Không log token/secret
+      this.logger.warn(
+        `Auto Post OAuth failed for user ${userId}: ${redactMetaSecrets(msg).slice(0, 180)}`,
+      );
 
       return {
         redirectUrl: `${base}error&message=${encodeURIComponent(

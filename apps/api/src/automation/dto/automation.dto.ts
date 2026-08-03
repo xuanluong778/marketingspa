@@ -1,6 +1,11 @@
 import { Type } from 'class-transformer';
 import { IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, IsUUID, MaxLength, Min, MinLength } from 'class-validator';
-import { MessageChannel, AutomationTriggerType } from '@marketingspa/database';
+import {
+  MessageChannel,
+  AutomationTriggerType,
+  MessageTemplateApprovalStatus,
+  MessagingCampaignKind,
+} from '@marketingspa/database';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 
 export class CreateMessageTemplateDto {
@@ -29,11 +34,11 @@ export class CreateMessageTemplateDto {
   isActive?: boolean;
 
   @IsOptional()
-  @IsString()
-  approvalStatus?: string;
+  @IsEnum(MessageTemplateApprovalStatus)
+  approvalStatus?: MessageTemplateApprovalStatus;
   @IsOptional()
-  @IsString()
-  campaignKind?: string;
+  @IsEnum(MessagingCampaignKind)
+  campaignKind?: MessagingCampaignKind;
   @IsOptional()
   @IsArray()
   contentBlocks?: any[];
@@ -191,8 +196,14 @@ export class SimulateAutomationDto {
 
 export class TemplateQueryDto extends PaginationDto {
   @IsOptional()
-  @IsString()
-  channel?: string;
+  @IsEnum(MessageChannel)
+  channel?: MessageChannel;
+}
+
+export class PreviewMessageTemplateDto {
+  @IsOptional()
+  @IsObject()
+  context?: Record<string, string>;
 }
 
 export class LogQueryDto extends PaginationDto {

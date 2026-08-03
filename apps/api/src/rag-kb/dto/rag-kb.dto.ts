@@ -1,16 +1,18 @@
-import { IsArray, IsBoolean, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsBoolean, IsNumber, IsOptional, IsString, MinLength } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class CreateRagKbDto {
+  @IsString()
+  @MinLength(1)
+  name!: string;
+
   @IsOptional()
   @IsString()
   description?: string;
+
   @IsOptional()
   @IsBoolean()
   isDefault?: boolean;
-  @IsOptional()
-  @IsString()
-  name?: string;
 }
 
 export class UpdateRagKbDto {
@@ -26,29 +28,31 @@ export class UpdateRagKbDto {
 }
 
 export class ImportRagKbTextDto {
-  @IsOptional()
   @IsString()
-  content?: string;
-  @IsOptional()
+  @MinLength(1)
+  content!: string;
+
   @IsString()
-  title?: string;
+  @MinLength(1)
+  title!: string;
 }
 
 export class ImportRagKbUrlDto {
   @IsOptional()
   @IsString()
   title?: string;
-  @IsOptional()
+
   @IsString()
-  url?: string;
+  @MinLength(1)
+  url!: string;
 }
 
 export class RagKbSearchDto {
   @IsOptional()
   @IsString()
   knowledgeBaseId?: string;
-  @IsOptional()
-  @IsString()
-  query?: string;
-}
 
+  @IsString()
+  @MinLength(1)
+  query!: string;
+}

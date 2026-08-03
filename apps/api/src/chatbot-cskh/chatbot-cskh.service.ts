@@ -332,14 +332,16 @@ export class ChatbotCskhService {
    * để chatbot AI trả lời dựa trên dữ liệu thật từ trang.
    */
   async crawlKnowledgeFromUrl(organizationId: string, dto: CrawlKnowledgeUrlDto) {
-    if (!dto.botId?.trim()) {
+    const botId = dto.botId.trim();
+    const sourceUrl = dto.url.trim();
+    if (!botId) {
       throw new BadRequestException('Thiếu botId — chọn chatbot trước khi quét website.');
     }
-    await this.findBotOrThrow(organizationId, dto.botId);
+    await this.findBotOrThrow(organizationId, botId);
 
     let result;
     try {
-      result = await fetchAndExtractUrl(dto.url);
+      result = await fetchAndExtractUrl(sourceUrl);
     } catch (e) {
       if (e instanceof CrawlValidationError || e instanceof CrawlFetchError) {
         throw new BadRequestException(e.message);
@@ -358,14 +360,14 @@ export class ChatbotCskhService {
       await this.prisma.chatbotKnowledgeSource.deleteMany({
         where: {
           organizationId,
-          botId: dto.botId,
-          OR: [{ url: pageUrl }, { url: dto.url.trim() }],
+          botId,
+          OR: [{ url: pageUrl }, { url: sourceUrl }],
         },
       });
     }
 
     const existing = await this.prisma.chatbotKnowledgeSource.count({
-      where: { organizationId, botId: dto.botId },
+      where: { organizationId, botId },
     });
     const remaining = MAX_SOURCES - existing;
     if (remaining <= 0) {
@@ -378,7 +380,7 @@ export class ChatbotCskhService {
         this.prisma.chatbotKnowledgeSource.create({
           data: {
             organizationId,
-            botId: dto.botId,
+            botId,
             title: (chunks.length > 1 ? `${baseTitle} (${i + 1})` : baseTitle).slice(0, 160),
             sourceType: ChatbotSourceType.URL,
             content,

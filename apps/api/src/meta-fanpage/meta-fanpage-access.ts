@@ -26,7 +26,7 @@ export function assertCanUseServerEnvFanpage(
   user: AuthUser,
   getEnv: (key: string) => string | undefined,
 ): void {
-  if (user.role === SYSTEM_ROLES.SUPER_ADMIN) return;
+  if (user.role === 'SUPER_ADMIN') return;
 
   const allowlist = parseMetaFanpageAllowedOrgIds(getEnv);
   if (user.organizationId && allowlist.includes(user.organizationId)) return;
@@ -40,6 +40,6 @@ export function canUseServerEnvFanpage(
   user: Pick<AuthUser, 'role' | 'organizationId'>,
   allowedOrgIds: string[],
 ): boolean {
-  if (user.role === SYSTEM_ROLES.SUPER_ADMIN) return true;
+  if (user.role === 'SUPER_ADMIN') return true;
   return Boolean(user.organizationId && allowedOrgIds.includes(user.organizationId));
 }

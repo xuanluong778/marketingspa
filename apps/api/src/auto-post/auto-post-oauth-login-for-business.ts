@@ -160,14 +160,8 @@ export async function oauthCallbackConnect(
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'oauth_failed';
-    const safeMsg = msg
-      .replace(/access_token\s*=\s*[^\s&]+/gi, 'access_token=[redacted]')
-      .slice(0, 300);
-
     // Callback lỗi: không ghi đè active connection/page (giữ trạng thái cũ).
-    // Nếu pending tồn tại từ trước, service/FE xử lý bằng redirect error.
-
-    throw e;
+    throw new Error(msg);
   }
 }
 

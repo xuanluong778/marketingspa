@@ -156,7 +156,7 @@ export class BillingController {
       user.id,
       user.organizationId,
       dto.orderId,
-      dto.note,
+      dto.note ?? '',
       ip,
     );
   }

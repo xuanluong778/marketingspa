@@ -1,4 +1,4 @@
-import { LeadPipelineStatus } from '@marketingspa/database';
+import { LeadPipelineStatus, OrderStatus } from '@marketingspa/database';
 
 export function assertStatusTransition(from: string, to: string, allowed: Record<string, string[]>): void {
   const next = allowed[from] || [];
@@ -41,6 +41,8 @@ export function assertPaymentRefundable(status: string): void {
   });
 }
 
-export function orderStatusFromPaid(paid: boolean): string {
-  return paid ? 'PAID' : 'UNPAID';
+export function orderStatusFromPaid(orderTotal: number, paidAmount: number): OrderStatus {
+  if (paidAmount <= 0) return OrderStatus.PENDING;
+  if (paidAmount >= orderTotal) return OrderStatus.PAID;
+  return OrderStatus.PARTIALLY_PAID;
 }

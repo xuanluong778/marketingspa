@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { AutomationLogStatus, MessageChannel, Prisma } from '@marketingspa/database';
+import { AutomationLogStatus, MessageChannel, MessageTemplateApprovalStatus, Prisma } from '@marketingspa/database';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { TenantOwnershipService } from '../common/services/tenant-ownership.service';
@@ -63,7 +63,7 @@ export class AutomationService {
         campaignKind: dto.campaignKind,
         providerMode: dto.providerMode,
         providerTemplateId: dto.providerTemplateId,
-        approvalStatus: dto.approvalStatus ?? 'DRAFT',
+        approvalStatus: dto.approvalStatus ?? MessageTemplateApprovalStatus.DRAFT,
         mediaUrl: dto.mediaUrl,
         ctaLabel: dto.ctaLabel,
         ctaUrl: dto.ctaUrl,
