@@ -10,15 +10,13 @@ import {
   AdConnectionProvider,
   AdConnectionStatus,
   FacebookAdsConnectionStatus,
-  FacebookAdsSyncStatus,
-  Prisma,
 } from '@marketingspa/database';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { AuthUser } from '../../common/interfaces/auth-user.interface';
 import { AdConnectionFacade } from '../ad-connection.facade';
+import { AdsSyncQueueService } from '../ads-sync-queue.service';
 import { MetaGraphApiService } from './meta-graph-api.service';
-import { mapMetaInsightToCampaign, type MappedFacebookCampaign } from './facebook-ads.mapper';
 import type {
   FacebookCampaignsQueryDto,
   SelectAdAccountDto,
@@ -36,6 +34,7 @@ export class FacebookAdsService {
     private readonly config: ConfigService,
     private readonly meta: MetaGraphApiService,
     private readonly connections: AdConnectionFacade,
+    private readonly adsSyncQueue: AdsSyncQueueService,
   ) {}
 
   async getOAuthStartUrl(user: AuthUser, returnTo?: string): Promise<{ url: string }> {
@@ -236,127 +235,15 @@ export class FacebookAdsService {
     return { message: 'Đã chọn tài khoản quảng cáo', adAccountId: dto.adAccountId };
   }
 
+  /**
+   * API chỉ enqueue BullMQ — không đọc token vào queue (AdsSyncQueueService).
+   */
   async sync(user: AuthUser, dto: SyncFacebookAdsDto) {
-    const organizationId = user.organizationId;
-    const conn = await this.ensureConnection(organizationId);
-    if (!conn.selectedAdAccountId) {
-      throw new BadRequestException('Vui lòng chọn tài khoản quảng cáo trước khi đồng bộ');
-    }
-    if (!dto.dateFrom || !dto.dateTo) {
-      throw new BadRequestException('Cần dateFrom và dateTo để đồng bộ');
-    }
-
-    const dateFrom = this.parseDate(dto.dateFrom);
-    const dateTo = this.parseDate(dto.dateTo);
-    if (dateFrom > dateTo) {
-      throw new BadRequestException('Từ ngày phải trước đến ngày');
-    }
-
-    const log = await this.prisma.facebookAdsSyncLog.create({
-      data: {
-        organizationId,
-        adAccountId: conn.selectedAdAccountId,
-        dateFrom,
-        dateTo,
-        syncStartedAt: new Date(),
-        status: FacebookAdsSyncStatus.RUNNING,
-      },
+    return this.adsSyncQueue.enqueueMetaSync(user, {
+      dateFrom: dto.dateFrom,
+      dateTo: dto.dateTo,
+      campaignId: dto.campaignId,
     });
-
-    await this.prisma.facebookAdsConnection.update({
-      where: { organizationId },
-      data: {
-        status: FacebookAdsConnectionStatus.SYNCING,
-        lastSyncStatus: FacebookAdsSyncStatus.RUNNING,
-      },
-    });
-
-    try {
-      const accessToken = await this.getValidAccessToken(organizationId);
-      const insights = await this.meta.getCampaignInsights(
-        accessToken,
-        conn.selectedAdAccountId,
-        dto.dateFrom,
-        dto.dateTo,
-        dto.campaignId,
-      );
-
-      const mapped = insights.map(mapMetaInsightToCampaign).filter((c) => c.campaignId);
-      const syncedAt = new Date();
-
-      for (const c of mapped) {
-        await this.prisma.facebookAdsCampaignSnapshot.upsert({
-          where: {
-            organizationId_campaignId_dateFrom_dateTo: {
-              organizationId,
-              campaignId: c.campaignId,
-              dateFrom,
-              dateTo,
-            },
-          },
-          create: this.snapshotCreate(
-            organizationId,
-            conn.selectedAdAccountId,
-            dateFrom,
-            dateTo,
-            c,
-            syncedAt,
-          ),
-          update: this.snapshotUpdate(c, syncedAt),
-        });
-      }
-
-      await this.prisma.facebookAdsSyncLog.update({
-        where: { id: log.id },
-        data: {
-          syncFinishedAt: new Date(),
-          status: FacebookAdsSyncStatus.SUCCESS,
-          campaignsSynced: mapped.length,
-        },
-      });
-
-      await this.prisma.facebookAdsConnection.update({
-        where: { organizationId },
-        data: {
-          status: FacebookAdsConnectionStatus.CONNECTED,
-          lastSyncAt: syncedAt,
-          lastSyncStatus: FacebookAdsSyncStatus.SUCCESS,
-          lastSyncError: null,
-        },
-      });
-
-      return {
-        message: `Đồng bộ thành công ${mapped.length} chiến dịch`,
-        campaignsSynced: mapped.length,
-        status: 'SUCCESS' as const,
-        queued: false as const,
-        jobId: undefined as string | undefined,
-      };
-    } catch (e) {
-      const errorMessage = e instanceof Error ? e.message : 'Sync failed';
-      this.logger.warn(`Facebook sync failed for org ${organizationId}: ${errorMessage}`);
-
-      await this.prisma.facebookAdsSyncLog.update({
-        where: { id: log.id },
-        data: {
-          syncFinishedAt: new Date(),
-          status: FacebookAdsSyncStatus.FAILED,
-          errorMessage,
-        },
-      });
-
-      await this.handleTokenError(organizationId, e);
-
-      await this.prisma.facebookAdsConnection.update({
-        where: { organizationId },
-        data: {
-          lastSyncStatus: FacebookAdsSyncStatus.FAILED,
-          lastSyncError: errorMessage,
-        },
-      });
-
-      throw new BadRequestException(errorMessage);
-    }
   }
 
   async getCampaigns(user: AuthUser, query: FacebookCampaignsQueryDto) {
@@ -449,63 +336,6 @@ export class FacebookAdsService {
   ): Promise<void> {
     const accessToken = await this.getValidAccessToken(organizationId);
     await this.meta.updateCampaignStatus(accessToken, campaignId, active);
-  }
-
-  private snapshotCreate(
-    organizationId: string,
-    adAccountId: string,
-    dateFrom: Date,
-    dateTo: Date,
-    c: MappedFacebookCampaign,
-    syncedAt: Date,
-  ): Prisma.FacebookAdsCampaignSnapshotCreateInput {
-    return {
-      connection: { connect: { organizationId } },
-      adAccountId,
-      campaignId: c.campaignId,
-      campaignName: c.campaignName,
-      objective: c.objective,
-      campaignType: c.campaignType,
-      dateFrom,
-      dateTo,
-      spend: c.spend,
-      impressions: c.impressions,
-      reach: c.reach,
-      frequency: c.frequency,
-      cpm: c.cpm,
-      cpc: c.cpc,
-      ctr: c.ctr,
-      clicks: c.clicks,
-      results: c.results,
-      costPerResult: c.costPerResult,
-      purchaseRoas: c.purchaseRoas,
-      resultRate: c.resultRate,
-      syncedAt,
-    };
-  }
-
-  private snapshotUpdate(
-    c: MappedFacebookCampaign,
-    syncedAt: Date,
-  ): Prisma.FacebookAdsCampaignSnapshotUpdateInput {
-    return {
-      campaignName: c.campaignName,
-      objective: c.objective,
-      campaignType: c.campaignType,
-      spend: c.spend,
-      impressions: c.impressions,
-      reach: c.reach,
-      frequency: c.frequency,
-      cpm: c.cpm,
-      cpc: c.cpc,
-      ctr: c.ctr,
-      clicks: c.clicks,
-      results: c.results,
-      costPerResult: c.costPerResult,
-      purchaseRoas: c.purchaseRoas,
-      resultRate: c.resultRate,
-      syncedAt,
-    };
   }
 
   private async ensureConnection(organizationId: string) {
