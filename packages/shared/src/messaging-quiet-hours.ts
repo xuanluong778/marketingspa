@@ -9,7 +9,10 @@ export function parseHm(hm: string): { h: number; m: number } | null {
   return { h, m: min };
 }
 
-export function getZonedParts(date: Date, timeZone: string): {
+export function getZonedParts(
+  date: Date,
+  timeZone: string,
+): {
   year: number;
   month: number;
   day: number;
@@ -86,9 +89,7 @@ export function nextQuietHoursEnd(
     if (nowMins >= startMins) dayOffset = 1;
   }
 
-  const targetLocal = new Date(
-    Date.UTC(z.year, z.month - 1, z.day + dayOffset, end.h, end.m, 0),
-  );
+  const targetLocal = new Date(Date.UTC(z.year, z.month - 1, z.day + dayOffset, end.h, end.m, 0));
 
   // Convert "wall clock in TZ" → UTC via iterative offset estimate
   return zonedLocalToUtc(z.year, z.month, z.day + dayOffset, end.h, end.m, timeZone);

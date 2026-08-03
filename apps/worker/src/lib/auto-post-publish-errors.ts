@@ -1,7 +1,6 @@
 /** Mirror API publish-errors — worker. Không lộ token. */
 
-const TOKEN_LEAK_RE =
-  /\b(?:EAAG|EAAD|EAA|EBA|EAAE)[A-Za-z0-9_-]{10,}\b/gi;
+const TOKEN_LEAK_RE = /\b(?:EAAG|EAAD|EAA|EBA|EAAE)[A-Za-z0-9_-]{10,}\b/gi;
 
 export type MetaGraphErrorShape = {
   message?: string;
@@ -54,7 +53,8 @@ export function isPermanentPublishError(message: string | null | undefined): boo
     m.includes('missing_permission') ||
     (m.includes('hết hạn') && m.includes('token')) ||
     m.includes('token facebook đã hết hạn') ||
-    (m.includes('oauthexception') && (m.includes('190') || m.includes('463') || m.includes('467'))) ||
+    (m.includes('oauthexception') &&
+      (m.includes('190') || m.includes('463') || m.includes('467'))) ||
     m.includes('(#190)') ||
     m.includes('session has expired') ||
     m.includes('error validating access token') ||

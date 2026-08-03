@@ -2,11 +2,11 @@ import { z } from 'zod';
 
 /** Limits (defaults) — override via env on API/worker */
 export const VIDEO_TRANSCRIPTION_LIMITS = {
-  /** Allow long-form content (chunked STT); override with VIDEO_TRANSCRIPTION_MAX_DURATION_SECONDS */
-  maxDurationSeconds: 3 * 60 * 60,
+  /** Default 30 minutes; override with VIDEO_TRANSCRIPTION_MAX_DURATION_SECONDS for longer chunked jobs */
+  maxDurationSeconds: 30 * 60,
   maxFileBytes: 500 * 1024 * 1024,
   /** Overall job / download / extract ceiling — per-chunk STT has its own timeout */
-  jobTimeoutMs: 3 * 60 * 60 * 1000,
+  jobTimeoutMs: 45 * 60 * 1000,
   chunkTimeoutMs: 12 * 60 * 1000,
   maxAttempts: 3,
   rateLimitMax: 5,
@@ -240,7 +240,12 @@ export function mergeChunkTranscripts(
     segments?: TranscriptSegment[];
   }>,
   overlapSeconds = VIDEO_TRANSCRIPTION_LIMITS.overlapSeconds,
-): { rawMerged: string; segments: TranscriptSegment[]; firstTimestamp: number | null; lastTimestamp: number | null } {
+): {
+  rawMerged: string;
+  segments: TranscriptSegment[];
+  firstTimestamp: number | null;
+  lastTimestamp: number | null;
+} {
   const ordered = [...chunks].sort((x, y) => x.index - y.index);
   const allSegs: TranscriptSegment[] = [];
   const textParts: string[] = [];
@@ -271,7 +276,9 @@ export function mergeChunkTranscripts(
       coveredUntil = Math.max(coveredUntil, chunk.endSec - (i < ordered.length - 1 ? 0 : 0));
       // Advance coverage to end of this chunk minus overlap reserved for next
       const next = ordered[i + 1];
-      coveredUntil = next ? Math.max(coveredUntil, next.startSec) : Math.max(coveredUntil, chunk.endSec);
+      coveredUntil = next
+        ? Math.max(coveredUntil, next.startSec)
+        : Math.max(coveredUntil, chunk.endSec);
     } else {
       let text = (chunk.text || '').trim();
       if (!text) continue;
@@ -312,10 +319,7 @@ export function collapseRepeatedBlocks(text: string): string {
   // Consecutive identical phrases (≥8 words) repeated 2+ times
   for (let n = 0; n < 4; n++) {
     const before = out;
-    out = out.replace(
-      /(\b(?:[\p{L}\p{N}']+\s+){7,40}[\p{L}\p{N}']+\b)(?:\s+\1){2,}/giu,
-      '$1',
-    );
+    out = out.replace(/(\b(?:[\p{L}\p{N}']+\s+){7,40}[\p{L}\p{N}']+\b)(?:\s+\1){2,}/giu, '$1');
     if (out === before) break;
   }
 
@@ -422,7 +426,9 @@ export function durationsMatch(
 }
 
 export function sumCompletedChunkCoverage(chunks: TranscriptChunkResult[]): number {
-  const completed = chunks.filter((c) => c.status === 'completed').sort((a, b) => a.index - b.index);
+  const completed = chunks
+    .filter((c) => c.status === 'completed')
+    .sort((a, b) => a.index - b.index);
   if (!completed.length) return 0;
   // Union of [start,end) intervals
   const ranges = completed.map((c) => [c.startSec, c.endSec] as [number, number]);

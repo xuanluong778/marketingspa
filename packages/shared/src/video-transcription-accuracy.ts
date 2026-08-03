@@ -24,15 +24,13 @@ export function parseGlossaryInput(raw: string | string[] | null | undefined): s
 }
 
 function stripDiacritics(s: string): string {
-  return s
-    .normalize('NFD')
-    .replace(/\p{M}/gu, '')
-    .replace(/đ/g, 'd')
-    .replace(/Đ/g, 'd');
+  return s.normalize('NFD').replace(/\p{M}/gu, '').replace(/đ/g, 'd').replace(/Đ/g, 'd');
 }
 
 function compact(s: string): string {
-  return stripDiacritics(s).toLowerCase().replace(/[^a-z0-9]+/g, '');
+  return stripDiacritics(s)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
 }
 
 /** Generate plausible ASR mishearings for a glossary term (digits, spacing, tones). */
@@ -137,9 +135,7 @@ export function applyGlossaryToTranscript(text: string, glossary: string[]): str
 
     for (const variant of variants) {
       // Word-boundary-ish match; allow flexible spaces inside variant
-      const escaped = variant
-        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-        .replace(/\s+/g, '\\s*');
+      const escaped = variant.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*');
       const re = new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, 'giu');
       out = out.replace(re, term);
     }
@@ -187,17 +183,18 @@ export function detectSuspiciousSegments(
     const text = (seg.text || '').trim();
     if (!text) continue;
     const reasons: string[] = [];
-    const conf =
-      seg.confidence ??
-      (seg.avgLogprob != null ? Math.exp(seg.avgLogprob) : undefined);
+    const conf = seg.confidence ?? (seg.avgLogprob != null ? Math.exp(seg.avgLogprob) : undefined);
     if (conf != null && conf < 0.45) reasons.push('low_confidence');
 
     // Stuck words / missing spaces (long token with mixed pattern)
-    if (/\p{L}{10,}/u.test(text) && /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(text)) {
+    if (
+      /\p{L}{10,}/u.test(text) &&
+      /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i.test(text)
+    ) {
       // long Vietnamese run without spaces — likely stuck
       if (!text.includes(' ') && text.length >= 10) reasons.push('stuck_token');
     }
-    for (const [, ] of STUCK_PAIR_FIXES) {
+    for (const [,] of STUCK_PAIR_FIXES) {
       /* checked below via known patterns */
     }
     if (/tiềnếu|chuyênói|âmưu|khôngờ|khôngể/i.test(text)) reasons.push('stuck_pattern');
@@ -214,7 +211,10 @@ export function detectSuspiciousSegments(
       // if segment looks like a near-miss of glossary (edit distance on compact)
       if (g.length >= 4 && segCompact.length >= 3) {
         const window = segCompact.slice(0, Math.min(segCompact.length, g.length + 2));
-        if (levenshtein(window, g) > 0 && levenshtein(window, g) <= Math.max(2, Math.floor(g.length * 0.34))) {
+        if (
+          levenshtein(window, g) > 0 &&
+          levenshtein(window, g) <= Math.max(2, Math.floor(g.length * 0.34))
+        ) {
           reasons.push('glossary_near_miss');
           break;
         }
@@ -272,11 +272,7 @@ export function levenshtein(a: string, b: string): number {
   for (let i = 1; i <= m; i++) {
     for (let j = 1; j <= n; j++) {
       const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-      dp[i]![j] = Math.min(
-        dp[i - 1]![j]! + 1,
-        dp[i]![j - 1]! + 1,
-        dp[i - 1]![j - 1]! + cost,
-      );
+      dp[i]![j] = Math.min(dp[i - 1]![j]! + 1, dp[i]![j - 1]! + 1, dp[i - 1]![j - 1]! + cost);
     }
   }
   return dp[m]![n]!;
@@ -308,11 +304,7 @@ function tokenEditDistance(ref: string[], hyp: string[]): number {
   for (let i = 1; i <= m; i++) {
     for (let j = 1; j <= n; j++) {
       const cost = ref[i - 1] === hyp[j - 1] ? 0 : 1;
-      dp[i]![j] = Math.min(
-        dp[i - 1]![j]! + 1,
-        dp[i]![j - 1]! + 1,
-        dp[i - 1]![j - 1]! + cost,
-      );
+      dp[i]![j] = Math.min(dp[i - 1]![j]! + 1, dp[i]![j - 1]! + 1, dp[i - 1]![j - 1]! + cost);
     }
   }
   return dp[m]![n]!;
@@ -330,10 +322,7 @@ export function charErrorRate(reference: string, hypothesis: string): number {
  * Full post-STT Vietnamese correction — presentation + glossary + stuck words.
  * Does not paraphrase or invent content beyond glossary/stuck repairs.
  */
-export function correctVietnameseTranscript(
-  raw: string,
-  opts?: { glossary?: string[] },
-): string {
+export function correctVietnameseTranscript(raw: string, opts?: { glossary?: string[] }): string {
   let text = (raw || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
   // Strip timestamps
@@ -346,14 +335,8 @@ export function correctVietnameseTranscript(
   text = applyGlossaryToTranscript(text, opts?.glossary || []);
 
   // Immediate triple/double stutter (Unicode boundaries — ASCII \b breaks VN syllables)
-  text = text.replace(
-    /(?<![\p{L}\p{N}'])([\p{L}\p{N}']{2,})\s+\1\s+\1(?![\p{L}\p{N}'])/giu,
-    '$1',
-  );
-  text = text.replace(
-    /(?<![\p{L}\p{N}'])([\p{L}\p{N}']{2,})\s+\1(?![\p{L}\p{N}'])/giu,
-    '$1',
-  );
+  text = text.replace(/(?<![\p{L}\p{N}'])([\p{L}\p{N}']{2,})\s+\1\s+\1(?![\p{L}\p{N}'])/giu, '$1');
+  text = text.replace(/(?<![\p{L}\p{N}'])([\p{L}\p{N}']{2,})\s+\1(?![\p{L}\p{N}'])/giu, '$1');
 
   // Punctuation spacing
   text = text.replace(/([,.!?;:…])(\p{L})/gu, '$1 $2');
@@ -370,7 +353,10 @@ export function correctVietnameseTranscript(
   for (let i = 0; i < parts.length; i++) {
     let part = parts[i] || '';
     if (i === 0 || /[.!?]+\s+/.test(parts[i - 1] || '')) {
-      part = part.replace(/^(\s*)(\p{L})/u, (_, sp: string, ch: string) => sp + ch.toLocaleUpperCase('vi'));
+      part = part.replace(
+        /^(\s*)(\p{L})/u,
+        (_, sp: string, ch: string) => sp + ch.toLocaleUpperCase('vi'),
+      );
     }
     rebuilt += part;
   }
@@ -394,7 +380,10 @@ export function correctVietnameseTranscript(
     text = paras.join('\n\n');
   }
 
-  return text.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  return text
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 }
 
 /** Splice replacement text into full transcript by approximate time window text match */

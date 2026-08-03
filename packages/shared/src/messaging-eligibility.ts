@@ -11,17 +11,9 @@ export type MessagingProviderMode =
   | 'ZALO_OA_BROADCAST'
   | 'ZBS_TEMPLATE';
 
-export type MessagingCampaignType =
-  | 'automation'
-  | 'broadcast'
-  | 'transactional'
-  | 'template';
+export type MessagingCampaignType = 'automation' | 'broadcast' | 'transactional' | 'template';
 
-export type MessagingConsentStatusCode =
-  | 'UNKNOWN'
-  | 'OPTED_IN'
-  | 'OPTED_OUT'
-  | 'PENDING';
+export type MessagingConsentStatusCode = 'UNKNOWN' | 'OPTED_IN' | 'OPTED_OUT' | 'PENDING';
 
 export interface MessagingEligibilityQuota {
   /** Số broadcast còn lại trong chu kỳ (từ metadata provider/org — không hardcode gói) */
@@ -202,11 +194,7 @@ export function evaluateMessagingEligibility(
     if (input.connection.status === 'EXPIRED') {
       return block(mode, ELIGIBILITY_REASON.TOKEN_EXPIRED, 'Token kênh đã hết hạn');
     }
-    return block(
-      mode,
-      ELIGIBILITY_REASON.CONNECTION_INACTIVE,
-      'Kết nối kênh không hoạt động',
-    );
+    return block(mode, ELIGIBILITY_REASON.CONNECTION_INACTIVE, 'Kết nối kênh không hoạt động');
   }
   if (
     input.connection?.tokenExpiresAt &&
@@ -327,8 +315,7 @@ function evaluateMessenger(
 
   const lastInbound = input.identity?.lastInboundAt;
   const withinWindow =
-    lastInbound != null &&
-    now.getTime() - lastInbound.getTime() <= MESSENGER_INTERACTION_WINDOW_MS;
+    lastInbound != null && now.getTime() - lastInbound.getTime() <= MESSENGER_INTERACTION_WINDOW_MS;
 
   if (withinWindow) {
     if (input.campaignType === 'broadcast') {
@@ -371,8 +358,7 @@ function evaluateZalo(
   const quota = input.quota ?? {};
   const lastInbound = input.identity?.lastInboundAt;
   const withinConsult =
-    lastInbound != null &&
-    now.getTime() - lastInbound.getTime() <= ZALO_OA_CONSULT_WINDOW_MS;
+    lastInbound != null && now.getTime() - lastInbound.getTime() <= ZALO_OA_CONSULT_WINDOW_MS;
 
   if (input.campaignType === 'template' || input.providerModeHint === 'ZBS_TEMPLATE') {
     if (!input.template?.isZbsTemplate && !input.template?.isApproved) {
@@ -389,10 +375,7 @@ function evaluateZalo(
         'Template chưa được duyệt',
       );
     }
-    if (
-      quota.templatesRemaining != null &&
-      quota.templatesRemaining <= 0
-    ) {
+    if (quota.templatesRemaining != null && quota.templatesRemaining <= 0) {
       return block(
         'ZBS_TEMPLATE',
         ELIGIBILITY_REASON.BROADCAST_QUOTA_EXCEEDED,
@@ -435,9 +418,7 @@ function evaluateZalo(
   }
 
   const nextEligibleAt =
-    lastInbound != null
-      ? nextFromWindowEnd(lastInbound, ZALO_OA_CONSULT_WINDOW_MS)
-      : undefined;
+    lastInbound != null ? nextFromWindowEnd(lastInbound, ZALO_OA_CONSULT_WINDOW_MS) : undefined;
 
   return block(
     'ZALO_OA_CONSULT',

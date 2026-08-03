@@ -239,7 +239,7 @@ export function useAiAdsMutations() {
   });
 
   const connectGoogle = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (_body?: { customerId: string; refreshToken: string }) => {
       throw new Error('Dùng OAuth — không paste refresh token');
     },
   });

@@ -503,7 +503,7 @@ export async function twoPassTranscribeChunk(params: {
 
   const retries: Array<{ start: number; end: number; reason: string; model: string }> = [];
   let text = pass1.text;
-  let segments = pass1.segments.length
+  const segments = pass1.segments.length
     ? pass1.segments
     : [{ start: 0, end: params.chunkEndSec - params.chunkStartSec, text: pass1.text }];
 

@@ -1,12 +1,7 @@
 export type MessagingChannelCode = 'MESSENGER' | 'ZALO';
 
 export type NormalizedWebhookEventType =
-  | 'message'
-  | 'follow'
-  | 'unfollow'
-  | 'delivery'
-  | 'read'
-  | 'unknown';
+  'message' | 'follow' | 'unfollow' | 'delivery' | 'read' | 'unknown';
 
 export type MessagingFollowStatusCode = 'UNKNOWN' | 'FOLLOWING' | 'UNFOLLOWED';
 
@@ -95,7 +90,10 @@ export function normalizeMessengerWebhook(
   return events;
 }
 
-export function normalizeZaloWebhook(payload: unknown, accountRef: string): NormalizedWebhookEvent[] {
+export function normalizeZaloWebhook(
+  payload: unknown,
+  accountRef: string,
+): NormalizedWebhookEvent[] {
   const body = payload as {
     oa_id?: string;
     event_name?: string;

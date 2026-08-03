@@ -18,14 +18,12 @@ import {
   processDailyReport,
   processLeadAlertScan,
 } from './processors/jobs';
-import {
-  processAutoPostPublish,
-  processAutoPostScheduledScan,
-} from './processors/auto-post';
+import { processAutoPostPublish, processAutoPostScheduledScan } from './processors/auto-post';
 import { processHrmAttendanceRebuild } from './processors/hrm-attendance';
 import { processAdsSync } from './processors/ads-sync';
 import { processAdsAction } from './processors/ads-action';
 import { processVideoTranscription } from './processors/video-transcription';
+import { processAffiliateHoldRelease } from './processors/affiliate-hold';
 
 initSentry();
 
@@ -127,6 +125,10 @@ async function start() {
       lockDuration: VIDEO_TRANSCRIPTION_LOCK_MS,
       stalledInterval: 60_000,
       maxStalledCount: 3,
+    }),
+    new Worker(QUEUE_NAMES.AFFILIATE_HOLD, (job) => processAffiliateHoldRelease(job), {
+      ...opts,
+      concurrency: 2,
     }),
   );
 

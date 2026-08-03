@@ -190,10 +190,9 @@ export async function processVideoTranscription(job: Job): Promise<{ id: string;
 
     const size = statSync(sourcePath).size;
     if (size > maxFileBytes()) {
-      throw Object.assign(
-        new Error(`File vượt ${Math.round(maxFileBytes() / (1024 * 1024))}MB`),
-        { code: 'FILE_TOO_LARGE' },
-      );
+      throw Object.assign(new Error(`File vượt ${Math.round(maxFileBytes() / (1024 * 1024))}MB`), {
+        code: 'FILE_TOO_LARGE',
+      });
     }
 
     const videoDuration = await probeDurationSeconds(sourcePath);
@@ -239,12 +238,7 @@ export async function processVideoTranscription(job: Job): Promise<{ id: string;
     const wavMeta = await probeAudioMeta(audioPath);
     const plans = buildChunkPlan(audioDurFinal);
     const existingProgress = (row.chunkProgress || null) as TranscriptProgressSnapshot | null;
-    const progress = emptyProgress(
-      videoDuration,
-      audioDurFinal,
-      plans,
-      existingProgress?.chunks,
-    );
+    const progress = emptyProgress(videoDuration, audioDurFinal, plans, existingProgress?.chunks);
 
     const allRetries: Array<{ start: number; end: number; reason: string; model: string }> = [];
 

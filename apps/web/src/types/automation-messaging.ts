@@ -91,11 +91,7 @@ export interface AutomationLogDetail {
 export type IntegrationProvider = 'META_ADS' | 'GOOGLE_ADS' | 'ZALO_OA' | 'SMS' | 'EMAIL';
 
 export type IntegrationStatus =
-  | 'DISCONNECTED'
-  | 'ACTIVE'
-  | 'EXPIRED'
-  | 'REAUTH_REQUIRED'
-  | 'ERROR';
+  'DISCONNECTED' | 'ACTIVE' | 'CONNECTED' | 'EXPIRED' | 'REAUTH_REQUIRED' | 'ERROR';
 
 export interface IntegrationItem {
   provider: IntegrationProvider;
@@ -110,6 +106,7 @@ export interface IntegrationItem {
 export const INTEGRATION_STATUS_LABELS: Record<IntegrationStatus, string> = {
   DISCONNECTED: 'Chưa kết nối',
   ACTIVE: 'Đang hoạt động',
+  CONNECTED: 'Đã kết nối',
   EXPIRED: 'Token hết hạn',
   REAUTH_REQUIRED: 'Cần xác thực lại',
   ERROR: 'Lỗi kết nối',

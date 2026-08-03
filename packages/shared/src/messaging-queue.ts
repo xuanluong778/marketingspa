@@ -34,18 +34,14 @@ export function buildCampaignPlanJobId(campaignId: string): string {
 }
 
 export function buildCampaignDispatchJobId(campaignId: string, cursor?: string): string {
-  return cursor
-    ? `messaging-dispatch-${campaignId}-${cursor}`
-    : `messaging-dispatch-${campaignId}`;
+  return cursor ? `messaging-dispatch-${campaignId}-${cursor}` : `messaging-dispatch-${campaignId}`;
 }
 
 export function buildRecipientIdempotencyKey(campaignId: string, identityId: string): string {
   return `mc-${campaignId}-${identityId}`;
 }
 
-export function mapCampaignKindToEligibilityType(
-  kind: string,
-): MessagingCampaignType {
+export function mapCampaignKindToEligibilityType(kind: string): MessagingCampaignType {
   switch (kind) {
     case 'AUTOMATION':
       return 'automation';

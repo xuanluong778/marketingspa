@@ -45,8 +45,7 @@ export function normalizePublishMedia(input: {
         note = 'URL không phải file ảnh — sẽ đăng dạng liên kết thay vì ảnh.';
       } else {
         image = undefined;
-        note =
-          'URL ảnh không phải file trực tiếp — đã bỏ ảnh, đăng kèm liên kết.';
+        note = 'URL ảnh không phải file trực tiếp — đã bỏ ảnh, đăng kèm liên kết.';
       }
     }
   }

@@ -172,8 +172,7 @@ export async function processAdsAction(job: Job, redis?: Redis) {
     return { ok: verified.ok, providerWrite, verify: verified, providerResult };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    const permanent =
-      err instanceof MetaPermissionError || err instanceof MetaTokenExpiredError;
+    const permanent = err instanceof MetaPermissionError || err instanceof MetaTokenExpiredError;
 
     await prisma.adsActionRequest.update({
       where: { id: actionRequestId },
@@ -292,7 +291,7 @@ async function applyMetaProviderWrite(row: {
   }
 
   if (row.actionType === AdsActionType.ADJUST_BUDGET) {
-    const budgetMajor = after.budget ?? (row.proposedBudget?.toNumber?.() ?? null);
+    const budgetMajor = after.budget ?? row.proposedBudget?.toNumber?.() ?? null;
     if (budgetMajor == null || budgetMajor <= 0) {
       return { applied: false, reason: 'no_budget' };
     }
