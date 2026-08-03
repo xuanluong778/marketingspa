@@ -58,6 +58,7 @@ import {
 import { suggestAdCtaLocal, suggestAdInsightsLocal } from '@/lib/ad-insights-suggest';
 import { PersonalPostStudio } from '@/components/content-marketing/personal-post-studio';
 import { AdvancedPostStudio } from '@/components/content-marketing/advanced-post-studio';
+import { AdUrlAnalyzePanel } from '@/components/content-marketing/ad-url-analyze-panel';
 import type {
   AdPostKind,
   AdProductDetails,
@@ -166,6 +167,10 @@ function ContentForm({
   suggestingCta,
   ctaSuggestMsg,
   ctaAlternatives,
+  onSuggestProductField,
+  suggestingProductField,
+  productFieldSuggestMsg,
+  lastProductSuggestField,
 }: {
   form: ContentFormState;
   onChange: (patch: Partial<ContentFormState>) => void;
@@ -176,6 +181,10 @@ function ContentForm({
   suggestingCta?: boolean;
   ctaSuggestMsg?: string;
   ctaAlternatives?: string[];
+  onSuggestProductField?: (field: 'features' | 'differentiators') => void;
+  suggestingProductField?: 'features' | 'differentiators' | null;
+  productFieldSuggestMsg?: string;
+  lastProductSuggestField?: 'features' | 'differentiators' | null;
 }) {
   const kind = form.adPostKind === 'service' ? 'service' : 'product';
   const patchProduct = (patch: Partial<AdProductDetails>) => {
@@ -248,6 +257,13 @@ function ContentForm({
         </div>
       </div>
 
+      <AdUrlAnalyzePanel
+        adPostKind={kind}
+        brandName={form.brandName}
+        form={form}
+        onApplyForm={(next) => onChange(next)}
+      />
+
       {kind === 'product' ? (
         <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/40 p-3">
           <p className="text-sm font-medium text-slate-800">Chi tiết sản phẩm</p>
@@ -278,7 +294,28 @@ function ContentForm({
             </div>
           </div>
           <div className="space-y-1.5">
-            <Label>Tính năng</Label>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Label>Tính năng</Label>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="h-7 text-xs"
+                disabled={
+                  !(form.productDetails.name || form.productService).trim() ||
+                  suggestingProductField === 'features' ||
+                  suggestingInsights
+                }
+                onClick={() => onSuggestProductField?.('features')}
+              >
+                {suggestingProductField === 'features' ? (
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                ) : (
+                  <Sparkles className="mr-1 h-3 w-3" />
+                )}
+                Gợi ý AI
+              </Button>
+            </div>
             <Textarea
               rows={2}
               className="bg-white"
@@ -286,6 +323,9 @@ function ContentForm({
               placeholder="Thành phần / công nghệ nổi bật"
               onChange={(e) => patchProduct({ features: e.target.value })}
             />
+            {productFieldSuggestMsg && lastProductSuggestField === 'features' ? (
+              <p className="text-xs text-emerald-700">{productFieldSuggestMsg}</p>
+            ) : null}
           </div>
           <div className="space-y-1.5">
             <Label>Lợi ích</Label>
@@ -298,7 +338,28 @@ function ContentForm({
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Điểm khác biệt</Label>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Label>Điểm khác biệt</Label>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="h-7 text-xs"
+                disabled={
+                  !(form.productDetails.name || form.productService).trim() ||
+                  suggestingProductField === 'differentiators' ||
+                  suggestingInsights
+                }
+                onClick={() => onSuggestProductField?.('differentiators')}
+              >
+                {suggestingProductField === 'differentiators' ? (
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                ) : (
+                  <Sparkles className="mr-1 h-3 w-3" />
+                )}
+                Gợi ý AI
+              </Button>
+            </div>
             <Textarea
               rows={2}
               className="bg-white"
@@ -306,6 +367,9 @@ function ContentForm({
               placeholder="Vì sao chọn sản phẩm này"
               onChange={(e) => patchProduct({ differentiators: e.target.value })}
             />
+            {productFieldSuggestMsg && lastProductSuggestField === 'differentiators' ? (
+              <p className="text-xs text-emerald-700">{productFieldSuggestMsg}</p>
+            ) : null}
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5">
@@ -695,6 +759,13 @@ export function AdStudioTabPanel({
   const [shortDescription, setShortDescription] = useState('');
   const [mediaSuggestions, setMediaSuggestions] = useState<string[]>([]);
   const [formError, setFormError] = useState('');
+  const [productFieldSuggestMsg, setProductFieldSuggestMsg] = useState('');
+  const [suggestingProductField, setSuggestingProductField] = useState<
+    'features' | 'differentiators' | null
+  >(null);
+  const [lastProductSuggestField, setLastProductSuggestField] = useState<
+    'features' | 'differentiators' | null
+  >(null);
   const [isCreatingLoading, setIsCreatingLoading] = useState(false);
   const resultSectionRef = useRef<HTMLDivElement>(null);
   const scrollToResultLockRef = useRef(false);
@@ -844,22 +915,110 @@ export function AdStudioTabPanel({
     if (!form.productService.trim()) return;
     setSuggestMsg('');
     const payload = {
-      productService: form.productService,
+      productService:
+        form.productDetails.name.trim() || form.productService.trim(),
       targetAudience: form.targetAudience || undefined,
       platform: form.platform,
       adObjective: form.adObjective || undefined,
     };
     try {
       const result = await suggestInsights.mutateAsync(payload);
-      updateForm({ painPoints: result.painPoints, benefits: result.benefits });
+      updateForm({
+        painPoints: result.painPoints,
+        benefits: result.benefits,
+        productDetails: {
+          ...form.productDetails,
+          benefits: result.benefits,
+          ...(result.features ? { features: result.features } : {}),
+          ...(result.differentiators
+            ? { differentiators: result.differentiators }
+            : {}),
+        },
+      });
       setSuggestMsg(result.source === 'ai' ? 'Đã gợi ý bằng AI' : 'Đã gợi ý (template)');
     } catch {
       const local = suggestAdInsightsLocal(payload);
-      updateForm({ painPoints: local.painPoints, benefits: local.benefits });
+      updateForm({
+        painPoints: local.painPoints,
+        benefits: local.benefits,
+        productDetails: {
+          ...form.productDetails,
+          benefits: local.benefits,
+          features: local.features || form.productDetails.features,
+          differentiators: local.differentiators || form.productDetails.differentiators,
+        },
+      });
       setSuggestMsg('Đã gợi ý (offline — restart API để dùng AI đầy đủ)');
     }
     setTimeout(() => setSuggestMsg(''), 3000);
-  }, [form.productService, form.targetAudience, form.platform, form.adObjective, suggestInsights, updateForm]);
+  }, [
+    form.productService,
+    form.productDetails,
+    form.targetAudience,
+    form.platform,
+    form.adObjective,
+    suggestInsights,
+    updateForm,
+  ]);
+
+  const handleSuggestProductField = useCallback(
+    async (field: 'features' | 'differentiators') => {
+      const name =
+        form.productDetails.name.trim() || form.productService.trim();
+      if (!name) return;
+      setSuggestingProductField(field);
+      setLastProductSuggestField(field);
+      setProductFieldSuggestMsg('');
+      const payload = {
+        productService: name,
+        targetAudience: form.targetAudience || undefined,
+        platform: form.platform,
+        adObjective: form.adObjective || undefined,
+      };
+      const apply = (result: {
+        features?: string;
+        differentiators?: string;
+        source: 'ai' | 'template';
+      }) => {
+        const value =
+          field === 'features'
+            ? result.features?.trim() || ''
+            : result.differentiators?.trim() || '';
+        if (!value) return false;
+        updateForm({
+          productDetails: {
+            ...form.productDetails,
+            [field]: value,
+          },
+        });
+        setProductFieldSuggestMsg(
+          result.source === 'ai' ? 'Đã gợi ý bằng AI' : 'Đã gợi ý (template)',
+        );
+        return true;
+      };
+      try {
+        const result = await suggestInsights.mutateAsync(payload);
+        if (!apply(result)) {
+          apply(suggestAdInsightsLocal(payload));
+        }
+      } catch {
+        apply({ ...suggestAdInsightsLocal(payload), source: 'template' });
+        setProductFieldSuggestMsg('Đã gợi ý (offline)');
+      } finally {
+        setSuggestingProductField(null);
+        setTimeout(() => setProductFieldSuggestMsg(''), 3000);
+      }
+    },
+    [
+      form.productDetails,
+      form.productService,
+      form.targetAudience,
+      form.platform,
+      form.adObjective,
+      suggestInsights,
+      updateForm,
+    ],
+  );
 
   const subjectName =
     form.adPostKind === 'service'
@@ -1100,12 +1259,16 @@ export function AdStudioTabPanel({
               form={form}
               onChange={updateForm}
               onSuggestInsights={handleSuggestInsights}
-              suggestingInsights={suggestInsights.isPending}
+              suggestingInsights={suggestInsights.isPending && !suggestingProductField}
               suggestMsg={suggestMsg}
               onSuggestCta={handleSuggestCta}
               suggestingCta={suggestCta.isPending}
               ctaSuggestMsg={ctaSuggestMsg}
               ctaAlternatives={ctaAlternatives}
+              onSuggestProductField={(field) => void handleSuggestProductField(field)}
+              suggestingProductField={suggestingProductField}
+              productFieldSuggestMsg={productFieldSuggestMsg}
+              lastProductSuggestField={lastProductSuggestField}
             />
           </div>
           <div className="fixed bottom-0 left-0 right-0 z-40 flex h-[60px] flex-wrap items-center gap-2 border-t border-white/10 bg-[#2E594F] px-4 shadow-[0_-6px_16px_rgba(15,23,42,0.12)] lg:left-64">

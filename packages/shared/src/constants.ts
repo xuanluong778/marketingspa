@@ -17,6 +17,7 @@ export const QUEUE_NAMES = {
   ADS_ACTION: 'ads-action-queue',
   AFFILIATE_HOLD: 'affiliate-hold-queue',
   VIDEO_TRANSCRIPTION: 'video-transcription-queue',
+  AD_URL_ANALYZE: 'ad-url-analyze-queue',
 } as const;
 
 /** Redis pub/sub channel — worker publishes, API forwards to Socket.IO */

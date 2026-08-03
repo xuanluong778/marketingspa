@@ -1193,3 +1193,18 @@ export class UpsertTeleprompterSourceDto {
   videoHook?: string;
 }
 
+export class StartAdUrlAnalyzeDto {
+  @IsString()
+  @MinLength(8)
+  @MaxLength(2000)
+  sourceUrl!: string;
+
+  @IsIn(['product', 'service'])
+  adPostKind!: 'product' | 'service';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  brandName?: string;
+}
+

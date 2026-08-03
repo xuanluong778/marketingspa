@@ -44,6 +44,7 @@ import {
   SuggestPersonalIdeasDto,
   SuggestPersonalTitlesDto,
   IndustrySuggestionsDto,
+  StartAdUrlAnalyzeDto,
 } from './dto/content-marketing.dto';
 import {
   FacebookPolicyAnalyzeMediaDto,
@@ -59,6 +60,7 @@ import {
 } from './dto/content-industry.dto';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
+import { AdUrlAnalyzeService } from './ad-url-analyze.service';
 
 @Controller('content-marketing')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -68,6 +70,7 @@ export class ContentMarketingController {
     private readonly industries: ContentIndustryService,
     private readonly voiceProfiles: OpinionVoiceProfileService,
     private readonly teleprompterSources: TeleprompterSourceService,
+    private readonly adUrlAnalyze: AdUrlAnalyzeService,
   ) {}
 
   @Get('status')
@@ -180,6 +183,21 @@ export class ContentMarketingController {
   @Post('suggest-cta')
   suggestCta(@Body() dto: SuggestAdCtaDto) {
     return this.service.suggestCta(dto);
+  }
+
+  @Post('ad-url-analyze')
+  startAdUrlAnalyze(@CurrentUser() user: AuthUser, @Body() dto: StartAdUrlAnalyzeDto) {
+    return this.adUrlAnalyze.start(user, dto);
+  }
+
+  @Get('ad-url-analyze/:id')
+  getAdUrlAnalyze(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.adUrlAnalyze.get(user, id);
+  }
+
+  @Post('ad-url-analyze/:id/cancel')
+  cancelAdUrlAnalyze(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.adUrlAnalyze.cancel(user, id);
   }
 
   @Post('suggest-personal-ideas')

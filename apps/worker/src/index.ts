@@ -6,7 +6,7 @@ config({ path: path.resolve(__dirname, '../../.env') });
 config();
 import { Worker } from 'bullmq';
 import { prisma } from '@marketingspa/database';
-import { QUEUE_NAMES } from '@marketingspa/shared';
+import { AD_URL_ANALYZE_LIMITS, QUEUE_NAMES } from '@marketingspa/shared';
 import { bullConnection, createRedisPublisher, queuePrefix } from './config';
 import { initSentry, captureException } from './sentry';
 import { registerRepeatableJobs } from './schedulers/register-jobs';
@@ -23,6 +23,7 @@ import { processHrmAttendanceRebuild } from './processors/hrm-attendance';
 import { processAdsSync } from './processors/ads-sync';
 import { processAdsAction } from './processors/ads-action';
 import { processVideoTranscription } from './processors/video-transcription';
+import { processAdUrlAnalyze } from './processors/ad-url-analyze';
 import { processAffiliateHoldRelease } from './processors/affiliate-hold';
 import { processMessagingWebhook } from './processors/messaging-webhook';
 import { processMessagingCampaignPlan } from './processors/messaging-campaign-plan';
@@ -137,6 +138,13 @@ async function start() {
       lockDuration: VIDEO_TRANSCRIPTION_LOCK_MS,
       stalledInterval: 60_000,
       maxStalledCount: 3,
+    }),
+    new Worker(QUEUE_NAMES.AD_URL_ANALYZE, (job) => processAdUrlAnalyze(job), {
+      ...opts,
+      concurrency: 2,
+      lockDuration: AD_URL_ANALYZE_LIMITS.jobTimeoutMs + 30_000,
+      stalledInterval: 30_000,
+      maxStalledCount: 2,
     }),
     new Worker(QUEUE_NAMES.AFFILIATE_HOLD, (job) => processAffiliateHoldRelease(job), {
       ...opts,

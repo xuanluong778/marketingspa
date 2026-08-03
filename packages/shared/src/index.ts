@@ -13,3 +13,5 @@ export * from './messaging-quiet-hours';
 export * from './messaging-template-render';
 export * from './video-transcription';
 export * from './video-transcription-accuracy';
+export * from './ad-url-analyze';
+// ssrf-fetch uses Node dns/net — import '@marketingspa/shared/ssrf-fetch' (server-only)

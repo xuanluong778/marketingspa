@@ -20,6 +20,7 @@ import {
   ADS_ACTION_QUEUE,
   AFFILIATE_HOLD_QUEUE,
   VIDEO_TRANSCRIPTION_QUEUE,
+  AD_URL_ANALYZE_QUEUE,
 } from './queue.constants';
 
 function createQueueProvider(token: string, queueName: string) {
@@ -60,6 +61,7 @@ function createQueueProvider(token: string, queueName: string) {
     createQueueProvider(ADS_ACTION_QUEUE, QUEUE_NAMES.ADS_ACTION),
     createQueueProvider(AFFILIATE_HOLD_QUEUE, QUEUE_NAMES.AFFILIATE_HOLD),
     createQueueProvider(VIDEO_TRANSCRIPTION_QUEUE, QUEUE_NAMES.VIDEO_TRANSCRIPTION),
+    createQueueProvider(AD_URL_ANALYZE_QUEUE, QUEUE_NAMES.AD_URL_ANALYZE),
   ],
   exports: [
     CAMPAIGN_QUEUE,
@@ -79,6 +81,7 @@ function createQueueProvider(token: string, queueName: string) {
     ADS_ACTION_QUEUE,
     AFFILIATE_HOLD_QUEUE,
     VIDEO_TRANSCRIPTION_QUEUE,
+    AD_URL_ANALYZE_QUEUE,
   ],
 })
 export class QueueModule {}
