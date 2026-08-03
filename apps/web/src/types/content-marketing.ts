@@ -84,56 +84,26 @@ export type BrandArticleGenre =
   | 'intimate_story';
 
 export type BrandPronoun =
-  | 'auto'
-  | 'may_tao'
-  | 'anh_em'
-  | 'chi_em'
-  | 'parent_child'
-  | 'ban_toi'
-  | 'experienced_youth';
+  'auto' | 'may_tao' | 'anh_em' | 'chi_em' | 'parent_child' | 'ban_toi' | 'experienced_youth';
 
-export type BrandVoiceIntensity =
-  | 'gentle_deep'
-  | 'frank'
-  | 'edgy'
-  | 'strong'
-  | 'very_strong';
+export type BrandVoiceIntensity = 'gentle_deep' | 'frank' | 'edgy' | 'strong' | 'very_strong';
 
 /** Mode trong tab Xây dựng thương hiệu */
 export type PersonalCreationMode = 'topic' | 'opinion';
 
 /** Quan điểm với sự việc */
-export type OpinionStance =
-  | 'agree'
-  | 'disagree'
-  | 'neutral'
-  | 'multi'
-  | 'custom';
+export type OpinionStance = 'agree' | 'disagree' | 'neutral' | 'multi' | 'custom';
 
 /** Góc nhìn bài viết */
 export type OpinionAngle =
-  | 'life'
-  | 'ethics'
-  | 'community'
-  | 'business'
-  | 'celebrity'
-  | 'personal_lesson';
+  'life' | 'ethics' | 'community' | 'business' | 'celebrity' | 'personal_lesson';
 
 /** Xưng hô cho Góc nhìn & Chính kiến */
-export type OpinionPronoun =
-  | 'toi_cac_ban'
-  | 'minh_moi_nguoi'
-  | 'anh_em'
-  | 'co_chu_anh_chi';
+export type OpinionPronoun = 'toi_cac_ban' | 'minh_moi_nguoi' | 'anh_em' | 'co_chu_anh_chi';
 
 /** Mức độ giọng */
 export type OpinionIntensity =
-  | 'gentle'
-  | 'deep'
-  | 'frank'
-  | 'emotional'
-  | 'motivational'
-  | 'strong';
+  'gentle' | 'deep' | 'frank' | 'emotional' | 'motivational' | 'strong';
 
 /** Độ dài bài opinion */
 export type OpinionLength = '1min' | '3min' | '5min' | 'facebook';
@@ -388,7 +358,70 @@ export type AdObjective =
   | 'remarketing'
   | 'brand_awareness';
 
+export type AdPostKind = 'product' | 'service';
+
+export interface AdProductDetails {
+  name: string;
+  category: string;
+  features: string;
+  benefits: string;
+  differentiators: string;
+  price: string;
+  warranty: string;
+  proof: string;
+  offer: string;
+}
+
+export interface AdServiceDetails {
+  name: string;
+  suitableCustomers: string;
+  problems: string;
+  process: string;
+  highlights: string;
+  expectedBenefits: string;
+  duration: string;
+  location: string;
+  experts: string;
+  proof: string;
+  offer: string;
+}
+
+export const emptyAdProductDetails = (): AdProductDetails => ({
+  name: '',
+  category: '',
+  features: '',
+  benefits: '',
+  differentiators: '',
+  price: '',
+  warranty: '',
+  proof: '',
+  offer: '',
+});
+
+export const emptyAdServiceDetails = (): AdServiceDetails => ({
+  name: '',
+  suitableCustomers: '',
+  problems: '',
+  process: '',
+  highlights: '',
+  expectedBenefits: '',
+  duration: '',
+  location: '',
+  experts: '',
+  proof: '',
+  offer: '',
+});
+
+export const AD_POST_KIND_OPTIONS: { value: AdPostKind; label: string }[] = [
+  { value: 'product', label: 'Bài viết sản phẩm' },
+  { value: 'service', label: 'Bài viết dịch vụ' },
+];
+
 export interface ContentFormState {
+  /** product = Bài viết sản phẩm; service = Bài viết dịch vụ. Default product for new drafts. */
+  adPostKind: AdPostKind;
+  /** Tên thương hiệu / cơ sở — draft + autofill từ organization.name */
+  brandName: string;
   productService: string;
   targetAudience: string;
   painPoints: string;
@@ -405,6 +438,10 @@ export interface ContentFormState {
   industryId: string;
   industryName: string;
   customIndustry: string;
+  /** Chi tiết sản phẩm — chỉ gửi khi adPostKind=product */
+  productDetails: AdProductDetails;
+  /** Chi tiết dịch vụ — chỉ gửi khi adPostKind=service */
+  serviceDetails: AdServiceDetails;
 }
 
 export interface PolicyFlag {
@@ -491,17 +528,9 @@ export interface PersonalTitlesSuggestion {
 
 export type FacebookPolicySeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
 export type FacebookPolicyOverallStatus =
-  | 'PASS_CANDIDATE'
-  | 'REVIEW_REQUIRED'
-  | 'HIGH_RISK'
-  | 'PROHIBITED'
-  | 'INSUFFICIENT_DATA';
+  'PASS_CANDIDATE' | 'REVIEW_REQUIRED' | 'HIGH_RISK' | 'PROHIBITED' | 'INSUFFICIENT_DATA';
 export type SpecialAdCategory =
-  | 'NONE'
-  | 'CREDIT'
-  | 'EMPLOYMENT'
-  | 'HOUSING'
-  | 'SOCIAL_ISSUES_ELECTIONS_POLITICS';
+  'NONE' | 'CREDIT' | 'EMPLOYMENT' | 'HOUSING' | 'SOCIAL_ISSUES_ELECTIONS_POLITICS';
 
 export interface FacebookPolicyMeta {
   policyCode: string;
@@ -584,12 +613,7 @@ export interface FacebookPolicyCheckPayload {
 }
 
 export type FacebookPolicyUrlKind =
-  | 'website'
-  | 'facebook_post'
-  | 'facebook_video'
-  | 'facebook_reel'
-  | 'landing_page'
-  | 'unknown';
+  'website' | 'facebook_post' | 'facebook_video' | 'facebook_reel' | 'landing_page' | 'unknown';
 
 export interface FacebookPolicyImportResult {
   sourceType: FacebookPolicyUrlKind;
@@ -652,6 +676,13 @@ export interface GenerateContentResult {
   source: 'ai' | 'template';
   policy: PolicyCheckResult;
   score: ContentScoreResult;
+  /** Headline ngắn cho ads (mới — optional backward compatible) */
+  headline?: string | null;
+  /** Mô tả ngắn / primary text phụ */
+  shortDescription?: string | null;
+  /** Gợi ý hình ảnh / video */
+  mediaSuggestions?: string[];
+  adPostKind?: AdPostKind;
 }
 
 export interface ContentHistoryItem {
@@ -705,22 +736,12 @@ export type AdvancedDemographic =
   | 'office_worker';
 
 export type AdvancedArticleGoal =
-  | 'direct_sales'
-  | 'inbox'
-  | 'booking'
-  | 'facebook_ads'
-  | 'fanpage'
-  | 'website_blog'
-  | 'livestream';
+  'direct_sales' | 'inbox' | 'booking' | 'facebook_ads' | 'fanpage' | 'website_blog' | 'livestream';
 
 export type AdvancedCtaType = 'comment' | 'inbox' | 'hotline' | 'booking';
 
 export type AdvancedSuggestField =
-  | 'painPoints'
-  | 'desires'
-  | 'differentiator'
-  | 'certification'
-  | 'caseStudy';
+  'painPoints' | 'desires' | 'differentiator' | 'certification' | 'caseStudy';
 
 export interface AdvancedFieldSuggestion {
   options: string[];
@@ -875,7 +896,11 @@ export const BRAND_VOICE_INTENSITY_OPTIONS: {
   { value: 'frank', label: 'Thẳng thắn', description: 'Nói thật, không vòng vo' },
   { value: 'edgy', label: 'Gai góc', description: 'Có lực, chạm nỗi đau' },
   { value: 'strong', label: 'Rất mạnh', description: 'Đánh thức, không toxic' },
-  { value: 'very_strong', label: 'Cực gắt (không tục)', description: 'Thẳng đến mức khó chịu — văn minh' },
+  {
+    value: 'very_strong',
+    label: 'Cực gắt (không tục)',
+    description: 'Thẳng đến mức khó chịu — văn minh',
+  },
 ];
 
 export const PERSONAL_TYPE_OPTIONS: { value: PersonalPostType; label: string }[] = [
@@ -980,7 +1005,10 @@ export const TARGET_AUDIENCE_OPTIONS: { value: string; label: string }[] = [
   { value: 'Nữ 28–45, quan tâm da lão hóa', label: 'Nữ 28–45, quan tâm da lão hóa' },
   { value: 'Nam/nữ 30–50, stress cao, mỏi cơ', label: 'Nam/nữ 30–50, stress cao, mỏi cơ' },
   { value: 'Cô dâu / chuẩn bị đám cưới', label: 'Cô dâu / chuẩn bị đám cưới' },
-  { value: 'Mẹ bỉm, ít thời gian chăm sóc bản thân', label: 'Mẹ bỉm, ít thời gian chăm sóc bản thân' },
+  {
+    value: 'Mẹ bỉm, ít thời gian chăm sóc bản thân',
+    label: 'Mẹ bỉm, ít thời gian chăm sóc bản thân',
+  },
   { value: 'Sinh viên / người mới đi làm', label: 'Sinh viên / người mới đi làm' },
   { value: 'Khách hàng cao cấp (VIP)', label: 'Khách hàng cao cấp (VIP)' },
   { value: 'Kinh doanh online / freelancer', label: 'Kinh doanh online / freelancer' },
@@ -988,31 +1016,64 @@ export const TARGET_AUDIENCE_OPTIONS: { value: string; label: string }[] = [
 ];
 
 export const PERSONAL_POST_TOPIC_OPTIONS: { value: string; label: string }[] = [
-  { value: 'Học cách chấp nhận bản thân sau tuổi 30', label: 'Học cách chấp nhận bản thân sau tuổi 30' },
-  { value: 'Bài học về sự kiên nhẫn trong công việc', label: 'Bài học về sự kiên nhẫn trong công việc' },
+  {
+    value: 'Học cách chấp nhận bản thân sau tuổi 30',
+    label: 'Học cách chấp nhận bản thân sau tuổi 30',
+  },
+  {
+    value: 'Bài học về sự kiên nhẫn trong công việc',
+    label: 'Bài học về sự kiên nhẫn trong công việc',
+  },
   { value: 'Góc nhìn về thành công và thất bại', label: 'Góc nhìn về thành công và thất bại' },
-  { value: 'Chăm sóc bản thân giữa guồng quay bận rộn', label: 'Chăm sóc bản thân giữa guồng quay bận rộn' },
+  {
+    value: 'Chăm sóc bản thân giữa guồng quay bận rộn',
+    label: 'Chăm sóc bản thân giữa guồng quay bận rộn',
+  },
   { value: 'Hành trình khởi nghiệp / làm chủ spa', label: 'Hành trình khởi nghiệp / làm chủ spa' },
   { value: 'Kinh nghiệm làm nghề spa / làm đẹp', label: 'Kinh nghiệm làm nghề spa / làm đẹp' },
   { value: 'Động lực cho ngày mới', label: 'Động lực cho ngày mới' },
   { value: 'Triết lý sống đơn giản, ít so sánh', label: 'Triết lý sống đơn giản, ít so sánh' },
-  { value: 'Thay đổi thói quen nhỏ tạo khác biệt lớn', label: 'Thay đổi thói quen nhỏ tạo khác biệt lớn' },
-  { value: 'Góc nhìn về làm đẹp tự nhiên, không vội', label: 'Góc nhìn về làm đẹp tự nhiên, không vội' },
+  {
+    value: 'Thay đổi thói quen nhỏ tạo khác biệt lớn',
+    label: 'Thay đổi thói quen nhỏ tạo khác biệt lớn',
+  },
+  {
+    value: 'Góc nhìn về làm đẹp tự nhiên, không vội',
+    label: 'Góc nhìn về làm đẹp tự nhiên, không vội',
+  },
   { value: 'Cân bằng công việc và cuộc sống', label: 'Cân bằng công việc và cuộc sống' },
-  { value: 'Chia sẻ kinh nghiệm chăm sóc khách hàng', label: 'Chia sẻ kinh nghiệm chăm sóc khách hàng' },
+  {
+    value: 'Chia sẻ kinh nghiệm chăm sóc khách hàng',
+    label: 'Chia sẻ kinh nghiệm chăm sóc khách hàng',
+  },
 ];
 
 export const PERSONAL_READER_AUDIENCE_OPTIONS: { value: string; label: string }[] = [
-  { value: 'Người trẻ làm văn phòng, đang tìm định hướng', label: 'Người trẻ làm văn phòng, đang tìm định hướng' },
-  { value: 'Chủ spa / chủ salon đang xây thương hiệu', label: 'Chủ spa / chủ salon đang xây thương hiệu' },
+  {
+    value: 'Người trẻ làm văn phòng, đang tìm định hướng',
+    label: 'Người trẻ làm văn phòng, đang tìm định hướng',
+  },
+  {
+    value: 'Chủ spa / chủ salon đang xây thương hiệu',
+    label: 'Chủ spa / chủ salon đang xây thương hiệu',
+  },
   { value: 'Nhân viên ngành làm đẹp / spa', label: 'Nhân viên ngành làm đẹp / spa' },
-  { value: 'Phụ nữ 25–40, quan tâm chăm sóc bản thân', label: 'Phụ nữ 25–40, quan tâm chăm sóc bản thân' },
+  {
+    value: 'Phụ nữ 25–40, quan tâm chăm sóc bản thân',
+    label: 'Phụ nữ 25–40, quan tâm chăm sóc bản thân',
+  },
   { value: 'Mẹ bỉm / người bận rộn ít thời gian', label: 'Mẹ bỉm / người bận rộn ít thời gian' },
   { value: 'Gen Z / sinh viên', label: 'Gen Z / sinh viên' },
   { value: 'Người đang khởi nghiệp hoặc đổi nghề', label: 'Người đang khởi nghiệp hoặc đổi nghề' },
-  { value: 'Người thích đọc câu chuyện cảm hứng đời thường', label: 'Người thích đọc câu chuyện cảm hứng đời thường' },
+  {
+    value: 'Người thích đọc câu chuyện cảm hứng đời thường',
+    label: 'Người thích đọc câu chuyện cảm hứng đời thường',
+  },
   { value: 'Đồng nghiệp trong ngành wellness', label: 'Đồng nghiệp trong ngành wellness' },
-  { value: 'Cộng đồng khách quen / người theo dõi local', label: 'Cộng đồng khách quen / người theo dõi local' },
+  {
+    value: 'Cộng đồng khách quen / người theo dõi local',
+    label: 'Cộng đồng khách quen / người theo dõi local',
+  },
 ];
 
 export const OFFER_PERCENT_OPTIONS: { value: string; label: string }[] = [

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { OpenAiService } from '../openai/openai.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -15,6 +15,7 @@ import {
   suggestPersonalIdeas,
   suggestPersonalTitles,
 } from './content-marketing-logic';
+import { assertExclusiveProductService } from './ad-product-service.logic';
 import {
   generateAdvancedArticle,
   generateAdvancedTitles,
@@ -128,6 +129,11 @@ export class ContentMarketingService {
           : await generatePersonalContent(dto, this.openai);
       const score = scorePersonalContent({ content: generated.content, mode: 'personal' });
       return { ...generated, score };
+    }
+    try {
+      assertExclusiveProductService(dto);
+    } catch (e) {
+      throw new BadRequestException(e instanceof Error ? e.message : 'Invalid ad payload');
     }
     const generated = await generateMarketingContent(dto, this.openai);
     const policy = checkAdPolicyRisk({

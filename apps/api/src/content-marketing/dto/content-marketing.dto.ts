@@ -1,4 +1,5 @@
-import { IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
+import { IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, MinLength, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
 import {
   ADVANCED_ARTICLE_GOALS,
   ADVANCED_CTA_TYPES,
@@ -11,6 +12,110 @@ import {
   BRAND_PRONOUNS,
   BRAND_VOICE_INTENSITIES,
 } from '../brand-post-config';
+
+export class AdProductPayloadDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  category?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  features?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  benefits?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  differentiators?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  price?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  warranty?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  proof?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  offer?: string;
+}
+
+export class AdServicePayloadDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  suitableCustomers?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  problems?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  process?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  highlights?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  expectedBenefits?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  duration?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  location?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  experts?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  proof?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  offer?: string;
+}
 
 export const CONTENT_TONES = [
   'bold',
@@ -194,6 +299,26 @@ export class GenerateContentDto {
   @MinLength(1)
   @MaxLength(500)
   productService!: string;
+
+  /** product | service — optional; default product when mode=ad */
+  @IsOptional()
+  @IsIn(['product', 'service'])
+  adPostKind?: 'product' | 'service';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  brandName?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AdProductPayloadDto)
+  product?: AdProductPayloadDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AdServicePayloadDto)
+  service?: AdServicePayloadDto;
 
   @IsOptional()
   @IsString()

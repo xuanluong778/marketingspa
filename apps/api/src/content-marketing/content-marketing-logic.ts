@@ -29,6 +29,7 @@ import type {
   ScoreContentDto,
   RewriteContentDto,
 } from './dto/content-marketing.dto';
+import { generateProductOrServiceAdContent } from './ad-product-service.logic';
 
 export interface PolicyFlag {
   phrase: string;
@@ -108,6 +109,10 @@ export interface GenerateContentResult {
   hooks: string[];
   ctas: string[];
   source: 'ai' | 'template';
+  headline?: string | null;
+  shortDescription?: string | null;
+  mediaSuggestions?: string[];
+  adPostKind?: 'product' | 'service';
 }
 
 const SOFT_INTERACTION_CTAS = [
@@ -655,65 +660,8 @@ export async function generateMarketingContent(
   dto: GenerateContentDto,
   openai?: OpenAiService,
 ): Promise<GenerateContentResult> {
-  if (!openai?.isConfigured()) {
-    return templateGenerate(dto);
-  }
-
-  const tone = dto.tone ?? 'friendly';
-  const objective =
-    getAdObjectiveConfig(dto.adObjective) ??
-    getAdObjectiveConfig(normalizeAdObjective(dto.adObjective));
-  const type =
-    dto.mode === 'ad'
-      ? (dto.adContentType ?? objective?.defaultContentType ?? 'sales')
-      : (dto.personalPostType ?? 'personal_story');
-  const { ctx: industry, block: industryBlock } = buildFullIndustryPromptContext({
-    industry: dto,
-    productService: dto.productService,
-    targetAudience: dto.targetAudience,
-    goal: objective ? `${objective.label} — ${objective.description}` : dto.adObjective,
-    tone,
-    platform: dto.platform,
-    length: dto.postLength,
-    cta: dto.cta ?? objective?.defaultCta,
-    keywords: [dto.painPoints, dto.benefits, dto.offer].filter(Boolean).join(' | '),
-    brandInfo: dto.productService,
-  });
-
-  const prompt = `${industryExpertIntro(industry)}
-Viết content tiếng Việt, mode=${dto.mode}, loại=${type}, giọng=${tone}, nền tảng=${dto.platform ?? 'facebook'}.
-
-${industryBlock}
-
-Nỗi đau: ${dto.painPoints ?? ''}
-Lợi ích: ${dto.benefits ?? ''}
-Ưu đãi: ${dto.offer ?? ''}
-${objective ? `Hướng dẫn theo mục tiêu: ${objective.generateHint}` : ''}
-${dto.transcript ? `Tham khảo transcript: ${dto.transcript.slice(0, 2000)}` : ''}
-
-${regulatedComplianceBlock(industry)}
-
-Trả JSON (không markdown):
-{"content":"...","hooks":["h1","h2","h3","h4","h5"],"ctas":["c1","c2","c3","c4","c5"]}
-Thuật ngữ, insight, CTA, hashtag (nếu có trong content) phải đúng ngành "${industry.label}".
-${industry.isSpaBeauty ? '' : 'CẤM dùng từ spa, liệu trình da, chăm sóc da, thẩm mỹ trừ khi có trong sản phẩm user.'}`;
-
-  try {
-    const raw = await openai.chatCompletion({
-      messages: [{ role: 'user', content: prompt }],
-      maxTokens: 1200,
-      temperature: 0.7,
-    });
-    const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim()) as GenerateContentResult;
-    return {
-      content: parsed.content || templateGenerate(dto).content,
-      hooks: Array.isArray(parsed.hooks) ? parsed.hooks.slice(0, 5) : [],
-      ctas: Array.isArray(parsed.ctas) ? parsed.ctas.slice(0, 5) : [],
-      source: 'ai',
-    };
-  } catch {
-    return templateGenerate(dto);
-  }
+  // Product / service prompts (backward compatible when adPostKind omitted → product)
+  return generateProductOrServiceAdContent(dto, openai);
 }
 
 const PERSONAL_LENGTH_HINT: Record<string, string> = {

@@ -1,5 +1,6 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiClient, apiUpload } from '@/lib/api-client';
+import { buildAdGeneratePayload } from '@/lib/content-marketing-form';
 import type {
   AdCtaSuggestion,
   AdInsightsSuggestion,
@@ -38,6 +39,9 @@ import type {
 const BASE = '/content-marketing';
 
 function formToPayload(form: ContentFormState, mode: ContentStudioTab) {
+  if (mode === 'ad') {
+    return buildAdGeneratePayload(form, mode);
+  }
   return {
     mode,
     productService: form.productService,
