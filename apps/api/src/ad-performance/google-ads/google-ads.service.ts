@@ -3,7 +3,7 @@ import type { AuthUser } from '../../common/interfaces/auth-user.interface';
 
 @Injectable()
 export class GoogleAdsService {
-  getOAuthStartUrl(_user: AuthUser, _context?: string): { url: string } {
+  async getOAuthStartUrl(_user: AuthUser, _context?: string): Promise<{ url: string }> {
     return { url: '' };
   }
 
