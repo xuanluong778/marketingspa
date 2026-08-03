@@ -157,6 +157,35 @@ export const REWRITE_MODES = [
   'ab_3',
 ] as const;
 
+export const OPINION_REWRITE_MODES = [
+  'more_casual',
+  'more_natural',
+  'more_spoken',
+  'less_preachy',
+  'more_frank',
+  'more_deep',
+  'shorten',
+  'shorten_1min',
+  'rewrite_all',
+] as const;
+
+export type OpinionRewriteMode = (typeof OPINION_REWRITE_MODES)[number];
+
+export const TELEPROMPTER_SCRIPT_REWRITE_MODES = [
+  'to_spoken',
+  'more_natural',
+  'more_casual',
+  'less_written',
+  'less_preachy',
+  'more_frank',
+  'more_deep',
+  'shorten_1min',
+  'shorten_3min',
+  'shorten_5min',
+] as const;
+
+export type TeleprompterScriptRewriteMode = (typeof TELEPROMPTER_SCRIPT_REWRITE_MODES)[number];
+
 export class GenerateContentDto {
   @IsIn(['ad', 'personal'])
   mode!: 'ad' | 'personal';
@@ -362,6 +391,21 @@ export class CheckPolicyDto {
   @IsOptional()
   @IsIn(PLATFORMS)
   platform?: (typeof PLATFORMS)[number];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  industryId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  industryName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  customIndustry?: string;
 }
 
 export class ScoreContentDto {
@@ -417,6 +461,21 @@ export class RewriteContentDto {
   @IsOptional()
   @IsIn(PERSONAL_TONES)
   personalTone?: (typeof PERSONAL_TONES)[number];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  industryId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  industryName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  customIndustry?: string;
 }
 
 export class GenerateAdvancedArticleDto {
@@ -489,6 +548,21 @@ export class GenerateAdvancedArticleDto {
 
   @IsIn(POST_LENGTHS)
   postLength!: (typeof POST_LENGTHS)[number];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  industryId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  industryName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  customIndustry?: string;
 }
 
 export class OptimizeAdvancedCtaDto {
@@ -508,6 +582,21 @@ export class OptimizeAdvancedCtaDto {
   @IsOptional()
   @IsIn(ADVANCED_ARTICLE_GOALS)
   articleGoal?: (typeof ADVANCED_ARTICLE_GOALS)[number];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  industryId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  industryName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  customIndustry?: string;
 }
 
 export class GenerateAdvancedTitlesDto {
@@ -524,6 +613,21 @@ export class GenerateAdvancedTitlesDto {
   @IsOptional()
   @IsIn(ADVANCED_DEMOGRAPHICS)
   demographic?: (typeof ADVANCED_DEMOGRAPHICS)[number];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  industryId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  industryName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  customIndustry?: string;
 }
 
 export class RewriteAdvancedArticleDto extends GenerateAdvancedArticleDto {
@@ -812,7 +916,7 @@ export class OpinionGenerateDto {
   userViewpoint?: string;
 }
 
-export class OpinionRewriteDto {
+export class OpinionRewriteDto extends OpinionGenerateDto {
   @IsOptional()
   @IsString()
   content?: string;
@@ -823,9 +927,8 @@ export class OpinionRewriteDto {
   @IsOptional()
   @IsString()
   facebookPost?: string;
-  @IsOptional()
-  @IsString()
-  rewriteMode?: string;
+  @IsIn(OPINION_REWRITE_MODES)
+  rewriteMode!: OpinionRewriteMode;
   @IsOptional()
   @IsString()
   videoHook?: string;
@@ -873,12 +976,12 @@ export class OpinionSuggestFieldDto {
 }
 
 export class TeleprompterScriptRewriteDto {
-  @IsOptional()
   @IsString()
-  script?: string;
-  @IsOptional()
-  @IsString()
-  mode?: string;
+  @MinLength(1)
+  script!: string;
+
+  @IsIn(TELEPROMPTER_SCRIPT_REWRITE_MODES)
+  mode!: TeleprompterScriptRewriteMode;
 
   @IsOptional()
   @IsString()
@@ -965,7 +1068,3 @@ export class UpsertTeleprompterSourceDto {
   videoHook?: string;
 }
 
-export const OpinionRewriteMode = ['soften','sharpen','shorten','expand','neutral'] as const;
-export type OpinionRewriteMode = (typeof OpinionRewriteMode)[number];
-export const TeleprompterScriptRewriteMode = ['shorten','expand','clarify','pace'] as const;
-export type TeleprompterScriptRewriteMode = (typeof TeleprompterScriptRewriteMode)[number];

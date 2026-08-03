@@ -66,7 +66,7 @@ export class OpinionVoiceProfileService {
     const scope = dto.scope ?? 'user';
     if (scope === 'organization') {
       const can =
-        user.role === SYSTEM_ROLES.SUPER_ADMIN ||
+        user.role === 'SUPER_ADMIN' ||
         user.role === SYSTEM_ROLES.OWNER ||
         user.role === SYSTEM_ROLES.MANAGER;
       if (!can) {

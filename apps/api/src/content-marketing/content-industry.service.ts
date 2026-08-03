@@ -125,7 +125,7 @@ export class ContentIndustryService {
     const scope = dto.scope ?? 'user';
     if (scope === 'organization') {
       const can =
-        user.role === SYSTEM_ROLES.SUPER_ADMIN ||
+        user.role === 'SUPER_ADMIN' ||
         user.role === SYSTEM_ROLES.OWNER ||
         user.role === SYSTEM_ROLES.MANAGER;
       if (!can) {
@@ -194,7 +194,7 @@ export class ContentIndustryService {
   }
 
   async adminCreate(dto: CreateContentIndustryDto) {
-    const name = dto.name.trim();
+    const name = (dto.name ?? '').trim();
     if (!name) throw new BadRequestException('name không được trống');
     let slug = (dto.slug?.trim() || slugifyName(name)).toLowerCase();
     const clash = await this.prisma.contentIndustry.findUnique({ where: { slug } });
