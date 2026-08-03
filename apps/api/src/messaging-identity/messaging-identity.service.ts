@@ -121,7 +121,7 @@ export class MessagingIdentityService {
       where.lead = { funnelStageId: query.funnelStageId };
     }
     if (query.pipelineStatus) {
-      where.lead = { pipelineStatus: query.pipelineStatus as never };
+      where.lead = { pipelineStatus: query.pipelineStatus };
     }
 
     const [rows, total] = await Promise.all([

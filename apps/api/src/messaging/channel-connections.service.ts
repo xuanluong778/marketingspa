@@ -185,7 +185,7 @@ export class ChannelConnectionsService {
 
     const status = result.valid
       ? MessagingChannelAccountStatus.ACTIVE
-      : this.mapInvalidStatus(result.message);
+      : this.mapInvalidStatus(result.message ?? 'Connection invalid');
 
     const updated = await this.prisma.messagingChannelConnection.update({
       where: { id: row.id },

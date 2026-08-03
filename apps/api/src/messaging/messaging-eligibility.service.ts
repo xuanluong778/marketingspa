@@ -268,10 +268,12 @@ export class MessagingEligibilityService {
     template?: { channel: MessageChannel } | null,
   ): number {
     if (providerKind === MessagingProviderKind.ZBS_TEMPLATE) {
-      return this.providers.get(MessagingProviderKind.ZBS_TEMPLATE).estimateCost({
-        to: '',
-        templateId: 'estimate',
-      });
+      return (
+        this.providers.get(MessagingProviderKind.ZBS_TEMPLATE).estimateCost?.({
+          to: '',
+          templateId: 'estimate',
+        }) ?? 0
+      );
     }
     if (channel === MessageChannel.ZALO) return 0;
     return 0;

@@ -150,28 +150,31 @@ export class StaleLeadQueryDto {
 }
 
 export class BulkLeadActionDto {
+  @IsArray()
+  @IsUUID('4', { each: true })
+  leadIds!: string[];
+
+  @IsIn(['status', 'assign', 'tag'])
+  action!: 'status' | 'assign' | 'tag';
+
   @IsOptional()
-  @IsString()
-  leadIds?: string;
+  @IsEnum(LeadPipelineStatus)
+  pipelineStatus?: LeadPipelineStatus;
+
   @IsOptional()
-  @IsString()
-  action?: string;
-  @IsOptional()
-  @IsString()
-  pipelineStatus?: string;
-  @IsOptional()
-  @IsString()
+  @IsUUID()
   assignedToId?: string;
 
   @IsOptional()
   @IsArray()
-  tags?: any[];
+  @IsString({ each: true })
+  tags?: string[];
 }
 
 export class CreateLeadSavedViewDto {
-  @IsOptional()
   @IsString()
-  name?: string;
+  @MinLength(1)
+  name!: string;
   @IsOptional()
   @IsString()
   filters?: string;
@@ -189,14 +192,16 @@ export class CreateLeadSavedViewDto {
 
 export class LeadKanbanColumnQueryDto {
   @IsOptional()
-  @IsString()
-  pipelineStatus?: string;
+  @IsEnum(LeadPipelineStatus)
+  pipelineStatus?: LeadPipelineStatus;
   @IsOptional()
   @IsString()
   cursor?: string;
   @IsOptional()
-  @IsString()
-  limit?: string;
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  limit?: number;
   @IsOptional()
   @IsString()
   search?: string;
@@ -218,11 +223,12 @@ export class LeadKanbanQueryDto {
 
   @IsOptional()
   @Type(() => Number)
-  @IsNumber()
+  @IsInt()
+  @Min(1)
   limit?: number;
   @IsOptional()
-  @IsString()
-  pipelineStatus?: string;
+  @IsEnum(LeadPipelineStatus)
+  pipelineStatus?: LeadPipelineStatus;
 }
 
 export class UpdateLeadSavedViewDto {

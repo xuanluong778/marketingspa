@@ -1,4 +1,4 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Post, UseGuards, BadRequestException } from '@nestjs/common';
 import { MessagingEligibilityService } from './messaging-eligibility.service';
 import { JwtAuthGuard } from '../common/guards/auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
@@ -16,6 +16,8 @@ export class MessagingEligibilityController {
   @Post('check')
   @RequirePermissions('automation.campaign.send')
   check(@CurrentUser() user: AuthUser, @Body() dto: CheckMessagingEligibilityDto) {
+    if (!dto.channel) throw new BadRequestException('Thiếu channel');
+    if (!dto.campaignType) throw new BadRequestException('Thiếu campaignType');
     return this.eligibility.check({
       organizationId: user.organizationId,
       channel: dto.channel,

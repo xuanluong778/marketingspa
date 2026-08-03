@@ -1,8 +1,23 @@
+import { LeadPipelineStatus } from '@marketingspa/database';
+
 export function assertStatusTransition(from: string, to: string, allowed: Record<string, string[]>): void {
   const next = allowed[from] || [];
   if (!next.includes(to)) {
     throw new Error(`Invalid status transition ${from} -> ${to}`);
   }
+}
+
+export function assertLeadTransition(from: LeadPipelineStatus, to: LeadPipelineStatus): void {
+  assertStatusTransition(from, to, {
+    NEW: ['CONTACTED', 'QUALIFIED', 'BOOKED', 'LOST'],
+    CONTACTED: ['NEW', 'QUALIFIED', 'BOOKED', 'LOST'],
+    QUALIFIED: ['CONTACTED', 'BOOKED', 'LOST'],
+    BOOKED: ['CONFIRMED', 'CONTACTED', 'LOST'],
+    CONFIRMED: ['VISITED', 'BOOKED', 'CONTACTED', 'LOST'],
+    VISITED: ['PURCHASED', 'CONFIRMED', 'LOST'],
+    PURCHASED: ['VISITED'],
+    LOST: ['NEW', 'CONTACTED'],
+  });
 }
 
 /** Type-surface helpers used by appointments/finance; delegates to assertStatusTransition. */

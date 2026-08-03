@@ -1,5 +1,13 @@
-import { IsArray, IsBoolean, IsNumber, IsOptional, IsString } from 'class-validator';
+import { IsArray, IsBoolean, IsEnum, IsIn, IsNumber, IsOptional, IsString, IsUUID } from 'class-validator';
 import { Type } from 'class-transformer';
+import {
+  LeadPipelineStatus,
+  MessageChannel,
+  MessagingConsentStatus,
+  MessagingFollowStatus,
+} from '@marketingspa/database';
+import type { MessagingCampaignType } from '@marketingspa/shared';
+import { PaginationDto } from '../../common/dto/pagination.dto';
 
 export class LinkIdentityDto {
   @IsOptional()
@@ -11,75 +19,94 @@ export class LinkIdentityDto {
 }
 
 export class MergeIdentitiesDto {
-  @IsOptional()
-  @IsString()
-  primaryIdentityId?: string;
-  @IsOptional()
+  @IsUUID()
+  primaryIdentityId!: string;
+
   @IsArray()
-  secondaryIdentityIds?: any[];
+  @IsUUID('4', { each: true })
+  secondaryIdentityIds!: string[];
 }
 
-export class MessagingIdentityQueryDto {
+export class MessagingIdentityQueryDto extends PaginationDto {
   @IsOptional()
-  @IsString()
-  campaignType?: string;
+  @IsIn(['automation', 'broadcast', 'transactional', 'template'])
+  campaignType?: MessagingCampaignType;
+
   @IsOptional()
-  @IsString()
-  channel?: string;
+  @IsEnum(MessageChannel)
+  channel?: MessageChannel;
+
   @IsOptional()
-  @IsString()
+  @IsUUID()
   connectionId?: string;
+
   @IsOptional()
-  @IsString()
-  consentStatus?: string;
+  @IsEnum(MessagingConsentStatus)
+  consentStatus?: MessagingConsentStatus;
+
   @IsOptional()
-  @IsString()
+  @IsUUID()
   customerId?: string;
+
   @IsOptional()
-  @IsString()
-  followStatus?: string;
+  @IsEnum(MessagingFollowStatus)
+  followStatus?: MessagingFollowStatus;
+
   @IsOptional()
-  @IsString()
+  @IsUUID()
   funnelStageId?: string;
+
   @IsOptional()
   @IsBoolean()
   hasAppointment?: boolean;
+
   @IsOptional()
   @IsBoolean()
   hasOrder?: boolean;
+
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   inactiveDays?: number;
+
   @IsOptional()
   @IsBoolean()
   includeMerged?: boolean;
+
   @IsOptional()
   @IsString()
   integrationScopeKey?: string;
+
   @IsOptional()
   @IsString()
   lastInboundFrom?: string;
+
   @IsOptional()
   @IsString()
   lastInboundTo?: string;
+
   @IsOptional()
-  @IsString()
+  @IsUUID()
   leadId?: string;
+
   @IsOptional()
-  @IsString()
-  linkedType?: string;
+  @IsIn(['customer', 'lead', 'unlinked'])
+  linkedType?: 'customer' | 'lead' | 'unlinked';
+
   @IsOptional()
-  @IsString()
-  pipelineStatus?: string;
+  @IsEnum(LeadPipelineStatus)
+  pipelineStatus?: LeadPipelineStatus;
+
   @IsOptional()
   @IsString()
   search?: string;
+
   @IsOptional()
   @IsString()
   tag?: string;
+
   @IsOptional()
-  @IsString()
+  @IsUUID()
   templateId?: string;
 }
 
@@ -87,46 +114,57 @@ export class UpsertMessagingIdentityDto {
   @IsOptional()
   @IsString()
   avatarUrl?: string;
-  @IsOptional()
-  @IsString()
-  channel?: string;
+
+  @IsEnum(MessageChannel)
+  channel!: MessageChannel;
+
   @IsOptional()
   @IsString()
   channelAccountRef?: string;
+
   @IsOptional()
-  @IsString()
+  @IsUUID()
   chatbotConversationId?: string;
+
   @IsOptional()
-  @IsString()
-  consentStatus?: string;
+  @IsEnum(MessagingConsentStatus)
+  consentStatus?: MessagingConsentStatus;
+
   @IsOptional()
   @IsString()
   displayName?: string;
+
   @IsOptional()
   @IsString()
   externalConversationId?: string;
-  @IsOptional()
+
   @IsString()
-  externalUserId?: string;
+  externalUserId!: string;
+
   @IsOptional()
-  @IsString()
-  followStatus?: string;
+  @IsEnum(MessagingFollowStatus)
+  followStatus?: MessagingFollowStatus;
+
   @IsOptional()
-  @IsString()
+  @IsUUID()
   integrationId?: string;
+
   @IsOptional()
   @IsBoolean()
   isBlocked?: boolean;
+
   @IsOptional()
   metadata?: Record<string, unknown>;
+
   @IsOptional()
   @IsBoolean()
   optedOut?: boolean;
+
   @IsOptional()
   @IsString()
   phone?: string;
+
   @IsOptional()
   @IsBoolean()
   phoneVerified?: boolean;
 }
-

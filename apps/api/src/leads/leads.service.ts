@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { AutomationTriggerType, LeadPipelineStatus, Prisma } from '@marketingspa/database';
+import { AutomationTriggerType, AdPlatform, LeadPipelineStatus, Prisma } from '@marketingspa/database';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { TenantOwnershipService } from '../common/services/tenant-ownership.service';
@@ -77,7 +77,10 @@ export class LeadsService {
 
     await Promise.all(
       statuses.map(async (status) => {
-        const where = this.buildLeadWhere(organizationId, { ...query, pipelineStatus: status });
+        const where = this.buildLeadWhere(organizationId, {
+          ...query,
+          pipelineStatus: status,
+        });
         const [total, items] = await Promise.all([
           this.prisma.lead.count({ where }),
           this.prisma.lead.findMany({
@@ -390,14 +393,15 @@ export class LeadsService {
     });
 
     const { attribution: attrDto, autoAssign, tags, reminderAt, score, ...leadFields } = dto;
-    const platformExternalLeadId = attrDto?.platformExternalLeadId ?? undefined;
+    const platformExternalLeadId = this.readAttributionString(attrDto, 'platformExternalLeadId');
+    const attributionPlatform = this.readAttributionPlatform(attrDto);
 
     const duplicate = await this.attribution.findDuplicateLead(organizationId, {
       phone: dto.phone,
       email: dto.email,
       name: dto.name,
       platformExternalLeadId,
-      platform: attrDto?.channel,
+      platform: attributionPlatform,
     });
 
     if (duplicate) {
@@ -430,7 +434,7 @@ export class LeadsService {
         estimatedValue: dto.estimatedValue,
         hasPhone: !!dto.phone,
         hasEmail: !!dto.email,
-        platform: attrDto?.channel,
+        platform: attributionPlatform,
       });
 
     const lead = await this.prisma.lead.create({
@@ -441,7 +445,7 @@ export class LeadsService {
         funnelStageId: stage?.id,
         estimatedValue: dto.estimatedValue,
         platformExternalLeadId,
-        platform: attrDto?.channel,
+        platform: attributionPlatform,
         score: computedScore,
         tags: tags ?? [],
         reminderAt: reminderAt ? new Date(reminderAt) : undefined,
@@ -709,6 +713,22 @@ export class LeadsService {
   async remove(organizationId: string, id: string) {
     await this.findOne(organizationId, id);
     return this.prisma.lead.delete({ where: { id } });
+  }
+
+  private readAttributionString(
+    attr: Record<string, unknown> | undefined,
+    key: string,
+  ): string | undefined {
+    const value = attr?.[key];
+    return typeof value === 'string' && value.trim() ? value : undefined;
+  }
+
+  private readAttributionPlatform(attr?: Record<string, unknown>): AdPlatform | undefined {
+    const channel = attr?.channel;
+    if (typeof channel !== 'string') return undefined;
+    return (Object.values(AdPlatform) as string[]).includes(channel)
+      ? (channel as AdPlatform)
+      : undefined;
   }
 
   /** Leads chưa xử lý quá N phút — mặc định 10 phút */

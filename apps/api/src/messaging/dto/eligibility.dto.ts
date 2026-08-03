@@ -1,39 +1,49 @@
-import { IsArray, IsBoolean, IsNumber, IsOptional, IsString } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsEnum, IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
+import { MessageChannel } from '@marketingspa/database';
+import type { MessagingCampaignType, MessagingProviderMode } from '@marketingspa/shared';
 
 export class CheckMessagingEligibilityDto {
   @IsOptional()
   @IsString()
   accountRef?: string;
+
   @IsOptional()
-  @IsString()
-  campaignType?: string;
+  @IsIn(['automation', 'broadcast', 'transactional', 'template'])
+  campaignType?: MessagingCampaignType;
+
   @IsOptional()
-  @IsString()
-  channel?: string;
+  @IsEnum(MessageChannel)
+  channel?: MessageChannel;
+
   @IsOptional()
-  @IsString()
+  @IsUUID()
   connectionId?: string;
+
   @IsOptional()
-  @IsString()
+  @IsUUID()
   customerId?: string;
+
   @IsOptional()
   @IsString()
   externalUserId?: string;
+
   @IsOptional()
-  @IsString()
+  @IsUUID()
   flowId?: string;
+
   @IsOptional()
-  @IsString()
+  @IsUUID()
   identityId?: string;
+
   @IsOptional()
-  @IsString()
+  @IsUUID()
   leadId?: string;
+
   @IsOptional()
-  @IsString()
-  providerModeHint?: string;
+  @IsIn(['MESSENGER_STANDARD', 'MESSENGER_UTILITY', 'ZALO_OA_CONSULT', 'ZALO_OA_BROADCAST', 'ZBS_TEMPLATE'])
+  providerModeHint?: MessagingProviderMode;
+
   @IsOptional()
-  @IsString()
+  @IsUUID()
   templateId?: string;
 }
-
