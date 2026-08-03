@@ -457,7 +457,7 @@ export class VideoTranscriptionService {
     });
 
     await this.queueEnqueue.add(this.queue, 'video-transcription', payload, {
-      jobId: `video-transcription-${transcriptionId}-${chunkIndex ?? 'all'}-${Date.now()}`,
+      jobId: `video-transcription-${transcriptionId}-${chunkIndex ?? 'all'}`,
       attempts: VIDEO_TRANSCRIPTION_LIMITS.maxAttempts,
       backoff: { type: 'exponential', delay: 5000 },
       removeOnComplete: 100,

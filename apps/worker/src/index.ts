@@ -24,6 +24,11 @@ import { processAdsSync } from './processors/ads-sync';
 import { processAdsAction } from './processors/ads-action';
 import { processVideoTranscription } from './processors/video-transcription';
 import { processAffiliateHoldRelease } from './processors/affiliate-hold';
+import { processMessagingWebhook } from './processors/messaging-webhook';
+import { processMessagingCampaignPlan } from './processors/messaging-campaign-plan';
+import { processMessagingCampaignDispatch } from './processors/messaging-campaign-dispatch';
+import { processMessagingSend } from './processors/messaging-send';
+import { processOfflineConversion } from './processors/offline-conversion';
 
 initSentry();
 
@@ -45,6 +50,10 @@ const workers: Worker[] = [];
 const WORKER_HEARTBEAT_KEY = 'marketingspa:worker:heartbeat';
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const VIDEO_TRANSCRIPTION_LOCK_MS = 3 * 60 * 60 * 1000;
+const ADS_SYNC_LOCK_MS = Math.max(
+  60_000,
+  Number(process.env.ADS_SYNC_TIMEOUT_MS || 300_000) + 60_000,
+);
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
 function attachWorkerHandlers(worker: Worker, name: string) {
@@ -113,6 +122,9 @@ async function start() {
     new Worker(QUEUE_NAMES.ADS_SYNC, (job) => processAdsSync(job, redis), {
       ...opts,
       concurrency: 1,
+      lockDuration: ADS_SYNC_LOCK_MS,
+      stalledInterval: 60_000,
+      maxStalledCount: 2,
     }),
     // AdsActionRequest — pause/resume/budget (gated by ADS_ACTIONS_LIVE)
     new Worker(QUEUE_NAMES.ADS_ACTION, (job) => processAdsAction(job, redis), {
@@ -129,6 +141,30 @@ async function start() {
     new Worker(QUEUE_NAMES.AFFILIATE_HOLD, (job) => processAffiliateHoldRelease(job), {
       ...opts,
       concurrency: 2,
+    }),
+    // Messaging — webhook ingest + campaign plan/dispatch/send
+    new Worker(
+      QUEUE_NAMES.MESSAGING_WEBHOOK,
+      (job) => processMessagingWebhook(job, redis),
+      { ...opts, concurrency: 2 },
+    ),
+    new Worker(
+      QUEUE_NAMES.MESSAGING_CAMPAIGN_PLAN,
+      (job) => processMessagingCampaignPlan(job, redis),
+      { ...opts, concurrency: 1 },
+    ),
+    new Worker(
+      QUEUE_NAMES.MESSAGING_CAMPAIGN_DISPATCH,
+      (job) => processMessagingCampaignDispatch(job, redis),
+      { ...opts, concurrency: 1 },
+    ),
+    new Worker(QUEUE_NAMES.MESSAGING_SEND, (job) => processMessagingSend(job, redis), {
+      ...opts,
+      concurrency: 3,
+    }),
+    new Worker(QUEUE_NAMES.OFFLINE_CONVERSION, (job) => processOfflineConversion(job), {
+      ...opts,
+      concurrency: 1,
     }),
   );
 
