@@ -1,4 +1,18 @@
-import { IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, IsUUID, MaxLength, Min, MinLength } from 'class-validator';
+import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
+  IsBoolean,
+  IsDateString,
+  IsInt,
+  IsNumber,
+  IsObject,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  Min,
+} from 'class-validator';
 import { ShiftAssignmentSource } from '@marketingspa/database';
 import { Type } from 'class-transformer';
 
@@ -25,32 +39,36 @@ export class CreateWorkShiftPolicyDto {
   @IsObject()
   payload!: Record<string, unknown>;
 
+  @IsString()
+  startTime!: string;
+
+  @IsString()
+  endTime!: string;
+
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   breakMinutes?: number;
+
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   earlyLeaveGraceMinutes?: number;
-  @IsOptional()
-  @IsString()
-  endTime?: string;
+
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   lateGraceMinutes?: number;
+
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   otAfterMinutes?: number;
+
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   otBeforeMinutes?: number;
-  @IsOptional()
-  @IsString()
-  startTime?: string;
 }
 
 export class CreateWorkShiftPolicyVersionDto {
@@ -74,32 +92,40 @@ export class UpdateWorkShiftPolicyDto {
   @IsOptional()
   @IsString()
   branchId?: string;
+
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   breakMinutes?: number;
+
   @IsOptional()
   @IsBoolean()
   crossesMidnight?: boolean;
+
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   earlyLeaveGraceMinutes?: number;
+
   @IsOptional()
   @IsString()
   endTime?: string;
+
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   lateGraceMinutes?: number;
+
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   otAfterMinutes?: number;
+
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   otBeforeMinutes?: number;
+
   @IsOptional()
   @IsString()
   startTime?: string;
@@ -137,30 +163,33 @@ export class ShiftAssignmentQueryDto {
   @IsOptional()
   @IsString()
   departmentId?: string;
+
   @IsOptional()
   @IsString()
   policyId?: string;
 }
 
 export class CreateShiftAssignmentDto {
+  @IsOptional()
   @IsUUID()
-  branchId!: string;
+  branchId?: string;
 
   @IsUUID()
   employeeId!: string;
 
-  @IsOptional()
   @IsUUID()
-  policyId?: string;
+  policyId!: string;
 
   @IsDateString()
   workDate!: string;
 
+  @IsOptional()
   @IsDateString()
-  startAt!: string;
+  startAt?: string;
 
+  @IsOptional()
   @IsDateString()
-  endAt!: string;
+  endAt?: string;
 
   @IsOptional()
   source?: ShiftAssignmentSource;
@@ -194,52 +223,62 @@ export class UpdateShiftAssignmentDto {
 
 export class BulkShiftAssignmentDto {
   @IsOptional()
-  @IsString()
-  assignments?: string;
-  @IsOptional()
   @IsBoolean()
   forceOverwrite?: boolean;
 
   @IsOptional()
-  @IsString()
+  @IsUUID()
   branchId?: string;
+
   @IsOptional()
   @IsString()
   departmentId?: string;
+
   @IsOptional()
-  @IsString()
-  employeeIds?: string;
-  @IsOptional()
-  @IsString()
-  fromDate?: string;
+  @IsArray()
+  @IsUUID('4', { each: true })
+  employeeIds?: string[];
+
+  @IsDateString()
+  fromDate!: string;
+
   @IsOptional()
   @IsString()
   note?: string;
+
+  @IsUUID()
+  policyId!: string;
+
+  @IsDateString()
+  toDate!: string;
+
   @IsOptional()
-  @IsString()
-  policyId?: string;
-  @IsOptional()
-  @IsString()
-  toDate?: string;
-  @IsOptional()
-  @IsString()
-  weekdays?: string;
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(7)
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  @Max(7, { each: true })
+  @Type(() => Number)
+  weekdays?: number[];
 }
 
 export class ShiftCalendarQueryDto {
+  @IsDateString()
+  from!: string;
+
+  @IsDateString()
+  to!: string;
+
   @IsOptional()
-  @IsString()
-  from?: string;
-  @IsOptional()
-  @IsString()
-  to?: string;
-  @IsOptional()
-  @IsString()
+  @IsUUID()
   branchId?: string;
+
   @IsOptional()
   @IsString()
   departmentId?: string;
+
   @IsOptional()
-  @IsString()
+  @IsUUID()
   employeeId?: string;
 }

@@ -1,5 +1,16 @@
-import { IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min, MinLength } from 'class-validator';
 import {
+  IsDateString,
+  IsEnum,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Min,
+  MinLength,
+} from 'class-validator';
+import {
+  AttendanceDayStatus,
   AttendanceMethod,
   AttendancePunchType,
 } from '@marketingspa/database';
@@ -86,9 +97,10 @@ export class AttendanceDaysQueryDto {
   @IsOptional()
   @IsString()
   departmentId?: string;
+
   @IsOptional()
-  @IsString()
-  status?: string;
+  @IsEnum(AttendanceDayStatus)
+  status?: AttendanceDayStatus;
 }
 
 export class CreateAttendanceAdjustmentDto {
@@ -163,18 +175,23 @@ export class AttendanceExportQueryDto {
   @IsOptional()
   @IsString()
   from?: string;
+
   @IsOptional()
   @IsString()
   to?: string;
+
   @IsOptional()
   @IsString()
   departmentId?: string;
+
   @IsOptional()
   @IsString()
   branchId?: string;
+
   @IsOptional()
-  @IsString()
-  status?: string;
+  @IsEnum(AttendanceDayStatus)
+  status?: AttendanceDayStatus;
+
   @IsOptional()
   @IsString()
   format?: string;
@@ -184,29 +201,36 @@ export class CorrectAttendanceDayDto {
   @IsOptional()
   @IsString()
   checkInAt?: string;
+
   @IsOptional()
   @IsString()
   checkOutAt?: string;
+
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   workedMinutes?: number;
+
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   lateMinutes?: number;
+
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   earlyLeaveMinutes?: number;
+
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   otMinutes?: number;
+
   @IsOptional()
+  @IsEnum(AttendanceDayStatus)
+  status?: AttendanceDayStatus;
+
   @IsString()
-  status?: string;
-  @IsOptional()
-  @IsString()
-  reason?: string;
+  @MinLength(1)
+  reason!: string;
 }

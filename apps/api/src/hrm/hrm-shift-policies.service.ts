@@ -105,7 +105,7 @@ export class HrmShiftPoliciesService {
           organizationId,
           branchId: dto.branchId,
           name: dto.name.trim(),
-          code: dto.code.trim().toUpperCase(),
+          code: dto.code?.trim().toUpperCase(),
           ...fields,
           effectiveFrom,
           effectiveTo: dto.effectiveTo ? new Date(dto.effectiveTo) : undefined,
