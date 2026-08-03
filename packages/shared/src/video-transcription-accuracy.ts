@@ -250,7 +250,7 @@ export function detectSuspiciousSegments(
   return merged.map((s) => {
     let start = s.start;
     let end = s.end;
-    let dur = end - start;
+    const dur = end - start;
     if (dur < 20) {
       const mid = (start + end) / 2;
       start = Math.max(0, mid - 10);
@@ -401,6 +401,7 @@ export function spliceSegmentText(
   const oldWords = tokenizeWords(old);
   if (oldWords.length < 2) return fullText;
   const plain = words.filter((w) => !/^\s+$/.test(w));
+  void plain;
   // Fall back: append nothing, return glossary-corrected full text only
   return fullText;
 }

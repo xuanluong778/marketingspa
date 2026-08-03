@@ -90,6 +90,7 @@ export function nextQuietHoursEnd(
   }
 
   const targetLocal = new Date(Date.UTC(z.year, z.month - 1, z.day + dayOffset, end.h, end.m, 0));
+  void targetLocal;
 
   // Convert "wall clock in TZ" → UTC via iterative offset estimate
   return zonedLocalToUtc(z.year, z.month, z.day + dayOffset, end.h, end.m, timeZone);

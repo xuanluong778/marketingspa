@@ -27,20 +27,23 @@ function parseNum(value?: string | number | null): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-function sumActions(
+function _sumActions(
   actions: Array<{ action_type: string; value: string }> | undefined,
   types: Set<string>,
 ): number {
   if (!actions?.length) return 0;
   return actions.filter((a) => types.has(a.action_type)).reduce((s, a) => s + parseNum(a.value), 0);
 }
+void _sumActions;
 
-const LEAD = new Set([
+const _LEAD = new Set([
   'lead',
   'onsite_conversion.lead_grouped',
   'offsite_conversion.fb_pixel_lead',
 ]);
-const PURCHASE = new Set(['purchase', 'omni_purchase', 'offsite_conversion.fb_pixel_purchase']);
+const _PURCHASE = new Set(['purchase', 'omni_purchase', 'offsite_conversion.fb_pixel_purchase']);
+void _LEAD;
+void _PURCHASE;
 
 export async function upsertMetaAdAccount(organizationId: string, account: MetaAdAccountDetail) {
   const externalId = account.id.startsWith('act_') ? account.id : `act_${account.account_id}`;
