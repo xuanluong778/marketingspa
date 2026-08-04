@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, apiUpload } from '@/lib/api-client';
+import { invalidateFanpageConnectionCaches } from '@/lib/invalidate-fanpage-connection-caches';
 import type {
   ChatbotBot,
   ChatbotChannel,
@@ -301,7 +302,7 @@ export function useConnectFacebookPage() {
         method: 'POST',
         body: JSON.stringify(body),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+    onSuccess: () => invalidateFanpageConnectionCaches(qc),
   });
 }
 
@@ -327,6 +328,6 @@ export function useDisconnectFacebookPage() {
   return useMutation({
     mutationFn: (id: string) =>
       apiClient(`/chatbot-cskh/facebook/pages/${id}`, { method: 'DELETE' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+    onSuccess: () => invalidateFanpageConnectionCaches(qc),
   });
 }

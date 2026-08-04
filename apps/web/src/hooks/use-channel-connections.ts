@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
+import { invalidateFanpageConnectionCaches } from '@/lib/invalidate-fanpage-connection-caches';
 
 export type ChannelConnectionStatus =
   | 'DISCONNECTED'
@@ -36,6 +37,8 @@ export function useChannelConnections() {
   return useQuery({
     queryKey: ['automation', 'channel-connections'],
     queryFn: () => apiClient<ChannelConnectionItem[]>('/automation/channel-connections'),
+    staleTime: 30_000,
+    refetchOnMount: true,
   });
 }
 
@@ -51,7 +54,7 @@ export function useConnectMessengerChannel() {
       method: 'POST',
       body: JSON.stringify(body),
     }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['automation', 'channel-connections'] }),
+    onSuccess: () => invalidateFanpageConnectionCaches(qc),
   });
 }
 
@@ -68,7 +71,7 @@ export function useConnectZaloChannel() {
         method: 'POST',
         body: JSON.stringify(body),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['automation', 'channel-connections'] }),
+    onSuccess: () => invalidateFanpageConnectionCaches(qc),
   });
 }
 
@@ -80,7 +83,7 @@ export function useTestChannelConnection() {
         `/automation/channel-connections/${id}/test`,
         { method: 'POST' },
       ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['automation', 'channel-connections'] }),
+    onSuccess: () => invalidateFanpageConnectionCaches(qc),
   });
 }
 
@@ -92,7 +95,7 @@ export function usePauseChannelConnection() {
         method: 'PATCH',
         body: JSON.stringify({ isPaused }),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['automation', 'channel-connections'] }),
+    onSuccess: () => invalidateFanpageConnectionCaches(qc),
   });
 }
 
@@ -101,7 +104,7 @@ export function useDeleteChannelConnection() {
   return useMutation({
     mutationFn: (id: string) =>
       apiClient(`/automation/channel-connections/${id}`, { method: 'DELETE' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['automation', 'channel-connections'] }),
+    onSuccess: () => invalidateFanpageConnectionCaches(qc),
   });
 }
 
@@ -113,7 +116,7 @@ export function useReconnectChannelConnection() {
         method: 'POST',
         body: JSON.stringify({ credentials }),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['automation', 'channel-connections'] }),
+    onSuccess: () => invalidateFanpageConnectionCaches(qc),
   });
 }
 
@@ -133,6 +136,6 @@ export function useSyncMessagingFromChatbot() {
           error?: string;
         }>;
       }>('/chatbot-cskh/facebook/pages/sync-messaging', { method: 'POST' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['automation', 'channel-connections'] }),
+    onSuccess: () => invalidateFanpageConnectionCaches(qc),
   });
 }

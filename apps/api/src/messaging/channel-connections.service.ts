@@ -48,24 +48,65 @@ export class ChannelConnectionsService {
   ) {}
 
   async list(organizationId: string) {
-    // Hydrate once when empty so UI reflects Fanpages already connected via Content/Chatbot OAuth
-    const existing = await this.prisma.messagingChannelConnection.count({
-      where: { organizationId },
-    });
-    if (existing === 0) {
-      try {
-        await this.syncFromOrgSources(organizationId);
-      } catch (e) {
-        this.logger.warn(
-          `Auto-hydrate channel connections failed: ${e instanceof Error ? e.message : String(e)}`,
-        );
-      }
+    try {
+      await this.hydrateMissingFromOrgSources(organizationId);
+    } catch (e) {
+      this.logger.warn(
+        `Auto-hydrate channel connections failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
     }
     const rows = await this.prisma.messagingChannelConnection.findMany({
       where: { organizationId },
       orderBy: [{ channel: 'asc' }, { displayName: 'asc' }],
     });
     return rows.map((r) => this.toPublic(r));
+  }
+
+  /**
+   * Đồng bộ khi Messaging thiếu Fanpage đã có ở Auto Post / Chatbot (idempotent).
+   * Không chỉ hydrate khi list rỗng — tránh bỏ sót sau khi đã có Zalo hoặc kết nối cũ.
+   */
+  private async hydrateMissingFromOrgSources(organizationId: string) {
+    const existing = await this.prisma.messagingChannelConnection.findMany({
+      where: { organizationId, channel: MessageChannel.MESSENGER },
+      select: { accountRef: true },
+    });
+    const have = new Set(existing.map((r) => r.accountRef));
+
+    const [chatbotPages, autoPostPages] = await Promise.all([
+      this.prisma.chatbotFacebookPage.findMany({
+        where: {
+          organizationId,
+          OR: [
+            { status: 'connected' },
+            { status: 'CONNECTED' },
+            { pageAccessTokenEncrypted: { not: '' } },
+          ],
+        },
+        select: { pageId: true },
+      }),
+      this.prisma.autoPostFacebookPage.findMany({
+        where: {
+          connection: {
+            organizationId,
+            status: AutoPostFacebookConnectionStatus.CONNECTED,
+          },
+        },
+        select: { pageId: true },
+      }),
+    ]);
+
+    const sourceIds = [
+      ...new Set([
+        ...chatbotPages.map((p) => p.pageId),
+        ...autoPostPages.map((p) => p.pageId),
+      ]),
+    ];
+    if (sourceIds.length === 0) return;
+    const missing = sourceIds.some((id) => !have.has(id));
+    if (!missing) return;
+
+    await this.syncFromOrgSources(organizationId);
   }
 
   /**
@@ -139,7 +180,7 @@ export class ChannelConnectionsService {
         },
       },
       include: {
-        connection: { select: { organizationId: true, status: true } },
+        connection: { select: { organizationId: true, status: true, scopes: true } },
       },
       orderBy: { updatedAt: 'desc' },
     });
@@ -166,6 +207,7 @@ export class ChannelConnectionsService {
             subscribeWebhook: true,
           },
           userId,
+          { grantedScopes: page.connection.scopes ?? [] },
         );
         results.push({
           pageId: page.pageId,
@@ -276,6 +318,7 @@ export class ChannelConnectionsService {
     organizationId: string,
     dto: ConnectMessengerChannelDto,
     userId?: string,
+    opts?: { grantedScopes?: string[] },
   ) {
     const pageId = dto.pageId.trim();
     const incomingToken = dto.pageAccessToken.trim();
@@ -315,6 +358,7 @@ export class ChannelConnectionsService {
             webhookSubscribed: dto.subscribeWebhook ?? existing.webhookSubscribed,
             lastSyncedAt: new Date(),
             isPaused: false,
+            metadata: this.mergeMessengerScopeMetadata(existing.metadata, opts?.grantedScopes),
           },
         });
         return this.toPublic(updated);
@@ -336,13 +380,26 @@ export class ChannelConnectionsService {
         userId,
         webhookSubscribed: dto.subscribeWebhook ?? false,
       });
-      await this.prisma.messagingChannelConnection.update({
+      const withMeta = await this.prisma.messagingChannelConnection.update({
         where: { id: row.id },
-        data: { lastSyncedAt: new Date() },
+        data: {
+          lastSyncedAt: new Date(),
+          metadata: this.mergeMessengerScopeMetadata(
+            (row as { metadata?: unknown }).metadata,
+            opts?.grantedScopes,
+          ),
+        },
       });
-      return { ...row, lastSyncedAt: new Date() };
+      return this.toPublic(withMeta);
     } catch (e) {
+      const reason = e instanceof Error ? e.message : String(e);
+      const lower = reason.toLowerCase();
+      const missingPerm =
+        lower.includes('permission') ||
+        lower.includes('thiếu quyền') ||
+        lower.includes('(#10)');
       // Fallback: lưu credentials + REAUTH_REQUIRED nếu Meta reject token
+      // Thiếu quyền Messenger → báo bổ sung quyền, không coi như mất toàn bộ kết nối.
       const encrypted = encryptSecret(JSON.stringify(credentials), this.getEncryptionKey());
       const row = await this.prisma.messagingChannelConnection.upsert({
         where: {
@@ -364,6 +421,12 @@ export class ChannelConnectionsService {
           webhookSubscribed: dto.subscribeWebhook ?? false,
           lastTestedAt: new Date(),
           lastSyncedAt: new Date(),
+          metadata: sanitizePublicMetadata({
+            missingMessengerPermission: missingPerm,
+            hint: missingPerm
+              ? 'Thiếu quyền Messenger (pages_messaging) — bổ sung quyền trên Meta, không cần kết nối lại toàn bộ.'
+              : reason.slice(0, 200),
+          }) as Prisma.InputJsonValue,
         },
         update: {
           displayName: dto.pageName,
@@ -373,6 +436,12 @@ export class ChannelConnectionsService {
           lastTestedAt: new Date(),
           lastSyncedAt: new Date(),
           isPaused: false,
+          metadata: sanitizePublicMetadata({
+            missingMessengerPermission: missingPerm,
+            hint: missingPerm
+              ? 'Thiếu quyền Messenger (pages_messaging) — bổ sung quyền trên Meta, không cần kết nối lại toàn bộ.'
+              : reason.slice(0, 200),
+          }) as Prisma.InputJsonValue,
         },
       });
       await this.audit.log({
@@ -385,11 +454,39 @@ export class ChannelConnectionsService {
           channel: MessageChannel.MESSENGER,
           accountRef: pageId,
           reauthRequired: true,
-          reason: e instanceof Error ? e.message : String(e),
+          missingMessengerPermission: missingPerm,
+          reason: reason.slice(0, 200),
         }) as Prisma.InputJsonValue,
       });
       return this.toPublic(row);
     }
+  }
+
+  /** Gắn metadata thiếu pages_messaging khi sync từ Auto Post (không log token). */
+  private mergeMessengerScopeMetadata(
+    existing: unknown,
+    grantedScopes?: string[],
+  ): Prisma.InputJsonValue | undefined {
+    if (!grantedScopes?.length) {
+      return existing && typeof existing === 'object'
+        ? (existing as Prisma.InputJsonValue)
+        : undefined;
+    }
+    const hasMessaging = grantedScopes.some(
+      (s) => s === 'pages_messaging' || s === 'pages_manage_metadata',
+    );
+    const base =
+      existing && typeof existing === 'object' && !Array.isArray(existing)
+        ? { ...(existing as Record<string, unknown>) }
+        : {};
+    return sanitizePublicMetadata({
+      ...base,
+      missingMessengerPermission: !hasMessaging,
+      hint: hasMessaging
+        ? undefined
+        : 'Thiếu quyền Messenger (pages_messaging) — bổ sung quyền trên Meta App Review / Login, không cần OAuth lại toàn bộ.',
+      sourceScopes: grantedScopes.filter((s) => s.startsWith('pages_')).slice(0, 20),
+    }) as Prisma.InputJsonValue;
   }
 
   async connectZaloOa(organizationId: string, dto: ConnectZaloChannelDto, userId?: string) {

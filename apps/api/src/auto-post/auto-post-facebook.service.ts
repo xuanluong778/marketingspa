@@ -295,6 +295,14 @@ export class AutoPostFacebookService {
     });
 
     this.logger.log(`Synced env Fanpage ${creds.pageId} for user ${user.id}`);
+    await this.syncPagesToMessaging(user.organizationId, user.id, [
+      {
+        pageId: creds.pageId,
+        pageName,
+        encryptedPageAccessToken: encryptedPageToken,
+        scopes: ['pages_manage_posts', 'env_page_token'],
+      },
+    ]);
     return this.getConnectionStatus(user.id, user.organizationId);
   }
 
@@ -1011,6 +1019,17 @@ export class AutoPostFacebookService {
     // Chọn lại Fanpage / đổi token — invalidate cache org
     await this.pageDetails.invalidateOrgCache(organizationId);
 
+    await this.syncPagesToMessaging(
+      organizationId,
+      userId,
+      accepted.map((a) => ({
+        pageId: a.page.id,
+        pageName: a.page.name,
+        encryptedPageAccessToken: a.encryptedPageAccessToken,
+        scopes: a.scopes,
+      })),
+    );
+
     const status = await this.getConnectionStatus(userId, organizationId);
     const connectedPages = accepted.map((a) => ({
       pageId: a.page.id,
@@ -1037,6 +1056,45 @@ export class AutoPostFacebookService {
       selectedPageIds: connectedPages.map((p) => p.pageId),
       failed: failedPages,
     };
+  }
+
+  /**
+   * Source of truth Auto Post → MessagingChannelConnection (idempotent upsert).
+   * Không log Page Token.
+   */
+  private async syncPagesToMessaging(
+    organizationId: string,
+    userId: string,
+    pages: Array<{
+      pageId: string;
+      pageName: string;
+      encryptedPageAccessToken: string;
+      scopes?: string[];
+    }>,
+  ) {
+    for (const page of pages) {
+      try {
+        const token = decryptSecret(page.encryptedPageAccessToken, this.getEncryptionKey());
+        if (!token?.trim()) continue;
+        await this.channelConnections.upsertMessengerFromChatbot(
+          organizationId,
+          {
+            pageId: page.pageId,
+            pageAccessToken: token,
+            pageName: page.pageName,
+            subscribeWebhook: true,
+          },
+          userId,
+          { grantedScopes: page.scopes },
+        );
+      } catch (e) {
+        this.logger.warn(
+          `syncPagesToMessaging failed pageId=${page.pageId}: ${
+            e instanceof Error ? e.message : String(e)
+          }`.slice(0, 220),
+        );
+      }
+    }
   }
 
   /** Ngắt riêng một Fanpage (DB row id) — không xóa toàn bộ connection nếu còn page khác. */

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
+import { invalidateFanpageConnectionCaches } from '@/lib/invalidate-fanpage-connection-caches';
 import type {
   AutoPostFacebookStatus,
   AutoPostFormState,
@@ -23,8 +24,8 @@ export function useAutoPostFacebookStatus() {
   return useQuery({
     queryKey: ['auto-post', 'facebook'],
     queryFn: () => apiClient<AutoPostFacebookStatus>(`${BASE}/facebook/status`),
-    staleTime: 60_000,
-    refetchOnMount: false,
+    staleTime: 30_000,
+    refetchOnMount: true,
     retry: 1,
   });
 }
@@ -103,7 +104,7 @@ export function useAutoPostList(status?: AutoPostStatus, industryId?: string) {
 export function useAutoPostMutations() {
   const qc = useQueryClient();
   const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ['auto-post'] });
+    invalidateFanpageConnectionCaches(qc);
   };
 
   const connectFacebook = useMutation({
