@@ -49,6 +49,8 @@ import {
   useUpdateChatbotSettings,
   useConnectFacebookPage,
   useDisconnectFacebookPage,
+  useSyncChatbotFacebookFromAutoPost,
+  useChatbotTakeover,
   useChatbotConversation,
 } from '@/hooks/use-chatbot-cskh';
 import { CHANNEL_LABELS, SOURCE_TYPE_LABELS, type ChatbotBot } from '@/types/chatbot-cskh';
@@ -122,6 +124,8 @@ export default function ChatbotCskhPage() {
   const updateSettings = useUpdateChatbotSettings();
   const connectFb = useConnectFacebookPage();
   const disconnectFb = useDisconnectFacebookPage();
+  const syncFbFromAutoPost = useSyncChatbotFacebookFromAutoPost();
+  const takeover = useChatbotTakeover();
 
   useEffect(() => {
     if (!selectedBotId && bots.data?.[0]?.id) {
@@ -411,7 +415,7 @@ export default function ChatbotCskhPage() {
                   <li>
                     Token Page:{' '}
                     {fbWebhook.data.tokenHealth === 'ok'
-                      ? 'OK'
+                      ? 'hợp lệ'
                       : fbWebhook.data.tokenHealth === 'expired'
                         ? 'HẾT HẠN / THIẾU QUYỀN'
                         : fbWebhook.data.tokenHealth === 'decode_failed'
@@ -420,23 +424,50 @@ export default function ChatbotCskhPage() {
                             ? 'thiếu'
                             : '—'}
                     {fbWebhook.data.tokenError ? ` (${fbWebhook.data.tokenError})` : ''}
+                    {' · '}Webhook verify:{' '}
+                    {fbWebhook.data.verifyTokenConfigured ? 'đã cấu hình' : 'thiếu'}
                     {' · '}Bot:{' '}
-                    {fbWebhook.data.botActive ? 'đang chạy' : 'chưa active / chưa gắn'}
+                    {fbWebhook.data.botActive ? 'ACTIVE' : 'chưa ACTIVE'}
+                    {' · '}AI:{' '}
+                    {fbWebhook.data.aiEnabled ? 'bật' : 'tắt'}
+                  </li>
+                  <li>
+                    subscribed_apps:{' '}
+                    {(fbWebhook.data.subscribedFields || []).join(', ') || '—'}
+                    {' · '}
+                    {fbWebhook.data.webhookSubscribed ? 'đã đăng ký' : 'chưa đăng ký'}
                   </li>
                   <li>
                     Realtime:{' '}
                     {fbWebhook.data.realtime?.connected
                       ? 'Redis OK'
                       : `Redis ${fbWebhook.data.realtime?.status || 'offline'}`}
-                    {' · '}Webhook gần nhất:{' '}
+                    {' · '}Lần nhận tin gần nhất:{' '}
                     {fbWebhook.data.lastWebhookAt
                       ? formatDateTime(fbWebhook.data.lastWebhookAt)
-                      : 'chưa nhận — Meta chưa đẩy tin'}
+                      : 'chưa nhận'}
+                    {' · '}Lỗi gần nhất:{' '}
+                    {fbWebhook.data.lastErrorCode || fbWebhook.data.lastWebhookError || 'không'}
                   </li>
                   <li className="break-all">
                     Callback URL: {fbWebhook.data.webhookUrl || '—'}
                   </li>
                 </ul>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={syncFbFromAutoPost.isPending}
+                  onClick={() => syncFbFromAutoPost.mutate()}
+                >
+                  {syncFbFromAutoPost.isPending
+                    ? 'Đang đồng bộ…'
+                    : 'Đồng bộ Fanpage từ Auto Post'}
+                </Button>
+                {syncFbFromAutoPost.isError && (
+                  <p className="text-sm text-red-700">
+                    {(syncFbFromAutoPost.error as Error)?.message || 'Đồng bộ thất bại'}
+                  </p>
+                )}
                 {(fbWebhook.data.hints?.length ?? 0) > 0 && (
                   <ul className="text-xs text-amber-800 list-disc pl-4 space-y-0.5">
                     {fbWebhook.data.hints!.map((h) => (
@@ -501,11 +532,14 @@ export default function ChatbotCskhPage() {
                 <span>
                   {p.pageName}
                   {p.webhookSubscribed === false && (
-                    <span className="ml-2 text-amber-600">· chưa nhận được tin nhắn</span>
+                    <span className="ml-2 text-amber-600">· webhook chưa đăng ký</span>
                   )}
                   {p.webhookSubscribed && (
-                    <span className="ml-2 text-emerald-700">· đang nhận tin nhắn</span>
+                    <span className="ml-2 text-emerald-700">· webhook OK</span>
                   )}
+                  <span className="ml-2 text-muted-foreground">
+                    · AI {p.aiEnabled ? 'bật' : 'tắt'}
+                  </span>
                 </span>
                 <Button size="sm" variant="ghost" onClick={() => disconnectFb.mutate(p.id)}>
                   Ngắt kết nối
@@ -583,6 +617,34 @@ export default function ChatbotCskhPage() {
             {!inboxId && (
               <p className="text-muted-foreground text-sm">Chọn hội thoại để xem chi tiết</p>
             )}
+            {inboxId && conversation.data && (
+              <div className="mb-3 flex flex-wrap items-center gap-2 border-b pb-2">
+                <span className="text-xs text-muted-foreground">
+                  {conversation.data.humanTakeover
+                    ? 'AI đang tạm dừng (human takeover)'
+                    : 'AI đang trả lời tự động'}
+                </span>
+                {conversation.data.humanTakeover ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={takeover.isPending}
+                    onClick={() => takeover.mutate({ id: inboxId, resumeBot: true })}
+                  >
+                    Bật lại AI
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={takeover.isPending}
+                    onClick={() => takeover.mutate({ id: inboxId, resumeBot: false })}
+                  >
+                    Nhân viên tiếp quản
+                  </Button>
+                )}
+              </div>
+            )}
             {conversation.data?.messages?.map((m) => (
               <div key={m.id} className={`mb-2 text-sm ${m.role === 'user' ? 'text-right' : ''}`}>
                 <span
@@ -591,7 +653,10 @@ export default function ChatbotCskhPage() {
                   {m.message}
                 </span>
                 {m.status ? (
-                  <p className="mt-0.5 text-[10px] text-muted-foreground">{m.status}</p>
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">
+                    {m.status}
+                    {m.errorCode ? ` · ${m.errorCode}` : ''}
+                  </p>
                 ) : null}
               </div>
             ))}

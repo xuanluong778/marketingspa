@@ -60,6 +60,7 @@ export interface ChatbotConversation {
   sessionId: string;
   channel: string;
   status: string;
+  humanTakeover?: boolean;
   visitorName?: string | null;
   visitorPhone?: string | null;
   updatedAt: string;
@@ -69,6 +70,7 @@ export interface ChatbotConversation {
     role: string;
     message: string;
     status?: string | null;
+    errorCode?: string | null;
     createdAt: string;
   }>;
   _count?: { messages: number };

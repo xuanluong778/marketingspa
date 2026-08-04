@@ -12,6 +12,7 @@ import {
   ChatbotBot,
   ChatbotBotStatus,
   ChatbotConversationStatus,
+  MessageChannel,
 } from '@marketingspa/database';
 import { PrismaService } from '../prisma/prisma.service';
 import { OpenAiService } from '../openai/openai.service';
@@ -23,6 +24,12 @@ import {
   CREDIT_EXHAUSTED_MESSAGE,
   NO_DATA_REPLY,
 } from './utils/chatbot-constants';
+import {
+  CSKH_FB_ERROR,
+  CSKH_FB_REQUIRED_SCOPES,
+  CSKH_FB_SUBSCRIBED_FIELDS,
+  CSKH_FB_SUBSCRIBED_FIELDS_LIST,
+} from './utils/chatbot-fb-errors';
 import { decodeStoredSecret, maskExternalId } from '../common/utils/token-security.util';
 
 type MetaMessagingEvent = {
@@ -190,10 +197,13 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
       verifyTokenConfigured,
       appSecretConfigured,
       signatureMode: appSecretConfigured ? 'required' : 'optional',
-      subscribedFields: ['messages', 'messaging_postbacks'],
+      subscribedFields: [...CSKH_FB_SUBSCRIBED_FIELDS_LIST],
+      requiredScopes: [...CSKH_FB_REQUIRED_SCOPES],
+      verifyOk: verifyTokenConfigured,
       connectedPageCount: connectedPages.length,
       webhookSubscribed: webhookOk,
       botActive,
+      aiEnabled: connectedPages.some((p) => p.aiEnabled),
       tokenHealth,
       tokenError,
       lastWebhookAt: this.lastWebhookAt?.toISOString() ?? null,
@@ -202,6 +212,7 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
         : null,
       lastWebhookEventId: this.lastWebhookEventId,
       lastWebhookError: this.lastWebhookError,
+      lastErrorCode: this.classifyErrorCode(this.lastWebhookError),
       processedCount: this.processedCount,
       skippedCount: this.skippedCount,
       pages: pageRows.map((p) => ({
@@ -228,6 +239,38 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
     };
   }
 
+  classifyErrorCode(raw: string | null | undefined): string | null {
+    if (!raw) return null;
+    const s = raw.toLowerCase();
+    if (s.includes('missing_scope') || s.includes('missing_permission') || s.includes('(#10)')) {
+      return CSKH_FB_ERROR.MISSING_SCOPE;
+    }
+    if (s.includes('token_expired') || s.includes('session has expired') || s.includes('190')) {
+      return CSKH_FB_ERROR.TOKEN_EXPIRED;
+    }
+    if (s.includes('subscribe') || s.includes('webhook_not')) {
+      return CSKH_FB_ERROR.WEBHOOK_NOT_SUBSCRIBED;
+    }
+    if (s.includes('openai') || s.includes('ai_error') || s.includes('llm')) {
+      return CSKH_FB_ERROR.OPENAI_ERROR;
+    }
+    if (s.includes('send_failed') || s.includes('messenger_send')) {
+      return CSKH_FB_ERROR.MESSENGER_SEND_FAILED;
+    }
+    if (
+      s.includes('standard_access') ||
+      s.includes('không phải là quản trị') ||
+      s.includes('not a admin') ||
+      s.includes('not an admin') ||
+      s.includes('tester')
+    ) {
+      return CSKH_FB_ERROR.MESSENGER_STANDARD_ACCESS;
+    }
+    if (s.includes('unmapped_page')) return CSKH_FB_ERROR.UNMAPPED_PAGE;
+    if (s.includes('missing_page_token')) return CSKH_FB_ERROR.MISSING_PAGE_TOKEN;
+    return raw.slice(0, 64);
+  }
+
   private buildStatusHints(input: {
     serverConfigured: boolean;
     connectedPageCount: number;
@@ -246,7 +289,7 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
     }
     if (input.connectedPageCount > 0 && !input.webhookOk) {
       hints.push(
-        'Fanpage chưa subscribe webhook (messages/messaging_postbacks). Thử kết nối lại.',
+        'Fanpage chưa subscribe webhook (messages, messaging_postbacks, message_deliveries, message_reads). Đồng bộ lại từ Auto Post.',
       );
     }
     if (input.connectedPageCount > 0 && !input.botActive) {
@@ -262,9 +305,10 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
     }
     if (!input.lastWebhookAt) {
       hints.push(
-        'Chưa nhận webhook thực tế từ Meta. Sau khi token OK, kết nối lại để subscribe messages/messaging_postbacks.',
+        'Chưa nhận webhook thực tế từ Meta. Sau khi token OK, đồng bộ Fanpage để subscribe đủ 4 field.',
       );
-    }    if (input.lastWebhookError) {
+    }
+    if (input.lastWebhookError) {
       hints.push(`Lỗi gần nhất: ${input.lastWebhookError}`);
     }
     return hints;
@@ -327,7 +371,7 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
   async validatePageToken(
     pageId: string,
     pageAccessToken: string,
-  ): Promise<{ ok: boolean; pageName?: string; error?: string }> {
+  ): Promise<{ ok: boolean; pageName?: string; error?: string; errorCode?: string }> {
     if (!pageId || !pageAccessToken) {
       return { ok: false, error: 'missing_page_id_or_token' };
     }
@@ -343,20 +387,90 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
       };
       if (!res.ok || data.error) {
         const msg = data.error?.message || `http_${res.status}`;
-        this.lastWebhookError =
-          data.error?.code === 190 ? 'token_expired_or_missing_permission' : msg.slice(0, 120);
-        return { ok: false, error: this.lastWebhookError };
+        const code =
+          data.error?.code === 190
+            ? CSKH_FB_ERROR.TOKEN_EXPIRED
+            : data.error?.code === 10
+              ? CSKH_FB_ERROR.MISSING_SCOPE
+              : CSKH_FB_ERROR.TOKEN_INVALID;
+        this.lastWebhookError = `${code}:${msg}`.slice(0, 160);
+        return { ok: false, error: this.lastWebhookError, errorCode: code };
       }
       if (data.id && data.id !== pageId) {
         return {
           ok: false,
           error: `token_page_mismatch:token_for_${data.id.slice(-4)}_expected_${pageId.slice(-4)}`,
+          errorCode: CSKH_FB_ERROR.TOKEN_INVALID,
           pageName: data.name,
         };
       }
       return { ok: true, pageName: data.name };
     } catch (err) {
-      return { ok: false, error: (err as Error).message };
+      return {
+        ok: false,
+        error: (err as Error).message,
+        errorCode: CSKH_FB_ERROR.TOKEN_INVALID,
+      };
+    }
+  }
+
+  /**
+   * Kiểm tra quyền tối thiểu cho Messenger CSKH qua debug_token.
+   * Không log access token.
+   */
+  async checkRequiredScopes(
+    pageAccessToken: string,
+  ): Promise<{ ok: boolean; granted: string[]; missing: string[]; errorCode?: string }> {
+    const appId = (this.config.get<string>('META_APP_ID') || '').trim();
+    const appSecret = this.getAppSecret();
+    if (!appId || !appSecret) {
+      // Không fail cứng nếu thiếu app credentials — probe /me đã chạy trước.
+      return { ok: true, granted: [], missing: [] };
+    }
+    try {
+      const params = new URLSearchParams({
+        input_token: pageAccessToken,
+        access_token: `${appId}|${appSecret}`,
+      });
+      const res = await fetch(
+        `https://graph.facebook.com/${this.graphVersion()}/debug_token?${params.toString()}`,
+      );
+      const body = (await res.json().catch(() => ({}))) as {
+        data?: { is_valid?: boolean; scopes?: string[]; error?: { message?: string } };
+        error?: { message?: string };
+      };
+      if (!res.ok || body.error || body.data?.error) {
+        return {
+          ok: false,
+          granted: [],
+          missing: [...CSKH_FB_REQUIRED_SCOPES],
+          errorCode: CSKH_FB_ERROR.TOKEN_INVALID,
+        };
+      }
+      if (body.data?.is_valid === false) {
+        return {
+          ok: false,
+          granted: [],
+          missing: [...CSKH_FB_REQUIRED_SCOPES],
+          errorCode: CSKH_FB_ERROR.TOKEN_EXPIRED,
+        };
+      }
+      const granted = (body.data?.scopes ?? []).map((s) => String(s));
+      const missing = CSKH_FB_REQUIRED_SCOPES.filter((s) => !granted.includes(s));
+      // pages_manage_metadata đôi khi không hiện trên page token dù subscribe OK — chỉ bắt buộc pages_messaging
+      const hardMissing = missing.filter((s) => s === 'pages_messaging');
+      if (hardMissing.length) {
+        this.lastWebhookError = `${CSKH_FB_ERROR.MISSING_SCOPE}:${hardMissing.join(',')}`;
+        return {
+          ok: false,
+          granted,
+          missing,
+          errorCode: CSKH_FB_ERROR.MISSING_SCOPE,
+        };
+      }
+      return { ok: true, granted, missing };
+    } catch {
+      return { ok: true, granted: [], missing: [] };
     }
   }
 
@@ -372,10 +486,7 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
         `https://graph.facebook.com/${this.graphVersion()}/${pageId}/subscribed_apps`,
       );
       url.searchParams.set('access_token', pageAccessToken);
-      url.searchParams.set(
-        'subscribed_fields',
-        'messages,messaging_postbacks,message_deliveries,message_reads',
-      );
+      url.searchParams.set('subscribed_fields', CSKH_FB_SUBSCRIBED_FIELDS);
 
       const res = await fetch(url.toString(), { method: 'POST' });
       const data = (await res.json().catch(() => ({}))) as {
@@ -387,10 +498,14 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
         this.logger.warn(
           `Subscribe webhook failed page=${pageId}: ${JSON.stringify(data).slice(0, 200)}`,
         );
-        this.lastWebhookError = data.error?.message || 'subscribe_failed';
+        this.lastWebhookError =
+          `${CSKH_FB_ERROR.WEBHOOK_NOT_SUBSCRIBED}:${data.error?.message || 'subscribe_failed'}`.slice(
+            0,
+            160,
+          );
       } else {
         this.logger.log(
-          `Subscribed page=${pageId} fields=messages,messaging_postbacks,message_deliveries,message_reads`,
+          `Subscribed page=${pageId} fields=${CSKH_FB_SUBSCRIBED_FIELDS}`,
         );
       }
       return ok;
@@ -430,9 +545,9 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
       const fbPage = await this.resolveFacebookPage(pageId);
       if (!fbPage) {
         this.skippedCount += 1;
-        this.lastWebhookError = `unmapped_page:${pageId.slice(-4)}`;
+        this.lastWebhookError = `${CSKH_FB_ERROR.UNMAPPED_PAGE}:${pageId.slice(-4)}`;
         this.logger.warn(
-          `No ChatbotFacebookPage mapping pageId=••••${pageId.slice(-4)} — connect Fanpage in Chatbot CSKH`,
+          `No ChatbotFacebookPage mapping pageId=••••${pageId.slice(-4)} — sync Fanpage from Auto Post`,
         );
         continue;
       }
@@ -600,40 +715,56 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
       fbPage.pageId,
     );
 
-    // Chống trùng: cùng mid trong 10 phút (lưu mid vào đầu message ẩn nếu cần)
+    const externalMessageId = eventId.slice(0, 128) || null;
+    if (externalMessageId) {
+      const byMid = await this.prisma.chatbotMessage.findFirst({
+        where: {
+          conversationId: conversation.id,
+          externalMessageId,
+        },
+        select: { id: true },
+      });
+      if (byMid) {
+        return { conversation, isDuplicate: true as const };
+      }
+    }
+
+    // Soft dedupe: cùng text trong 15s (Meta retry không có mid ổn định)
     const recentDup = await this.prisma.chatbotMessage.findFirst({
       where: {
         conversationId: conversation.id,
         role: 'user',
-        createdAt: { gte: new Date(Date.now() - 60_000) },
-        OR: [
-          { message: text.slice(0, 2000) },
-          { message: { startsWith: `[mid:${eventId.slice(0, 48)}]` } },
-        ],
+        message: text.slice(0, 2000),
+        createdAt: { gte: new Date(Date.now() - 15_000) },
       },
       orderBy: { createdAt: 'desc' },
     });
-    if (recentDup && recentDup.message === text.slice(0, 2000)) {
-      // Exact same text within 60s without mid — likely retry
-      const ageMs = Date.now() - recentDup.createdAt.getTime();
-      if (ageMs < 15_000) {
-        return { conversation, isDuplicate: true as const };
-      }
-    }
-    if (recentDup?.message?.startsWith(`[mid:${eventId.slice(0, 48)}]`)) {
+    if (recentDup) {
       return { conversation, isDuplicate: true as const };
     }
 
     const storedText = text.slice(0, 2000);
 
-    await this.prisma.chatbotMessage.create({
-      data: {
-        conversationId: conversation.id,
-        role: 'user',
-        message: storedText,
-        status: 'RECEIVED',
-      },
-    });
+    try {
+      await this.prisma.chatbotMessage.create({
+        data: {
+          conversationId: conversation.id,
+          role: 'user',
+          message: storedText,
+          status: 'RECEIVED',
+          externalMessageId,
+        },
+      });
+    } catch (err) {
+      // Unique (conversationId, externalMessageId) race
+      if (
+        err instanceof Error &&
+        /unique|Unique constraint/i.test(err.message)
+      ) {
+        return { conversation, isDuplicate: true as const };
+      }
+      throw err;
+    }
 
     await this.prisma.chatbotConversation.update({
       where: { id: conversation.id },
@@ -649,6 +780,14 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
       },
     });
 
+    await this.upsertMessengerContact({
+      organizationId: fbPage.organizationId,
+      pageId: fbPage.pageId,
+      psid,
+      conversationId: conversation.id,
+      displayName: conversation.visitorName || 'Khách Messenger',
+    });
+
     try {
       this.events.broadcastChatbotMessageNew(fbPage.organizationId, {
         conversationId: conversation.id,
@@ -662,7 +801,6 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
       this.logger.warn(`Realtime chatbot notify failed: ${(err as Error).message}`);
     }
 
-    // Đánh dấu đã nhận webhook thực tế
     if (!fbPage.webhookSubscribed) {
       await this.prisma.chatbotFacebookPage
         .update({
@@ -673,6 +811,49 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
     }
 
     return { conversation, isDuplicate: false as const };
+  }
+
+  private async upsertMessengerContact(params: {
+    organizationId: string;
+    pageId: string;
+    psid: string;
+    conversationId: string;
+    displayName: string;
+  }) {
+    const scopeKey = `messenger_page:${params.pageId}`.slice(0, 191);
+    try {
+      await this.prisma.messagingContactIdentity.upsert({
+        where: {
+          organizationId_integrationScopeKey_externalUserId: {
+            organizationId: params.organizationId,
+            integrationScopeKey: scopeKey,
+            externalUserId: params.psid,
+          },
+        },
+        create: {
+          organizationId: params.organizationId,
+          channel: MessageChannel.MESSENGER,
+          integrationScopeKey: scopeKey,
+          externalUserId: params.psid,
+          displayName: params.displayName,
+          chatbotConversationId: params.conversationId,
+          lastInboundAt: new Date(),
+          metadata: { pageId: params.pageId, source: 'chatbot_cskh' },
+        },
+        update: {
+          chatbotConversationId: params.conversationId,
+          lastInboundAt: new Date(),
+          displayName: params.displayName,
+        },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Contact upsert failed page=••••${params.pageId.slice(-4)}: ${(err as Error).message}`.slice(
+          0,
+          200,
+        ),
+      );
+    }
   }
 
   private async generateAndSendReply(params: {
@@ -687,7 +868,7 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
       this.decodePageToken(fbPage.pageAccessTokenEncrypted) || this.getMessengerPageToken();
 
     if (!pageToken) {
-      this.lastWebhookError = 'missing_page_token';
+      this.lastWebhookError = CSKH_FB_ERROR.MISSING_PAGE_TOKEN;
       this.logger.warn(`No page token for page=••••${fbPage.pageId.slice(-4)}`);
       await this.markNeedsStaff(conversationId);
       return;
@@ -695,6 +876,17 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
 
     if (!usage.allowed) {
       await this.sendText(fbPage.pageId, pageToken, psid, CREDIT_EXHAUSTED_MESSAGE);
+      await this.markNeedsStaff(conversationId);
+      return;
+    }
+
+    // Re-check takeover ngay trước AI (nhân viên có thể vừa tiếp quản)
+    const live = await this.prisma.chatbotConversation.findUnique({
+      where: { id: conversationId },
+      select: { humanTakeover: true },
+    });
+    if (live?.humanTakeover) {
+      this.lastWebhookError = CSKH_FB_ERROR.HUMAN_TAKEOVER;
       await this.markNeedsStaff(conversationId);
       return;
     }
@@ -732,6 +924,7 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
             model: input.model,
             temperature: input.temperature,
             maxTokens: 500,
+            timeoutMs: 12_000,
             messages: [
               { role: 'system', content: input.systemPrompt },
               ...input.history.slice(-8),
@@ -740,7 +933,13 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
           })
       : undefined;
 
-    let aiResult: { reply: string; usedAi: boolean; showLead: boolean; noData: boolean };
+    let aiResult: {
+      reply: string;
+      usedAi: boolean;
+      showLead: boolean;
+      noData: boolean;
+      blockedCode?: string;
+    };
     try {
       aiResult = await generateAiReply({
         bot: fbPage.bot,
@@ -750,10 +949,23 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
         settings,
         usageAllowed: usage.allowed,
         openAiChat,
+        maxRetries: 1,
       });
     } catch (err) {
       this.logger.warn(`FB AI error: ${(err as Error).message}`);
-      aiResult = { reply: NO_DATA_REPLY, usedAi: false, showLead: true, noData: true };
+      this.lastWebhookError = `${CSKH_FB_ERROR.OPENAI_ERROR}:${(err as Error).message}`.slice(0, 160);
+      aiResult = {
+        reply: NO_DATA_REPLY,
+        usedAi: false,
+        showLead: true,
+        noData: true,
+        blockedCode: CSKH_FB_ERROR.OPENAI_ERROR,
+      };
+    }
+
+    if (aiResult.blockedCode === 'ai_error' || aiResult.blockedCode === CSKH_FB_ERROR.OPENAI_ERROR) {
+      this.lastWebhookError =
+        this.lastWebhookError || `${CSKH_FB_ERROR.OPENAI_ERROR}:fallback`;
     }
 
     if (aiResult.showLead || aiResult.noData) {
@@ -780,9 +992,30 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
       });
     }
 
+    // Takeover lại trước khi gửi Messenger
+    const beforeSend = await this.prisma.chatbotConversation.findUnique({
+      where: { id: conversationId },
+      select: { humanTakeover: true },
+    });
+    if (beforeSend?.humanTakeover) {
+      await this.prisma.chatbotMessage.update({
+        where: { id: processingMsg.id },
+        data: {
+          message: 'Bot tạm dừng — nhân viên đang tiếp quản.',
+          status: 'FAILED',
+          errorCode: CSKH_FB_ERROR.HUMAN_TAKEOVER,
+        },
+      });
+      return;
+    }
+
     const sent = await this.sendText(fbPage.pageId, pageToken, psid, aiResult.reply);
     if (!sent) {
-      this.lastWebhookError = 'send_failed';
+      this.lastWebhookError =
+        this.lastWebhookError?.startsWith(CSKH_FB_ERROR.TOKEN_EXPIRED) ||
+        this.lastWebhookError?.startsWith(CSKH_FB_ERROR.MISSING_SCOPE)
+          ? this.lastWebhookError
+          : CSKH_FB_ERROR.MESSENGER_SEND_FAILED;
     }
 
     await this.prisma.chatbotMessage.update({
@@ -790,6 +1023,9 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
       data: {
         message: aiResult.reply.slice(0, 2000),
         status: sent ? 'SENT' : 'FAILED',
+        errorCode: sent
+          ? null
+          : this.classifyErrorCode(this.lastWebhookError) || CSKH_FB_ERROR.MESSENGER_SEND_FAILED,
       },
     });
 
@@ -901,15 +1137,25 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
         const body = await res.text();
         this.logger.warn(`Send FB message failed page=${pageId}: ${body.slice(0, 300)}`);
         if (body.includes('190') || body.toLowerCase().includes('session has expired')) {
-          this.lastWebhookError = 'token_expired';
-        } else if (body.includes('10') || body.includes('permission')) {
-          this.lastWebhookError = 'missing_permission';
+          this.lastWebhookError = CSKH_FB_ERROR.TOKEN_EXPIRED;
+        } else if (
+          body.includes('quản trị') ||
+          body.toLowerCase().includes('not a admin') ||
+          body.toLowerCase().includes('not an admin') ||
+          (body.includes('"code":10') && body.toLowerCase().includes('pages_messaging'))
+        ) {
+          this.lastWebhookError = CSKH_FB_ERROR.MESSENGER_STANDARD_ACCESS;
+        } else if (body.includes('10') || body.toLowerCase().includes('permission')) {
+          this.lastWebhookError = CSKH_FB_ERROR.MISSING_SCOPE;
+        } else {
+          this.lastWebhookError = CSKH_FB_ERROR.MESSENGER_SEND_FAILED;
         }
         return false;
       }
       return true;
     } catch (err) {
       this.logger.warn(`Send FB message exception page=${pageId}: ${(err as Error).message}`);
+      this.lastWebhookError = CSKH_FB_ERROR.MESSENGER_SEND_FAILED;
       return false;
     }
   }

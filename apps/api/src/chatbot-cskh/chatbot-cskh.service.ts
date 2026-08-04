@@ -28,6 +28,7 @@ import {
 import { buildEmbedCode, defaultGreeting, resolveEmbedApiUrl } from './utils/chatbot-constants';
 import { encodeStoredSecret } from '../common/utils/token-security.util';
 import { decryptSecret } from '../common/utils/encryption.util';
+import { CSKH_FB_ERROR, CSKH_FB_REQUIRED_SCOPES } from './utils/chatbot-fb-errors';
 import { ChatbotFacebookWebhookService } from './chatbot-facebook-webhook.service';
 import {
   formatDiagramNodeContent,
@@ -467,7 +468,17 @@ export class ChatbotCskhService {
       },
     });
     if (!conv) throw new NotFoundException('Không tìm thấy hội thoại');
-    return conv;
+    return {
+      ...conv,
+      messages: conv.messages.map((m) => ({
+        id: m.id,
+        role: m.role,
+        message: m.message,
+        status: m.status,
+        errorCode: m.errorCode,
+        createdAt: m.createdAt,
+      })),
+    };
   }
 
   /** Nhân viên tiếp quản — dừng bot, gán NV, cập nhật lead CRM nếu có */
@@ -478,13 +489,21 @@ export class ChatbotCskhService {
   ) {
     const conv = await this.getConversation(organizationId, conversationId);
     if (opts.resumeBot) {
-      return this.prisma.chatbotConversation.update({
+      const updated = await this.prisma.chatbotConversation.update({
         where: { id: conv.id },
         data: {
           humanTakeover: false,
           status: 'OPEN',
         },
       });
+      await this.prisma.chatbotMessage.create({
+        data: {
+          conversationId: conv.id,
+          role: 'system',
+          message: 'Đã bật lại AI cho hội thoại này.',
+        },
+      });
+      return updated;
     }
 
     const updated = await this.prisma.chatbotConversation.update({
@@ -580,19 +599,35 @@ export class ChatbotCskhService {
 
     const probe = await this.facebookWebhook.validatePageToken(pageId, pageAccessToken);
     if (!probe.ok) {
-      throw new BadRequestException(
-        probe.error === 'token_expired_or_missing_permission'
-          ? 'Page Access Token hết hạn hoặc thiếu quyền pages_messaging. Tạo token mới trên Meta rồi kết nối lại.'
-          : `Token Fanpage không hợp lệ: ${probe.error}`,
-      );
+      const code = probe.errorCode || CSKH_FB_ERROR.TOKEN_INVALID;
+      throw new BadRequestException({
+        code,
+        message:
+          code === CSKH_FB_ERROR.TOKEN_EXPIRED
+            ? 'Page Access Token hết hạn. Kết nối lại Fanpage qua Auto Post OAuth.'
+            : code === CSKH_FB_ERROR.MISSING_SCOPE
+              ? 'Thiếu quyền pages_messaging / pages_manage_metadata. Kết nối lại OAuth với đủ quyền.'
+              : `Token Fanpage không hợp lệ: ${probe.error}`,
+      });
     }
     if (probe.pageName) pageName = probe.pageName;
 
+    const scopes = await this.facebookWebhook.checkRequiredScopes(pageAccessToken);
+    if (!scopes.ok) {
+      throw new BadRequestException({
+        code: scopes.errorCode || CSKH_FB_ERROR.MISSING_SCOPE,
+        message: `Thiếu quyền: ${(scopes.missing.length ? scopes.missing : [...CSKH_FB_REQUIRED_SCOPES]).join(', ')}`,
+        missing: scopes.missing,
+      });
+    }
+
     const subscribed = await this.facebookWebhook.subscribePageWebhook(pageId, pageAccessToken);
     if (!subscribed) {
-      throw new BadRequestException(
-        'Không subscribe được webhook (messages, messaging_postbacks, message_deliveries, message_reads). Kiểm tra quyền pages_manage_metadata / pages_messaging và Callback URL Meta App.',
-      );
+      throw new BadRequestException({
+        code: CSKH_FB_ERROR.WEBHOOK_NOT_SUBSCRIBED,
+        message:
+          'Không subscribe được webhook (messages, messaging_postbacks, message_deliveries, message_reads). Kiểm tra quyền pages_manage_metadata / pages_messaging và Callback URL Meta App.',
+      });
     }
 
     const encryptionKey = this.config.get<string>('ENCRYPTION_KEY');
@@ -778,7 +813,18 @@ export class ChatbotCskhService {
             pageId: page.pageId,
             pageName: page.pageName,
             ok: false,
-            error: probe.error || 'token_invalid',
+            error: probe.errorCode || probe.error || CSKH_FB_ERROR.TOKEN_INVALID,
+          });
+          continue;
+        }
+
+        const scopes = await this.facebookWebhook.checkRequiredScopes(token);
+        if (!scopes.ok) {
+          results.push({
+            pageId: page.pageId,
+            pageName: page.pageName,
+            ok: false,
+            error: `${scopes.errorCode || CSKH_FB_ERROR.MISSING_SCOPE}:${scopes.missing.join(',')}`,
           });
           continue;
         }

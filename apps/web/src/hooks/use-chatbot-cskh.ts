@@ -49,7 +49,7 @@ export function useChatbotInbox() {
   return useQuery({
     queryKey: [...KEY, 'inbox'],
     queryFn: () => apiClient<ChatbotConversation[]>('/chatbot-cskh/inbox'),
-    refetchInterval: 10_000,
+    refetchInterval: 8_000,
   });
 }
 
@@ -58,7 +58,7 @@ export function useChatbotConversation(id: string | null) {
     queryKey: [...KEY, 'inbox', id],
     queryFn: () => apiClient<ChatbotConversation>(`/chatbot-cskh/inbox/${id}`),
     enabled: !!id,
-    refetchInterval: id ? 5_000 : false,
+    refetchInterval: id ? 3_000 : false,
   });
 }
 
@@ -114,8 +114,12 @@ export function useChatbotFacebookWebhookStatus() {
         lastWebhookPageIdMasked?: string | null;
         lastWebhookEventId?: string | null;
         lastWebhookError?: string | null;
+        lastErrorCode?: string | null;
         processedCount?: number;
         skippedCount?: number;
+        verifyOk?: boolean;
+        aiEnabled?: boolean;
+        requiredScopes?: string[];
         hints?: string[];
         pages?: Array<{
           id: string;
@@ -329,5 +333,29 @@ export function useDisconnectFacebookPage() {
     mutationFn: (id: string) =>
       apiClient(`/chatbot-cskh/facebook/pages/${id}`, { method: 'DELETE' }),
     onSuccess: () => invalidateFanpageConnectionCaches(qc),
+  });
+}
+
+export function useSyncChatbotFacebookFromAutoPost() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () =>
+      apiClient('/chatbot-cskh/facebook/pages/sync-messaging', { method: 'POST' }),
+    onSuccess: () => invalidateFanpageConnectionCaches(qc),
+  });
+}
+
+export function useChatbotTakeover() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (params: { id: string; resumeBot?: boolean; employeeId?: string }) =>
+      apiClient(`/chatbot-cskh/inbox/${params.id}/takeover`, {
+        method: 'POST',
+        body: JSON.stringify({
+          resumeBot: params.resumeBot === true,
+          employeeId: params.employeeId,
+        }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
   });
 }

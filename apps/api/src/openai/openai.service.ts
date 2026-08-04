@@ -11,6 +11,8 @@ export interface OpenAiChatParams {
   messages: OpenAiChatMessage[];
   maxTokens?: number;
   temperature?: number;
+  /** Abort fetch after N ms (default 20s). */
+  timeoutMs?: number;
 }
 
 export interface OpenAiStatus {
@@ -51,19 +53,34 @@ export class OpenAiService {
       throw new Error('OPENAI_API_KEY chưa được cấu hình');
     }
 
-    const res = await fetch(`${this.getBaseUrl()}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: params.model || this.getDefaultModel(),
-        messages: params.messages,
-        max_tokens: params.maxTokens ?? 500,
-        temperature: params.temperature ?? 0.4,
-      }),
-    });
+    const timeoutMs = params.timeoutMs ?? 20_000;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    let res: Response;
+    try {
+      res = await fetch(`${this.getBaseUrl()}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: params.model || this.getDefaultModel(),
+          messages: params.messages,
+          max_tokens: params.maxTokens ?? 500,
+          temperature: params.temperature ?? 0.4,
+        }),
+        signal: controller.signal,
+      });
+    } catch (err) {
+      clearTimeout(timer);
+      if ((err as Error).name === 'AbortError') {
+        throw new Error(`OpenAI timeout after ${timeoutMs}ms`);
+      }
+      throw err;
+    }
+    clearTimeout(timer);
 
     if (!res.ok) {
       let detail = '';

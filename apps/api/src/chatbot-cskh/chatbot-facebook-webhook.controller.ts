@@ -43,8 +43,13 @@ export class ChatbotFacebookWebhookController {
       verifyTokenConfigured: Boolean(this.webhook.getVerifyToken()),
       appSecretConfigured: Boolean(this.webhook.getAppSecret()),
       signatureMode: this.webhook.getAppSecret() ? 'required' : 'optional',
-      subscribedFields: ['messages', 'messaging_postbacks'],
-      note: 'Chatbot cần Page Access Token + Page ID. Khi có META_APP_SECRET, chữ ký X-Hub-Signature-256 bắt buộc (fail-closed).',
+      subscribedFields: [
+        'messages',
+        'messaging_postbacks',
+        'message_deliveries',
+        'message_reads',
+      ],
+      note: 'Chatbot dùng chung Fanpage Auto Post. Khi có META_APP_SECRET, chữ ký X-Hub-Signature-256 bắt buộc (fail-closed).',
     };
   }
 
