@@ -69,23 +69,57 @@ function buildYtDlpCommonArgs(): string[] {
 type YtDlpDownloadStrategy = {
   label: string;
   format: string;
+  merge?: string;
   playerClient?: string;
 };
 
-const YT_DLP_DOWNLOAD_STRATEGIES: YtDlpDownloadStrategy[] = [
+/** Prefer mergeable video+audio so users can download the video file. */
+const YT_DLP_YOUTUBE_STRATEGIES: YtDlpDownloadStrategy[] = [
   {
-    label: 'dash-audio-hq',
-    format: '140/251/ba[ext=m4a]/ba[ext=webm]/ba/bestaudio',
+    label: 'yt-mp4-720',
+    format: 'bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/best[height<=720]',
+    merge: 'mp4',
   },
   {
-    label: 'progressive-audio',
-    format: 'bestaudio[protocol^=http][vcodec=none]/best[height<=480]/best',
+    label: 'yt-best-720',
+    format: 'bv*[height<=720]+ba/b[height<=720]/best',
+    merge: 'mp4',
   },
   {
-    label: 'progressive-fallback',
+    label: 'yt-progressive',
     format: '18/best[height<=480]/best',
   },
 ];
+
+const YT_DLP_FACEBOOK_STRATEGIES: YtDlpDownloadStrategy[] = [
+  {
+    label: 'fb-mp4',
+    format: 'best[ext=mp4]/best[height<=720]/best',
+  },
+  {
+    label: 'fb-best',
+    format: 'best',
+  },
+];
+
+const YT_DLP_TIKTOK_STRATEGIES: YtDlpDownloadStrategy[] = [
+  {
+    label: 'tt-mp4',
+    format: 'download/best[ext=mp4]/best[height<=720]/best',
+  },
+  {
+    label: 'tt-best',
+    format: 'best',
+  },
+];
+
+export type RemoteVideoPlatform = 'youtube' | 'facebook' | 'tiktok';
+
+function strategiesForPlatform(platform: RemoteVideoPlatform): YtDlpDownloadStrategy[] {
+  if (platform === 'facebook') return YT_DLP_FACEBOOK_STRATEGIES;
+  if (platform === 'tiktok') return YT_DLP_TIKTOK_STRATEGIES;
+  return YT_DLP_YOUTUBE_STRATEGIES;
+}
 
 export function pass1Model(): string {
   return process.env.OPENAI_TRANSCRIBE_PASS1_MODEL?.trim() || 'whisper-1';
@@ -267,10 +301,69 @@ export async function sliceAudioWav(params: {
   }
 }
 
-/** Prefer highest-quality audio stream (no low-bitrate forced). Retries strategies on 403. */
-export async function downloadYoutubeHq(
+export type RemoteVideoMeta = {
+  title: string | null;
+  thumbnailUrl: string | null;
+  durationSeconds: number | null;
+  webpageUrl: string | null;
+};
+
+/** Probe public metadata via yt-dlp (no download). */
+export async function probeRemoteVideoMeta(
+  url: string,
+  platform: RemoteVideoPlatform,
+  timeoutMs = 60_000,
+): Promise<RemoteVideoMeta> {
+  const { stdout } = await runCmd(
+    ytDlpBin(),
+    [
+      ...buildYtDlpCommonArgs(),
+      '--skip-download',
+      '--no-warnings',
+      '--print',
+      '%(.{title,thumbnail,duration,webpage_url})j',
+      '--',
+      url,
+    ],
+    { timeoutMs },
+  );
+  const line = stdout
+    .split('\n')
+    .map((l) => l.trim())
+    .find((l) => l.startsWith('{'));
+  if (!line) {
+    throw Object.assign(new Error(`Không đọc được metadata ${platform}`), {
+      code: 'PROBE_FAILED',
+    });
+  }
+  let parsed: {
+    title?: string;
+    thumbnail?: string;
+    duration?: number;
+    webpage_url?: string;
+  };
+  try {
+    parsed = JSON.parse(line) as typeof parsed;
+  } catch {
+    throw Object.assign(new Error(`Metadata ${platform} không hợp lệ`), { code: 'PROBE_FAILED' });
+  }
+  const duration =
+    typeof parsed.duration === 'number' && Number.isFinite(parsed.duration)
+      ? parsed.duration
+      : null;
+  return {
+    title: parsed.title?.trim() || null,
+    thumbnailUrl: parsed.thumbnail?.trim() || null,
+    durationSeconds: duration,
+    webpageUrl: parsed.webpage_url?.trim() || null,
+  };
+}
+
+/** Download public video (YouTube / Facebook / TikTok) into workDir/source.*. */
+export async function downloadRemoteVideo(
   url: string,
   workDir: string,
+  platform: RemoteVideoPlatform,
   durationHint = 3600,
   maxFileBytes: number,
 ): Promise<string> {
@@ -278,7 +371,7 @@ export async function downloadYoutubeHq(
   const timeoutMs = cmdTimeoutForDuration(durationHint, 45 * 60 * 1000);
   let lastErr: Error | null = null;
 
-  for (const strategy of YT_DLP_DOWNLOAD_STRATEGIES) {
+  for (const strategy of strategiesForPlatform(platform)) {
     try {
       const args = [
         ...buildYtDlpCommonArgs(),
@@ -289,6 +382,9 @@ export async function downloadYoutubeHq(
         '-o',
         outTemplate,
       ];
+      if (strategy.merge) {
+        args.push('--merge-output-format', strategy.merge);
+      }
       if (strategy.playerClient) {
         args.push('--extractor-args', `youtube:player_client=${strategy.playerClient}`);
       }
@@ -299,7 +395,7 @@ export async function downloadYoutubeHq(
       const files = readdirSync(workDir).filter((f) => f.startsWith('source.'));
       if (!files.length) throw new Error('yt-dlp không tạo được file nguồn');
       console.log(
-        `[video-transcription] yt-dlp ok strategy=${strategy.label}` +
+        `[video-transcription] yt-dlp ok platform=${platform} strategy=${strategy.label}` +
           ` node=${ytDlpNodeBinary()}` +
           ` format=${strategy.format}`,
       );
@@ -308,10 +404,9 @@ export async function downloadYoutubeHq(
       const msg = err instanceof Error ? err.message : String(err);
       lastErr = err instanceof Error ? err : new Error(msg);
       console.warn(
-        `[video-transcription] yt-dlp strategy=${strategy.label} failed:`,
+        `[video-transcription] yt-dlp platform=${platform} strategy=${strategy.label} failed:`,
         msg.slice(0, 400),
       );
-      // Clean partial downloads before next strategy
       try {
         const { readdirSync, unlinkSync } = await import('fs');
         for (const f of readdirSync(workDir)) {
@@ -325,7 +420,17 @@ export async function downloadYoutubeHq(
     }
   }
 
-  throw lastErr ?? new Error('yt-dlp tải YouTube thất bại');
+  throw lastErr ?? new Error(`yt-dlp tải ${platform} thất bại`);
+}
+
+/** @deprecated use downloadRemoteVideo */
+export async function downloadYoutubeHq(
+  url: string,
+  workDir: string,
+  durationHint = 3600,
+  maxFileBytes: number,
+): Promise<string> {
+  return downloadRemoteVideo(url, workDir, 'youtube', durationHint, maxFileBytes);
 }
 
 export type SttResult = {

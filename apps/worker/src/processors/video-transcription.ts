@@ -3,9 +3,11 @@ import { join } from 'path';
 import type { Job } from 'bullmq';
 import {
   VIDEO_TRANSCRIPTION_LIMITS,
+  VIDEO_TRANSCRIPTION_TEMP_RETENTION_MS,
   buildChunkPlan,
   correctVietnameseTranscript,
   durationsMatch,
+  mapVideoDownloadError,
   mergeChunkTranscripts,
   parseGlossaryInput,
   sumCompletedChunkCoverage,
@@ -21,14 +23,16 @@ import {
   type Prisma,
 } from '@marketingspa/database';
 import {
-  downloadYoutubeHq,
+  downloadRemoteVideo,
   extractAudioHq,
   pass1Model,
   pass2Model,
   probeAudioMeta,
   probeDurationSeconds,
+  probeRemoteVideoMeta,
   sliceAudioWav,
   twoPassTranscribeChunk,
+  type RemoteVideoPlatform,
 } from '../lib/video-transcription-stt';
 
 function maxDurationSeconds(): number {
@@ -59,6 +63,15 @@ function findSourceFile(workDir: string): string | null {
   return files[0] ? join(workDir, files[0]) : null;
 }
 
+function toRemotePlatform(
+  sourceType: VideoTranscriptionSourceType,
+): RemoteVideoPlatform | null {
+  if (sourceType === VideoTranscriptionSourceType.YOUTUBE) return 'youtube';
+  if (sourceType === VideoTranscriptionSourceType.FACEBOOK) return 'facebook';
+  if (sourceType === VideoTranscriptionSourceType.TIKTOK) return 'tiktok';
+  return null;
+}
+
 async function setStage(
   id: string,
   stage: VideoTranscriptionStage,
@@ -71,12 +84,24 @@ async function setStage(
       status:
         stage === VideoTranscriptionStage.FAILED
           ? VideoTranscriptionStatus.FAILED
-          : stage === VideoTranscriptionStage.COMPLETED
-            ? VideoTranscriptionStatus.COMPLETED
-            : VideoTranscriptionStatus.PROCESSING,
+          : stage === VideoTranscriptionStage.CANCELLED
+            ? VideoTranscriptionStatus.CANCELLED
+            : stage === VideoTranscriptionStage.COMPLETED
+              ? VideoTranscriptionStatus.COMPLETED
+              : VideoTranscriptionStatus.PROCESSING,
       ...extra,
     },
   });
+}
+
+async function assertNotCancelled(id: string) {
+  const row = await prisma.videoTranscription.findUnique({
+    where: { id },
+    select: { cancelRequested: true, status: true },
+  });
+  if (row?.cancelRequested || row?.status === VideoTranscriptionStatus.CANCELLED) {
+    throw Object.assign(new Error('Job đã bị hủy'), { code: 'CANCELLED' });
+  }
 }
 
 function emptyProgress(
@@ -147,11 +172,26 @@ export async function processVideoTranscription(job: Job): Promise<{ id: string;
     return { id: payload.transcriptionId, ok: false };
   }
 
+  if (row.cancelRequested || row.status === VideoTranscriptionStatus.CANCELLED) {
+    removeDir(row.tempDir);
+    await prisma.videoTranscription.update({
+      where: { id: row.id },
+      data: {
+        status: VideoTranscriptionStatus.CANCELLED,
+        stage: VideoTranscriptionStage.CANCELLED,
+        tempDir: null,
+        errorCode: 'CANCELLED',
+        errorMessage: 'Job đã bị hủy',
+      },
+    });
+    return { id: row.id, ok: false };
+  }
+
   const workDir = row.tempDir;
-  let shouldCleanup = false;
   const onlyChunk = payload.chunkIndex;
   const glossary = parseGlossaryInput(row.glossaryTerms || []);
   const language = !row.language || row.language === 'auto' ? 'vi' : row.language;
+  const platform = toRemotePlatform(row.sourceType);
 
   try {
     await prisma.videoTranscription.update({
@@ -172,17 +212,62 @@ export async function processVideoTranscription(job: Job): Promise<{ id: string;
     const chunksDir = join(workDir, 'chunks');
     mkdirSync(chunksDir, { recursive: true });
 
+    await assertNotCancelled(row.id);
     await setStage(row.id, VideoTranscriptionStage.VALIDATING);
     let sourcePath = findSourceFile(workDir);
 
-    if (row.sourceType === VideoTranscriptionSourceType.YOUTUBE) {
+    if (platform) {
       if (!row.sourceUrl) {
-        throw Object.assign(new Error('Thiếu URL YouTube'), { code: 'NO_URL' });
+        throw Object.assign(new Error(`Thiếu URL ${platform}`), { code: 'NO_URL' });
       }
+      if (!row.sourceTitle || row.durationSeconds == null) {
+        try {
+          const meta = await probeRemoteVideoMeta(row.sourceUrl, platform);
+          if (meta.durationSeconds != null && meta.durationSeconds > maxDurationSeconds()) {
+            throw Object.assign(
+              new Error(`Video dài hơn ${Math.round(maxDurationSeconds() / 60)} phút`),
+              { code: 'DURATION_EXCEEDED' },
+            );
+          }
+          await prisma.videoTranscription.update({
+            where: { id: row.id },
+            data: {
+              sourceTitle: meta.title?.slice(0, 500) ?? row.sourceTitle,
+              thumbnailUrl: meta.thumbnailUrl?.slice(0, 2000) ?? row.thumbnailUrl,
+              durationSeconds:
+                meta.durationSeconds != null
+                  ? Math.ceil(meta.durationSeconds)
+                  : row.durationSeconds,
+            },
+          });
+        } catch (probeErr) {
+          const raw = probeErr instanceof Error ? probeErr.message : String(probeErr);
+          if ((probeErr as { code?: string })?.code === 'DURATION_EXCEEDED') throw probeErr;
+          const mapped = mapVideoDownloadError(platform, raw);
+          console.warn(`[video-transcription] probe soft-fail ${row.id}: ${mapped.message}`);
+        }
+      }
+
       if (!sourcePath) {
-        sourcePath = await downloadYoutubeHq(row.sourceUrl, workDir, 3600, maxFileBytes());
+        await assertNotCancelled(row.id);
+        await setStage(row.id, VideoTranscriptionStage.DOWNLOADING);
+        try {
+          sourcePath = await downloadRemoteVideo(
+            row.sourceUrl,
+            workDir,
+            platform,
+            row.durationSeconds || 3600,
+            maxFileBytes(),
+          );
+        } catch (dlErr) {
+          const raw = dlErr instanceof Error ? dlErr.message : String(dlErr);
+          const mapped = mapVideoDownloadError(platform, raw);
+          throw Object.assign(new Error(mapped.message), { code: mapped.code });
+        }
       }
     }
+
+    await assertNotCancelled(row.id);
 
     if (!sourcePath || !existsSync(sourcePath)) {
       throw Object.assign(new Error('Không tìm thấy file nguồn'), { code: 'SOURCE_MISSING' });
@@ -206,6 +291,7 @@ export async function processVideoTranscription(job: Job): Promise<{ id: string;
     const sourceMeta = await probeAudioMeta(sourcePath);
     console.log(
       `[video-transcription] source-audio id=${row.id}` +
+        ` platform=${platform || 'upload'}` +
         ` codec=${sourceMeta.codec}` +
         ` bitrate=${sourceMeta.bitRate}` +
         ` rate=${sourceMeta.sampleRate}` +
@@ -215,6 +301,7 @@ export async function processVideoTranscription(job: Job): Promise<{ id: string;
         ` pass1=${pass1Model()} pass2=${pass2Model()}`,
     );
 
+    await assertNotCancelled(row.id);
     await setStage(row.id, VideoTranscriptionStage.EXTRACTING_AUDIO);
     const audioPath = join(workDir, 'audio.wav');
     if (!existsSync(audioPath) || statSync(audioPath).size < 100) {
@@ -259,6 +346,7 @@ export async function processVideoTranscription(job: Job): Promise<{ id: string;
           wavSampleRate: wavMeta.sampleRate,
           language,
           glossary,
+          platform: platform || 'upload',
           pass1Model: pass1Model(),
           pass2Model: pass2Model(),
         } as unknown as Prisma.InputJsonValue,
@@ -266,6 +354,7 @@ export async function processVideoTranscription(job: Job): Promise<{ id: string;
     });
 
     logProgress('plan', row.id, progress, `glossary=${glossary.length}`);
+    await assertNotCancelled(row.id);
     await setStage(row.id, VideoTranscriptionStage.TRANSCRIBING);
 
     const indices =
@@ -274,7 +363,6 @@ export async function processVideoTranscription(job: Job): Promise<{ id: string;
         : progress.chunks.filter((c) => c.status !== 'completed').map((c) => c.index);
 
     let previousTail = '';
-    // Restore previous tail from already-completed earlier chunks
     for (const c of progress.chunks) {
       if (c.status === 'completed' && c.rawText) {
         previousTail = c.rawText.slice(-400);
@@ -282,6 +370,7 @@ export async function processVideoTranscription(job: Job): Promise<{ id: string;
     }
 
     for (const idx of indices) {
+      await assertNotCancelled(row.id);
       const plan = plans.find((p) => p.index === idx);
       const chunkState = progress.chunks.find((c) => c.index === idx);
       if (!plan || !chunkState) {
@@ -319,7 +408,7 @@ export async function processVideoTranscription(job: Job): Promise<{ id: string;
           language,
           glossary,
           previousTail,
-          videoTitle: row.originalFilename || row.sourceUrl,
+          videoTitle: row.sourceTitle || row.originalFilename || row.sourceUrl,
           chunkCount: progress.chunkCount,
         });
         allRetries.push(...retries);
@@ -344,6 +433,7 @@ export async function processVideoTranscription(job: Job): Promise<{ id: string;
           });
         }
       } catch (chunkErr) {
+        if ((chunkErr as { code?: string })?.code === 'CANCELLED') throw chunkErr;
         chunkState.status = 'failed';
         chunkState.error =
           chunkErr instanceof Error ? chunkErr.message.slice(0, 500) : 'CHUNK_FAILED';
@@ -408,6 +498,7 @@ export async function processVideoTranscription(job: Job): Promise<{ id: string;
       );
     }
 
+    await assertNotCancelled(row.id);
     await setStage(row.id, VideoTranscriptionStage.CLEANING);
     const merged = mergeChunkTranscripts(
       progress.chunks.map((c) => ({
@@ -438,7 +529,7 @@ export async function processVideoTranscription(job: Job): Promise<{ id: string;
       /* ignore */
     }
 
-    shouldCleanup = true;
+    const tempExpiresAt = new Date(Date.now() + VIDEO_TRANSCRIPTION_TEMP_RETENTION_MS);
     await prisma.videoTranscription.update({
       where: { id: row.id },
       data: {
@@ -459,6 +550,7 @@ export async function processVideoTranscription(job: Job): Promise<{ id: string;
           wavSampleRate: wavMeta.sampleRate,
           language,
           glossary,
+          platform: platform || 'upload',
           pass1Model: pass1Model(),
           pass2Model: pass2Model(),
           retries: allRetries,
@@ -468,15 +560,14 @@ export async function processVideoTranscription(job: Job): Promise<{ id: string;
         completedAt: new Date(),
         errorCode: null,
         errorMessage: null,
-        tempDir: null,
+        tempExpiresAt,
       },
     });
-    removeDir(workDir);
     logProgress(
       'completed',
       row.id,
       progress,
-      `retries=${allRetries.length} models=${pass1Model()}/${pass2Model()}`,
+      `retries=${allRetries.length} models=${pass1Model()}/${pass2Model()} tempUntil=${tempExpiresAt.toISOString()}`,
     );
     return { id: row.id, ok: true };
   } catch (err) {
@@ -485,6 +576,23 @@ export async function processVideoTranscription(job: Job): Promise<{ id: string;
       err && typeof err === 'object' && 'code' in err
         ? String((err as { code?: string }).code || 'PROCESS_FAILED')
         : 'PROCESS_FAILED';
+
+    if (code === 'CANCELLED') {
+      removeDir(workDir);
+      await prisma.videoTranscription.update({
+        where: { id: row.id },
+        data: {
+          status: VideoTranscriptionStatus.CANCELLED,
+          stage: VideoTranscriptionStage.CANCELLED,
+          errorCode: 'CANCELLED',
+          errorMessage: 'Job đã bị hủy',
+          tempDir: null,
+          tempExpiresAt: null,
+          completedAt: new Date(),
+        },
+      });
+      return { id: row.id, ok: false };
+    }
 
     const attempts = (job.attemptsMade ?? 0) + 1;
     const maxAttempts = job.opts.attempts ?? VIDEO_TRANSCRIPTION_LIMITS.maxAttempts;
@@ -502,13 +610,14 @@ export async function processVideoTranscription(job: Job): Promise<{ id: string;
         ...(finalFail && !keepTemp
           ? {
               tempDir: null,
+              tempExpiresAt: null,
               completedAt: new Date(),
             }
           : {}),
       },
     });
 
-    if ((finalFail && !keepTemp) || shouldCleanup) {
+    if (finalFail && !keepTemp) {
       removeDir(workDir);
     }
 

@@ -6,10 +6,12 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Param,
   ParseUUIDPipe,
   Patch,
   Post,
+  StreamableFile,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -24,6 +26,7 @@ import { VideoTranscriptionService } from './video-transcription.service';
 import {
   CreateVideoTranscriptionDto,
   PatchVideoTranscriptionTextDto,
+  ProbeVideoTranscriptionUrlDto,
   RetryVideoTranscriptionChunkDto,
 } from './dto/video-transcription.dto';
 import { videoTranscriptionUploadsRoot } from './video-transcription-files';
@@ -63,6 +66,11 @@ export class VideoTranscriptionController {
     return this.service.create(user, dto, file);
   }
 
+  @Post('probe-url')
+  probeUrl(@CurrentUser() user: AuthUser, @Body() dto: ProbeVideoTranscriptionUrlDto) {
+    return this.service.probeUrl(user, dto.url);
+  }
+
   @Get('glossary')
   getGlossary(@CurrentUser() user: AuthUser) {
     return this.service.getGlossary(user);
@@ -71,6 +79,25 @@ export class VideoTranscriptionController {
   @Get(':id')
   getById(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
     return this.service.getById(user, id);
+  }
+
+  @Get(':id/download-video')
+  async downloadVideo(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<StreamableFile> {
+    const { file } = await this.service.downloadVideo(user, id);
+    return file;
+  }
+
+  @Get(':id/download-transcript')
+  @Header('Content-Type', 'text/plain; charset=utf-8')
+  async downloadTranscript(
+    @CurrentUser() user: AuthUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<StreamableFile> {
+    const { file } = await this.service.downloadTranscript(user, id);
+    return file;
   }
 
   @Patch(':id')
@@ -85,6 +112,11 @@ export class VideoTranscriptionController {
   @Post(':id/retry')
   retry(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
     return this.service.retry(user, id);
+  }
+
+  @Post(':id/cancel')
+  cancel(@CurrentUser() user: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.service.cancel(user, id);
   }
 
   @Post(':id/retry-chunk')

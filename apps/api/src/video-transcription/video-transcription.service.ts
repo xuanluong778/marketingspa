@@ -5,8 +5,9 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  StreamableFile,
 } from '@nestjs/common';
-import { createWriteStream } from 'fs';
+import { createReadStream, createWriteStream, existsSync, readdirSync, statSync } from 'fs';
 import { basename, extname, join } from 'path';
 import { pipeline } from 'stream/promises';
 import { Readable } from 'stream';
@@ -14,11 +15,14 @@ import type { Queue } from 'bullmq';
 import {
   VIDEO_TRANSCRIPTION_LIMITS,
   classifyVideoSourceUrl,
+  isAllowedVideoTranscriptionHost,
   parseGlossaryInput,
   resolveDailyTranscriptionQuota,
   videoTranscriptionQueuePayloadSchema,
   type VideoTranscriptionQueuePayload,
+  type VideoUrlProbeResult,
 } from '@marketingspa/shared';
+import { assertPublicHttpUrl } from '@marketingspa/shared/dist/ssrf-fetch';
 import {
   VideoTranscriptionSourceType,
   VideoTranscriptionStage,
@@ -37,6 +41,7 @@ import {
   ensureOrgWorkDir,
   removeWorkDir,
 } from './video-transcription-files';
+import { probeVideoUrlMeta } from './video-transcription-remote';
 
 type UploadedFile = {
   fieldname: string;
@@ -79,9 +84,12 @@ export class VideoTranscriptionService {
     stage: VideoTranscriptionStage;
     sourceType: VideoTranscriptionSourceType;
     sourceUrl: string | null;
+    sourceTitle?: string | null;
+    thumbnailUrl?: string | null;
     originalFilename: string | null;
     language: string;
     ownershipConfirmed: boolean;
+    cancelRequested?: boolean;
     glossaryTerms?: string[];
     rawTranscript: string | null;
     cleanedTranscript: string | null;
@@ -98,6 +106,8 @@ export class VideoTranscriptionService {
     errorCode: string | null;
     errorMessage: string | null;
     attemptCount: number;
+    tempDir?: string | null;
+    tempExpiresAt?: Date | null;
     createdAt: Date;
     updatedAt: Date;
     completedAt: Date | null;
@@ -105,21 +115,26 @@ export class VideoTranscriptionService {
     const stageMap: Record<VideoTranscriptionStage, string> = {
       QUEUED: 'queued',
       VALIDATING: 'validating',
+      DOWNLOADING: 'downloading',
       EXTRACTING_AUDIO: 'extracting_audio',
       TRANSCRIBING: 'transcribing',
       CLEANING: 'cleaning',
       COMPLETED: 'completed',
       FAILED: 'failed',
+      CANCELLED: 'cancelled',
     };
     const statusMap: Record<VideoTranscriptionStatus, string> = {
       PENDING: 'pending',
       PROCESSING: 'processing',
       COMPLETED: 'completed',
       FAILED: 'failed',
+      CANCELLED: 'cancelled',
     };
     const sourceMap: Record<VideoTranscriptionSourceType, string> = {
       UPLOAD: 'upload',
       YOUTUBE: 'youtube',
+      FACEBOOK: 'facebook',
+      TIKTOK: 'tiktok',
     };
     const progress = row.chunkProgress as
       | {
@@ -141,15 +156,27 @@ export class VideoTranscriptionService {
         }
       | null;
 
+    const videoDownloadAvailable = Boolean(
+      row.tempDir &&
+        (!row.tempExpiresAt || row.tempExpiresAt.getTime() > Date.now()) &&
+        this.findSourceInDir(row.tempDir),
+    );
+    const transcriptDownloadAvailable = Boolean(
+      (row.cleanedTranscript || row.correctedTranscript || row.rawTranscript)?.trim(),
+    );
+
     return {
       id: row.id,
       status: statusMap[row.status],
       stage: stageMap[row.stage],
       sourceType: sourceMap[row.sourceType],
       sourceUrl: row.sourceUrl,
+      sourceTitle: row.sourceTitle ?? null,
+      thumbnailUrl: row.thumbnailUrl ?? null,
       originalFilename: row.originalFilename,
       language: row.language,
       ownershipConfirmed: row.ownershipConfirmed,
+      cancelRequested: row.cancelRequested ?? false,
       glossaryTerms: row.glossaryTerms ?? [],
       rawTranscript: row.rawTranscript,
       cleanedTranscript: row.cleanedTranscript,
@@ -179,12 +206,111 @@ export class VideoTranscriptionService {
       errorCode: row.errorCode,
       errorMessage: row.errorMessage,
       attemptCount: row.attemptCount,
+      videoDownloadAvailable,
+      transcriptDownloadAvailable,
+      tempExpiresAt: row.tempExpiresAt?.toISOString() ?? null,
       maxDurationSeconds: this.maxDurationSeconds(),
       maxFileBytes: this.maxFileBytes(),
       createdAt: row.createdAt.toISOString(),
       updatedAt: row.updatedAt.toISOString(),
       completedAt: row.completedAt?.toISOString() ?? null,
     };
+  }
+
+  private findSourceInDir(dir: string | null | undefined): string | null {
+    if (!dir || !existsSync(dir)) return null;
+    try {
+      const files = readdirSync(dir).filter((f) => f.startsWith('source.'));
+      return files[0] ? join(dir, files[0]) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private mapSourceType(
+    sourceType: string,
+  ): VideoTranscriptionSourceType {
+    if (sourceType === 'youtube') return VideoTranscriptionSourceType.YOUTUBE;
+    if (sourceType === 'facebook') return VideoTranscriptionSourceType.FACEBOOK;
+    if (sourceType === 'tiktok') return VideoTranscriptionSourceType.TIKTOK;
+    return VideoTranscriptionSourceType.UPLOAD;
+  }
+
+  async probeUrl(user: AuthUser, url: string): Promise<VideoUrlProbeResult> {
+    this.rateLimit.assertWithinLimit(
+      `video-transcription-probe:${user.organizationId}:${user.id}`,
+      VIDEO_TRANSCRIPTION_LIMITS.rateLimitMax * 2,
+      VIDEO_TRANSCRIPTION_LIMITS.rateLimitWindowMs,
+      'Bạn đã kiểm tra URL quá nhiều lần. Thử lại sau vài phút.',
+    );
+
+    const classified = classifyVideoSourceUrl(url);
+    if (!classified.ok || !classified.platform) {
+      return {
+        ok: false,
+        errorCode: classified.errorCode || 'UNSUPPORTED_URL',
+        message: classified.message || 'URL không được hỗ trợ',
+      };
+    }
+
+    try {
+      await assertPublicHttpUrl(url, {
+        skipCommerceHostBlock: true,
+        allowHost: isAllowedVideoTranscriptionHost,
+      });
+    } catch (err) {
+      const code =
+        err && typeof err === 'object' && 'code' in err
+          ? String((err as { code?: string }).code || 'SSRF_BLOCKED')
+          : 'SSRF_BLOCKED';
+      return {
+        ok: false,
+        platform: classified.platform,
+        errorCode: code,
+        message: err instanceof Error ? err.message : 'URL bị chặn vì lý do bảo mật',
+      };
+    }
+
+    try {
+      const meta = await probeVideoUrlMeta(url, classified.platform);
+      if (
+        meta.durationSeconds != null &&
+        meta.durationSeconds > this.maxDurationSeconds()
+      ) {
+        return {
+          ok: false,
+          platform: classified.platform,
+          sourceType: classified.platform,
+          url,
+          title: meta.title,
+          thumbnailUrl: meta.thumbnailUrl,
+          durationSeconds: meta.durationSeconds,
+          errorCode: 'DURATION_EXCEEDED',
+          message: `Video dài hơn ${Math.round(this.maxDurationSeconds() / 60)} phút.`,
+        };
+      }
+      return {
+        ok: true,
+        platform: classified.platform,
+        sourceType: classified.platform,
+        url,
+        title: meta.title,
+        thumbnailUrl: meta.thumbnailUrl,
+        durationSeconds: meta.durationSeconds,
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        platform: classified.platform,
+        sourceType: classified.platform,
+        url,
+        errorCode:
+          err && typeof err === 'object' && 'code' in err
+            ? String((err as { code?: string }).code || 'PROBE_FAILED')
+            : 'PROBE_FAILED',
+        message: err instanceof Error ? err.message : 'Không kiểm tra được URL',
+      };
+    }
   }
 
   async create(
@@ -214,13 +340,14 @@ export class VideoTranscriptionService {
     if (!hasFile && !sourceUrl) {
       throw new BadRequestException({
         code: 'SOURCE_REQUIRED',
-        message: 'Nhập link YouTube hoặc tải lên file video/audio.',
+        message:
+          'Nhập link YouTube / Facebook / TikTok công khai hoặc tải lên file video/audio.',
       });
     }
     if (hasFile && sourceUrl) {
       throw new BadRequestException({
         code: 'SOURCE_CONFLICT',
-        message: 'Chỉ chọn một nguồn: link YouTube hoặc file upload.',
+        message: 'Chỉ chọn một nguồn: link URL hoặc file upload.',
       });
     }
 
@@ -228,16 +355,27 @@ export class VideoTranscriptionService {
     let normalizedUrl: string | null = null;
     if (sourceUrl) {
       const classified = classifyVideoSourceUrl(sourceUrl);
-      if (!classified.ok || !classified.sourceType) {
+      if (!classified.ok || !classified.sourceType || classified.sourceType === 'upload') {
         throw new BadRequestException({
           code: classified.errorCode || 'UNSUPPORTED_URL',
           message: classified.message || 'URL không được hỗ trợ',
         });
       }
-      sourceType =
-        classified.sourceType === 'youtube'
-          ? VideoTranscriptionSourceType.YOUTUBE
-          : VideoTranscriptionSourceType.UPLOAD;
+      try {
+        await assertPublicHttpUrl(sourceUrl, {
+          skipCommerceHostBlock: true,
+          allowHost: isAllowedVideoTranscriptionHost,
+        });
+      } catch (err) {
+        throw new BadRequestException({
+          code:
+            err && typeof err === 'object' && 'code' in err
+              ? String((err as { code?: string }).code || 'SSRF_BLOCKED')
+              : 'SSRF_BLOCKED',
+          message: err instanceof Error ? err.message : 'URL bị chặn vì lý do bảo mật',
+        });
+      }
+      sourceType = this.mapSourceType(classified.sourceType);
       normalizedUrl = sourceUrl;
     }
 
@@ -284,6 +422,12 @@ export class VideoTranscriptionService {
         stage: VideoTranscriptionStage.QUEUED,
         sourceType,
         sourceUrl: normalizedUrl,
+        sourceTitle: dto.sourceTitle?.trim()?.slice(0, 500) || null,
+        thumbnailUrl: dto.thumbnailUrl?.trim()?.slice(0, 2000) || null,
+        durationSeconds:
+          dto.durationSeconds != null && Number.isFinite(dto.durationSeconds)
+            ? Math.ceil(dto.durationSeconds)
+            : null,
         originalFilename: hasFile && file ? basename(file.originalname).slice(0, 500) : null,
         language,
         ownershipConfirmed: true,
@@ -332,7 +476,122 @@ export class VideoTranscriptionService {
 
   async getById(user: AuthUser, id: string) {
     const row = await this.findOwned(user, id);
-    return this.toPublic(row);
+    await this.cleanupIfExpired(row);
+    const fresh = await this.findOwned(user, id);
+    return this.toPublic(fresh);
+  }
+
+  private async cleanupIfExpired(row: {
+    id: string;
+    tempDir: string | null;
+    tempExpiresAt: Date | null;
+  }) {
+    if (!row.tempDir || !row.tempExpiresAt) return;
+    if (row.tempExpiresAt.getTime() > Date.now()) return;
+    removeWorkDir(row.tempDir);
+    await this.prisma.videoTranscription.update({
+      where: { id: row.id },
+      data: { tempDir: null, tempExpiresAt: null },
+    });
+  }
+
+  async cancel(user: AuthUser, id: string) {
+    const row = await this.findOwned(user, id);
+    if (
+      row.status === VideoTranscriptionStatus.COMPLETED ||
+      row.status === VideoTranscriptionStatus.CANCELLED
+    ) {
+      throw new BadRequestException({
+        code: 'NOT_CANCELLABLE',
+        message: 'Job đã kết thúc — không thể hủy.',
+      });
+    }
+
+    this.rateLimit.assertWithinLimit(
+      `video-transcription-cancel:${user.organizationId}:${user.id}`,
+      VIDEO_TRANSCRIPTION_LIMITS.rateLimitMax,
+      VIDEO_TRANSCRIPTION_LIMITS.rateLimitWindowMs,
+      'Bạn đã hủy quá nhiều lần. Thử lại sau vài phút.',
+    );
+
+    for (const suffix of ['all', ...Array.from({ length: 64 }, (_, i) => String(i))]) {
+      try {
+        const bullJob = await this.queue.getJob(`video-transcription-${id}-${suffix}`);
+        if (bullJob) await bullJob.remove();
+      } catch {
+        /* ignore */
+      }
+    }
+
+    removeWorkDir(row.tempDir);
+    const updated = await this.prisma.videoTranscription.update({
+      where: { id: row.id },
+      data: {
+        cancelRequested: true,
+        status: VideoTranscriptionStatus.CANCELLED,
+        stage: VideoTranscriptionStage.CANCELLED,
+        errorCode: 'CANCELLED',
+        errorMessage: 'Job đã bị hủy bởi người dùng',
+        tempDir: null,
+        tempExpiresAt: null,
+        completedAt: new Date(),
+      },
+    });
+    return this.toPublic(updated);
+  }
+
+  async downloadVideo(user: AuthUser, id: string): Promise<{ file: StreamableFile; filename: string }> {
+    const row = await this.findOwned(user, id);
+    await this.cleanupIfExpired(row);
+    const fresh = await this.findOwned(user, id);
+    const source = this.findSourceInDir(fresh.tempDir);
+    if (!source || !existsSync(source)) {
+      throw new BadRequestException({
+        code: 'VIDEO_GONE',
+        message:
+          'File video tạm không còn (đã hết hạn hoặc chưa tải xong). Chỉ giữ tạm ~30 phút sau khi hoàn tất.',
+      });
+    }
+    const ext = extname(source) || '.mp4';
+    const filename = `video-${id.slice(0, 8)}${ext}`;
+    const stream = createReadStream(source);
+    return {
+      file: new StreamableFile(stream, {
+        type: 'application/octet-stream',
+        disposition: `attachment; filename="${filename}"`,
+        length: statSync(source).size,
+      }),
+      filename,
+    };
+  }
+
+  async downloadTranscript(
+    user: AuthUser,
+    id: string,
+  ): Promise<{ file: StreamableFile; filename: string }> {
+    const row = await this.findOwned(user, id);
+    const text = (
+      row.cleanedTranscript ||
+      row.correctedTranscript ||
+      row.rawTranscript ||
+      ''
+    ).trim();
+    if (!text) {
+      throw new BadRequestException({
+        code: 'TRANSCRIPT_EMPTY',
+        message: 'Chưa có transcript hợp lệ để tải.',
+      });
+    }
+    const filename = `transcript-${id.slice(0, 8)}.txt`;
+    const buf = Buffer.from(text, 'utf8');
+    return {
+      file: new StreamableFile(buf, {
+        type: 'text/plain; charset=utf-8',
+        disposition: `attachment; filename="${filename}"`,
+        length: buf.length,
+      }),
+      filename,
+    };
   }
 
   async updateText(user: AuthUser, id: string, cleanedTranscript: string) {
@@ -349,8 +608,11 @@ export class VideoTranscriptionService {
 
   async retry(user: AuthUser, id: string) {
     const row = await this.findOwned(user, id);
-    if (row.status !== VideoTranscriptionStatus.FAILED) {
-      throw new BadRequestException('Chỉ thử lại được job đã thất bại.');
+    if (
+      row.status !== VideoTranscriptionStatus.FAILED &&
+      row.status !== VideoTranscriptionStatus.CANCELLED
+    ) {
+      throw new BadRequestException('Chỉ thử lại được job đã thất bại hoặc đã hủy.');
     }
     if (row.attemptCount >= VIDEO_TRANSCRIPTION_LIMITS.maxAttempts) {
       throw new BadRequestException({
@@ -368,10 +630,9 @@ export class VideoTranscriptionService {
 
     await this.assertDailyQuota(user);
 
-    // Ensure work dir still usable for upload; YouTube can re-download
+    // Ensure work dir still usable for upload; remote URLs can re-download
     if (row.sourceType === VideoTranscriptionSourceType.UPLOAD) {
       const work = row.tempDir || ensureOrgWorkDir(user.organizationId, row.id).absolute;
-      const { readdirSync, existsSync } = await import('fs');
       if (!existsSync(work) || readdirSync(work).length === 0) {
         throw new BadRequestException({
           code: 'SOURCE_GONE',
@@ -391,12 +652,13 @@ export class VideoTranscriptionService {
       data: {
         status: VideoTranscriptionStatus.PENDING,
         stage: VideoTranscriptionStage.QUEUED,
+        cancelRequested: false,
         errorCode: null,
         errorMessage: null,
         rawTranscript: null,
         cleanedTranscript: null,
         completedAt: null,
-        // Keep chunkProgress so completed chunks can be reused
+        tempExpiresAt: null,
       },
     });
 
@@ -526,7 +788,7 @@ export class VideoTranscriptionService {
         organizationId: user.organizationId,
         userId: user.id,
         createdAt: { gte: start },
-        status: { not: VideoTranscriptionStatus.FAILED },
+        status: { notIn: [VideoTranscriptionStatus.FAILED, VideoTranscriptionStatus.CANCELLED] },
       },
     });
 

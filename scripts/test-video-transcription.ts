@@ -11,6 +11,8 @@ import {
   collapseRepeatedBlocks,
   durationsMatch,
   findOverlapWordCount,
+  isAllowedVideoTranscriptionHost,
+  mapVideoDownloadError,
   mergeChunkTranscripts,
   normalizeVietnameseTranscript,
   resolveDailyTranscriptionQuota,
@@ -21,10 +23,56 @@ import {
 function testClassify() {
   assert.equal(classifyVideoSourceUrl('https://www.youtube.com/watch?v=abc').ok, true);
   assert.equal(classifyVideoSourceUrl('https://youtu.be/abc').sourceType, 'youtube');
+  assert.equal(
+    classifyVideoSourceUrl('https://www.youtube.com/shorts/xyz123').sourceType,
+    'youtube',
+  );
   const fb = classifyVideoSourceUrl('https://www.facebook.com/watch/?v=1');
-  assert.equal(fb.ok, false);
-  assert.equal(fb.errorCode, 'FACEBOOK_SCRAPE_FORBIDDEN');
-  console.log('PASS classifyVideoSourceUrl');
+  assert.equal(fb.ok, true);
+  assert.equal(fb.sourceType, 'facebook');
+  const reel = classifyVideoSourceUrl('https://www.facebook.com/reel/123');
+  assert.equal(reel.sourceType, 'facebook');
+  const tt = classifyVideoSourceUrl('https://www.tiktok.com/@user/video/123');
+  assert.equal(tt.ok, true);
+  assert.equal(tt.sourceType, 'tiktok');
+  const bad = classifyVideoSourceUrl('https://example.com/video/1');
+  assert.equal(bad.ok, false);
+  assert.equal(bad.errorCode, 'UNSUPPORTED_URL');
+  const local = classifyVideoSourceUrl('http://localhost/x');
+  assert.equal(local.ok, false);
+  assert.equal(local.errorCode, 'LOCALHOST');
+  const priv = classifyVideoSourceUrl('http://127.0.0.1/x');
+  assert.equal(priv.ok, false);
+  assert.equal(priv.errorCode, 'PRIVATE_IP');
+  console.log('PASS classifyVideoSourceUrl (yt/fb/tt/shorts/ssrf hosts)');
+}
+
+function testPlatformErrors() {
+  const ytPrivate = mapVideoDownloadError('youtube', 'ERROR: Private video');
+  assert.equal(ytPrivate.code, 'PRIVATE_OR_RESTRICTED');
+  assert.ok(/YouTube/i.test(ytPrivate.message));
+  const ytBot = mapVideoDownloadError(
+    'youtube',
+    "Sign in to confirm you're not a bot. Use --cookies",
+  );
+  assert.equal(ytBot.code, 'PLATFORM_BOTCHECK');
+  const fbDrm = mapVideoDownloadError('facebook', 'DRM protected widevine');
+  assert.equal(fbDrm.code, 'DRM_OR_PROTECTED');
+  assert.ok(/Facebook/i.test(fbDrm.message));
+  const ttGone = mapVideoDownloadError('tiktok', 'Unsupported URL');
+  assert.equal(ttGone.code, 'UNSUPPORTED_OR_GONE');
+  assert.ok(/TikTok/i.test(ttGone.message));
+  const ttIp = mapVideoDownloadError('tiktok', 'Your IP address is blocked from accessing this post');
+  assert.equal(ttIp.code, 'PLATFORM_IP_BLOCKED');
+  console.log('PASS mapVideoDownloadError per platform');
+}
+
+function testHosts() {
+  assert.equal(isAllowedVideoTranscriptionHost('www.youtube.com'), true);
+  assert.equal(isAllowedVideoTranscriptionHost('vm.tiktok.com'), true);
+  assert.equal(isAllowedVideoTranscriptionHost('m.facebook.com'), true);
+  assert.equal(isAllowedVideoTranscriptionHost('evil.internal'), false);
+  console.log('PASS isAllowedVideoTranscriptionHost');
 }
 
 function testChunkPlan() {
@@ -144,7 +192,8 @@ function testQuotaLimits() {
     resolveDailyTranscriptionQuota(null, true),
     VIDEO_TRANSCRIPTION_LIMITS.dailyQuotaByPlan.trial,
   );
-  assert.ok(VIDEO_TRANSCRIPTION_LIMITS.maxDurationSeconds >= 35 * 60);
+  assert.equal(VIDEO_TRANSCRIPTION_LIMITS.maxDurationSeconds, 30 * 60);
+  assert.equal(VIDEO_TRANSCRIPTION_LIMITS.maxFileBytes, 500 * 1024 * 1024);
   assert.ok(VIDEO_TRANSCRIPTION_LIMITS.chunkSeconds >= 5 * 60);
   assert.ok(VIDEO_TRANSCRIPTION_LIMITS.overlapSeconds >= 5);
   console.log('PASS limits / quota');
@@ -159,6 +208,8 @@ function testFastSpeechWords() {
 }
 
 testClassify();
+testPlatformErrors();
+testHosts();
 testChunkPlan();
 testOverlapMerge();
 testAdLoop();

@@ -66,7 +66,17 @@ function isPrivateOrReservedIp(ip: string): boolean {
   return true;
 }
 
-export async function assertPublicHttpUrl(raw: string): Promise<URL> {
+export type AssertPublicHttpUrlOptions = {
+  /** Skip marketplace/social crawl blocklist (Facebook/TikTok/etc.). */
+  skipCommerceHostBlock?: boolean;
+  /** When set, hostname must pass this allowlist (after localhost/metadata checks). */
+  allowHost?: (hostname: string) => boolean;
+};
+
+export async function assertPublicHttpUrl(
+  raw: string,
+  opts?: AssertPublicHttpUrlOptions,
+): Promise<URL> {
   const trimmed = raw.trim();
   if (!trimmed) throw new SsrfValidationError('URL không được để trống.', 'EMPTY_URL');
 
@@ -92,9 +102,15 @@ export async function assertPublicHttpUrl(raw: string): Promise<URL> {
     throw new SsrfValidationError('Không cho phép host metadata / internal.', 'METADATA');
   }
 
-  const unsupported = detectUnsupportedCommerceHost(host);
-  if (unsupported) {
-    throw new SsrfValidationError(unsupported, 'UNSUPPORTED_HOST');
+  if (opts?.allowHost && !opts.allowHost(host)) {
+    throw new SsrfValidationError('Host không nằm trong danh sách được phép.', 'UNSUPPORTED_HOST');
+  }
+
+  if (!opts?.skipCommerceHostBlock) {
+    const unsupported = detectUnsupportedCommerceHost(host);
+    if (unsupported) {
+      throw new SsrfValidationError(unsupported, 'UNSUPPORTED_HOST');
+    }
   }
 
   if (isIP(host)) {

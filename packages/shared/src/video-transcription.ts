@@ -31,11 +31,13 @@ export const VIDEO_TRANSCRIPTION_LIMITS = {
 export const VIDEO_TRANSCRIPTION_STAGES = [
   'queued',
   'validating',
+  'downloading',
   'extracting_audio',
   'transcribing',
   'cleaning',
   'completed',
   'failed',
+  'cancelled',
 ] as const;
 
 export type VideoTranscriptionStage = (typeof VIDEO_TRANSCRIPTION_STAGES)[number];
@@ -45,13 +47,22 @@ export const VIDEO_TRANSCRIPTION_STATUSES = [
   'processing',
   'completed',
   'failed',
+  'cancelled',
 ] as const;
 
 export type VideoTranscriptionStatus = (typeof VIDEO_TRANSCRIPTION_STATUSES)[number];
 
-export const VIDEO_TRANSCRIPTION_SOURCE_TYPES = ['upload', 'youtube'] as const;
+export const VIDEO_TRANSCRIPTION_SOURCE_TYPES = [
+  'upload',
+  'youtube',
+  'facebook',
+  'tiktok',
+] as const;
 
 export type VideoTranscriptionSourceType = (typeof VIDEO_TRANSCRIPTION_SOURCE_TYPES)[number];
+
+/** Keep temp media briefly after complete so user can download video. */
+export const VIDEO_TRANSCRIPTION_TEMP_RETENTION_MS = 30 * 60 * 1000;
 
 export const VIDEO_TRANSCRIPTION_LANGUAGES = [
   'auto',
@@ -70,13 +81,130 @@ export type VideoTranscriptionLanguage = (typeof VIDEO_TRANSCRIPTION_LANGUAGES)[
 
 export const VIDEO_TRANSCRIPTION_STAGE_LABELS: Record<VideoTranscriptionStage, string> = {
   queued: 'Đang xếp hàng',
-  validating: 'Kiểm tra video',
+  validating: 'Kiểm tra link',
+  downloading: 'Tải video',
   extracting_audio: 'Tách âm thanh',
-  transcribing: 'Chuyển lời nói thành văn bản',
-  cleaning: 'Làm sạch',
+  transcribing: 'Nhận dạng lời nói',
+  cleaning: 'Làm sạch nội dung',
   completed: 'Hoàn tất',
   failed: 'Thất bại',
+  cancelled: 'Đã hủy',
 };
+
+export type VideoUrlProbeResult = {
+  ok: boolean;
+  platform?: Exclude<VideoTranscriptionSourceType, 'upload'>;
+  sourceType?: Exclude<VideoTranscriptionSourceType, 'upload'>;
+  url?: string;
+  title?: string | null;
+  thumbnailUrl?: string | null;
+  durationSeconds?: number | null;
+  errorCode?: string;
+  message?: string;
+};
+
+/** Hostname allowlist for video URL import (no private IP check here). */
+export function isAllowedVideoTranscriptionHost(hostname: string): boolean {
+  const host = hostname.replace(/^www\./, '').toLowerCase();
+  if (
+    host === 'youtube.com' ||
+    host === 'm.youtube.com' ||
+    host === 'youtu.be' ||
+    host === 'music.youtube.com' ||
+    host === 'youtube-nocookie.com'
+  ) {
+    return true;
+  }
+  if (
+    host === 'facebook.com' ||
+    host === 'm.facebook.com' ||
+    host === 'fb.watch' ||
+    host === 'fb.com' ||
+    host === 'web.facebook.com'
+  ) {
+    return true;
+  }
+  if (host === 'tiktok.com' || host === 'm.tiktok.com' || host === 'vm.tiktok.com') {
+    return true;
+  }
+  // Subdomains: *.facebook.com, *.tiktok.com, *.youtube.com
+  if (host.endsWith('.youtube.com') || host.endsWith('.facebook.com') || host.endsWith('.tiktok.com')) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Map yt-dlp / downloader stderr into clear per-platform errors (no DRM bypass hints).
+ */
+export function mapVideoDownloadError(
+  platform: Exclude<VideoTranscriptionSourceType, 'upload'> | 'unknown',
+  raw: string,
+): { code: string; message: string } {
+  const msg = (raw || '').toLowerCase();
+  const platLabel =
+    platform === 'youtube'
+      ? 'YouTube'
+      : platform === 'facebook'
+        ? 'Facebook'
+        : platform === 'tiktok'
+          ? 'TikTok'
+          : 'nguồn video';
+
+  if (/sign in to confirm|not a bot|cookies?-from-browser|pass cookies|bot.?check/i.test(msg)) {
+    return {
+      code: 'PLATFORM_BOTCHECK',
+      message:
+        platform === 'youtube'
+          ? 'YouTube yêu cầu xác minh (bot check). Cấu hình cookie yt-dlp hợp lệ trên server, hoặc tải video về máy rồi upload.'
+          : `${platLabel} chặn truy cập tự động (bot/IP). Hãy thử lại sau hoặc tải file về máy rồi upload.`,
+    };
+  }
+  if (/ip address is blocked|your ip|blocked from accessing/i.test(msg)) {
+    return {
+      code: 'PLATFORM_IP_BLOCKED',
+      message: `${platLabel} chặn IP máy chủ — không tải được. Hãy tải file về máy rồi upload.`,
+    };
+  }
+  if (
+    /private video|this video is private|login required|only available for|friends only|chỉ dành cho bạn bè|members.?only|authentication|cookies? are needed/i.test(
+      msg,
+    )
+  ) {
+    return {
+      code: 'PRIVATE_OR_RESTRICTED',
+      message: `Video ${platLabel} riêng tư / bị hạn chế — chỉ xử lý nội dung công khai hoặc nội dung bạn có quyền sử dụng. Hãy tải file về máy rồi upload.`,
+    };
+  }
+  if (/drm|widevine|encrypted|premium.?content|copyright|geo.?restrict|not available in your country/i.test(msg)) {
+    return {
+      code: 'DRM_OR_PROTECTED',
+      message: `Video ${platLabel} bị bảo vệ (DRM / giới hạn khu vực) — hệ thống không hỗ trợ vượt cơ chế bảo vệ.`,
+    };
+  }
+  if (/unsupported url|no video formats|unable to extract|extractor.*failed|offline/i.test(msg)) {
+    return {
+      code: 'UNSUPPORTED_OR_GONE',
+      message: `Không đọc được video ${platLabel} công khai từ URL này (có thể đã gỡ hoặc không phải video/Reel/Shorts).`,
+    };
+  }
+  if (/timed? ?out|timeout|socket/i.test(msg)) {
+    return {
+      code: 'DOWNLOAD_TIMEOUT',
+      message: `Hết thời gian chờ khi tải video từ ${platLabel}. Thử lại hoặc upload file.`,
+    };
+  }
+  if (/filesize|file is larger|max-filesize|quá lớn|too large/i.test(msg)) {
+    return {
+      code: 'FILE_TOO_LARGE',
+      message: `File video ${platLabel} vượt giới hạn dung lượng cho phép.`,
+    };
+  }
+  return {
+    code: 'DOWNLOAD_FAILED',
+    message: `Không tải được video từ ${platLabel}. ${raw.slice(0, 240) || 'Lỗi không xác định.'}`,
+  };
+}
 
 export const videoTranscriptionQueuePayloadSchema = z.object({
   organizationId: z.string().uuid(),
@@ -469,6 +597,7 @@ export function resolveDailyTranscriptionQuota(
 export function classifyVideoSourceUrl(url: string): {
   ok: boolean;
   sourceType?: VideoTranscriptionSourceType;
+  platform?: Exclude<VideoTranscriptionSourceType, 'upload'>;
   errorCode?: string;
   message?: string;
 } {
@@ -485,31 +614,85 @@ export function classifyVideoSourceUrl(url: string): {
   if (!['http:', 'https:'].includes(parsed.protocol)) {
     return { ok: false, errorCode: 'INVALID_URL', message: 'Chỉ chấp nhận http/https' };
   }
+  if (parsed.username || parsed.password) {
+    return {
+      ok: false,
+      errorCode: 'USERINFO',
+      message: 'URL không được chứa thông tin đăng nhập',
+    };
+  }
   const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
+  if (
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    host.endsWith('.local') ||
+    host.endsWith('.internal') ||
+    host === 'metadata.google.internal'
+  ) {
+    return {
+      ok: false,
+      errorCode: 'LOCALHOST',
+      message: 'Không cho phép localhost / host nội bộ / metadata',
+    };
+  }
+  // Block raw private/link-local IPs early (SSRF)
+  if (
+    /^(127\.|10\.|192\.168\.|169\.254\.|0\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/.test(host) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(host) ||
+    host === '::1' ||
+    host === '[::1]'
+  ) {
+    return {
+      ok: false,
+      errorCode: 'PRIVATE_IP',
+      message: 'Không cho phép IP nội bộ / đặc biệt',
+    };
+  }
+
   if (
     host === 'youtube.com' ||
     host === 'm.youtube.com' ||
     host === 'youtu.be' ||
-    host === 'music.youtube.com'
+    host === 'music.youtube.com' ||
+    host === 'youtube-nocookie.com' ||
+    host.endsWith('.youtube.com')
   ) {
-    return { ok: true, sourceType: 'youtube' };
+    // Accept watch, shorts, youtu.be, embed
+    const path = parsed.pathname.toLowerCase();
+    const isShorts = path.includes('/shorts/');
+    const isWatch = path.includes('/watch') || host === 'youtu.be' || path.includes('/embed/');
+    if (!isShorts && !isWatch && !parsed.searchParams.get('v') && host !== 'youtu.be') {
+      // Still allow generic youtube video URLs — yt-dlp will validate
+      if (!path || path === '/') {
+        return {
+          ok: false,
+          errorCode: 'INVALID_YOUTUBE_URL',
+          message: 'Link YouTube không hợp lệ — dùng /watch, /shorts hoặc youtu.be',
+        };
+      }
+    }
+    return { ok: true, sourceType: 'youtube', platform: 'youtube' };
   }
+
   if (
-    host.includes('facebook.com') ||
-    host.includes('fb.watch') ||
-    host.includes('fb.com') ||
-    host.includes('instagram.com')
+    host === 'facebook.com' ||
+    host === 'm.facebook.com' ||
+    host === 'web.facebook.com' ||
+    host === 'fb.watch' ||
+    host === 'fb.com' ||
+    host.endsWith('.facebook.com')
   ) {
-    return {
-      ok: false,
-      errorCode: 'FACEBOOK_SCRAPE_FORBIDDEN',
-      message:
-        'Không hỗ trợ tải tự động từ Facebook/Instagram. Hãy tải video/Reel về máy rồi upload file (chỉ dùng video bạn sở hữu hoặc có quyền).',
-    };
+    return { ok: true, sourceType: 'facebook', platform: 'facebook' };
   }
+
+  if (host === 'tiktok.com' || host === 'm.tiktok.com' || host === 'vm.tiktok.com' || host.endsWith('.tiktok.com')) {
+    return { ok: true, sourceType: 'tiktok', platform: 'tiktok' };
+  }
+
   return {
     ok: false,
     errorCode: 'UNSUPPORTED_URL',
-    message: 'Chỉ hỗ trợ link YouTube hoặc upload file video/audio trực tiếp.',
+    message:
+      'Chỉ hỗ trợ link YouTube (video/Shorts), Facebook (video/Reel/bài công khai), TikTok công khai, hoặc upload file.',
   };
 }

@@ -3546,21 +3546,26 @@ enum VideoTranscriptionStatus {
   PROCESSING
   COMPLETED
   FAILED
+  CANCELLED
 }
 
 enum VideoTranscriptionStage {
   QUEUED
   VALIDATING
+  DOWNLOADING
   EXTRACTING_AUDIO
   TRANSCRIBING
   CLEANING
   COMPLETED
   FAILED
+  CANCELLED
 }
 
 enum VideoTranscriptionSourceType {
   UPLOAD
   YOUTUBE
+  FACEBOOK
+  TIKTOK
 }
 
 /// Job lấy văn bản từ video/audio — tenant-scoped (user + organization)
@@ -3572,9 +3577,13 @@ model VideoTranscription {
   stage               VideoTranscriptionStage      @default(QUEUED)
   sourceType          VideoTranscriptionSourceType @map("source_type")
   sourceUrl           String?                      @map("source_url") @db.VarChar(2000)
+  sourceTitle         String?                      @map("source_title") @db.VarChar(500)
+  thumbnailUrl        String?                      @map("thumbnail_url") @db.VarChar(2000)
   originalFilename    String?                      @map("original_filename") @db.VarChar(500)
   language            String                       @default("auto") @db.VarChar(16)
   ownershipConfirmed  Boolean                      @default(false) @map("ownership_confirmed")
+  /// Soft-cancel flag — worker checks between stages/chunks
+  cancelRequested     Boolean                      @default(false) @map("cancel_requested")
   /// Tên riêng / từ chuyên ngành (user nhập + org glossary)
   glossaryTerms       String[]                     @default([]) @map("glossary_terms")
   rawTranscript       String?                      @map("raw_transcript") @db.Text
@@ -3600,6 +3609,8 @@ model VideoTranscription {
   /// Absolute temp work dir — xóa sau hoàn tất / fail cuối
   tempDir             String?                      @map("temp_dir") @db.VarChar(1000)
   workDirRelative     String?                      @map("work_dir_relative") @db.VarChar(500)
+  /// After complete, keep media until this time for download then wipe
+  tempExpiresAt       DateTime?                    @map("temp_expires_at")
   createdAt           DateTime                     @default(now()) @map("created_at")
   updatedAt           DateTime                     @updatedAt @map("updated_at")
   completedAt         DateTime?                    @map("completed_at")
@@ -3610,6 +3621,7 @@ model VideoTranscription {
   @@index([organizationId, userId, createdAt])
   @@index([organizationId, id])
   @@index([organizationId, status, createdAt])
+  @@index([tempExpiresAt])
   @@map("video_transcriptions")
 }
 

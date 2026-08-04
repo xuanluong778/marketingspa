@@ -1,10 +1,12 @@
 'use client';
 
+
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Check,
   Copy,
+  Download,
   FileText,
   Loader2,
   Pencil,
@@ -13,6 +15,7 @@ import {
   Sparkles,
   Upload,
   Wand2,
+  X,
 } from 'lucide-react';
 import {
   VIDEO_TRANSCRIPTION_STAGE_LABELS,
@@ -33,12 +36,19 @@ import {
 } from '@/components/ui/select';
 import { useCurrentUser } from '@/hooks/use-auth';
 import {
+  clearPersistedJobId,
+  loadPersistedJobId,
   stashTranscriptForArticle,
+  transcriptDownloadUrl,
+  useCancelVideoTranscription,
   useCreateVideoTranscription,
   usePatchVideoTranscriptionText,
+  useProbeVideoTranscriptionUrl,
   useRetryVideoTranscription,
   useRetryVideoTranscriptionChunk,
   useVideoTranscription,
+  videoDownloadUrl,
+  type VideoUrlProbeDto,
 } from '@/hooks/use-video-transcription';
 import {
   createHistoryId,
@@ -46,10 +56,11 @@ import {
 } from '@/lib/content-marketing-form';
 import { buildContentAutoPostHref } from '@/lib/content-auto-post-routes';
 import { formatMutationError } from '@/lib/format-mutation-error';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, apiDownload } from '@/lib/api-client';
 
 const PROGRESS_STAGES: VideoTranscriptionStage[] = [
   'validating',
+  'downloading',
   'extracting_audio',
   'transcribing',
   'cleaning',
@@ -69,8 +80,16 @@ const LANG_OPTIONS = [
 function stageIndex(stage: string): number {
   const i = PROGRESS_STAGES.indexOf(stage as VideoTranscriptionStage);
   if (stage === 'queued') return -1;
-  if (stage === 'failed') return -2;
+  if (stage === 'failed' || stage === 'cancelled') return -2;
   return i;
+}
+
+function formatDuration(sec: number | null | undefined): string {
+  if (sec == null || !Number.isFinite(sec)) return '—';
+  const s = Math.max(0, Math.round(sec));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${String(r).padStart(2, '0')}`;
 }
 
 export function VideoTranscriptionStudio() {
@@ -86,12 +105,20 @@ export function VideoTranscriptionStudio() {
   const [editing, setEditing] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [probe, setProbe] = useState<VideoUrlProbeDto | null>(null);
 
   const createMut = useCreateVideoTranscription();
   const retryMut = useRetryVideoTranscription();
+  const cancelMut = useCancelVideoTranscription();
   const retryChunkMut = useRetryVideoTranscriptionChunk();
   const patchMut = usePatchVideoTranscriptionText();
+  const probeMut = useProbeVideoTranscriptionUrl();
   const { data: job, isFetching } = useVideoTranscription(jobId, true);
+
+  useEffect(() => {
+    const persisted = loadPersistedJobId();
+    if (persisted) setJobId(persisted);
+  }, []);
 
   useEffect(() => {
     void apiClient<{ terms: string[] }>('/video-transcriptions/glossary')
@@ -113,14 +140,46 @@ export function VideoTranscriptionStudio() {
     }
   }, [job?.id, job?.status, job?.cleanedTranscript, job?.updatedAt]);
 
+  useEffect(() => {
+    const url = sourceUrl.trim();
+    if (!url || file) {
+      setProbe(null);
+      return;
+    }
+    const t = window.setTimeout(() => {
+      void probeMut
+        .mutateAsync(url)
+        .then((res) => setProbe(res))
+        .catch((err) =>
+          setProbe({
+            ok: false,
+            message: formatMutationError(err) || 'Không kiểm tra được URL',
+            errorCode: 'PROBE_FAILED',
+          }),
+        );
+    }, 600);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceUrl, file]);
+
   const busy =
-    createMut.isPending || retryMut.isPending || retryChunkMut.isPending || patchMut.isPending;
+    createMut.isPending ||
+    retryMut.isPending ||
+    cancelMut.isPending ||
+    retryChunkMut.isPending ||
+    patchMut.isPending;
   const currentStage = job?.stage ?? 'queued';
   const idx = stageIndex(currentStage);
+  const running =
+    !!job &&
+    job.status !== 'completed' &&
+    job.status !== 'failed' &&
+    job.status !== 'cancelled';
 
   const progressHint = useMemo(() => {
     if (!job) return null;
     if (job.status === 'failed') return job.errorMessage || 'Xử lý thất bại';
+    if (job.status === 'cancelled') return job.errorMessage || 'Đã hủy';
     if (job.status === 'completed') return 'Hoàn tất';
     return VIDEO_TRANSCRIPTION_STAGE_LABELS[currentStage as VideoTranscriptionStage] || 'Đang xử lý…';
   }, [job, currentStage]);
@@ -132,7 +191,11 @@ export function VideoTranscriptionStudio() {
       return;
     }
     if (!file && !sourceUrl.trim()) {
-      setMsg('Nhập link YouTube hoặc tải lên file video/audio.');
+      setMsg('Nhập link YouTube / Facebook / TikTok hoặc tải lên file video/audio.');
+      return;
+    }
+    if (!file && probe && !probe.ok) {
+      setMsg(probe.message || 'URL không hợp lệ — kiểm tra lại trước khi lấy văn bản.');
       return;
     }
     try {
@@ -142,6 +205,9 @@ export function VideoTranscriptionStudio() {
         ownershipConfirmed: ownership,
         glossary,
         file,
+        sourceTitle: probe?.title || undefined,
+        thumbnailUrl: probe?.thumbnailUrl || undefined,
+        durationSeconds: probe?.durationSeconds ?? undefined,
       });
       setJobId(res.id);
       setEditorText('');
@@ -149,7 +215,7 @@ export function VideoTranscriptionStudio() {
     } catch (err) {
       setMsg(formatMutationError(err) || 'Không tạo được yêu cầu');
     }
-  }, [ownership, file, sourceUrl, language, glossary, createMut]);
+  }, [ownership, file, sourceUrl, language, glossary, createMut, probe]);
 
   const handleCopy = useCallback(async () => {
     if (!editorText.trim()) return;
@@ -210,28 +276,84 @@ export function VideoTranscriptionStudio() {
     }
   }, [jobId, retryMut]);
 
+  const handleCancel = useCallback(async () => {
+    if (!jobId) return;
+    setMsg(null);
+    try {
+      await cancelMut.mutateAsync(jobId);
+      setMsg('Đã hủy job.');
+    } catch (err) {
+      setMsg(formatMutationError(err) || 'Hủy thất bại');
+    }
+  }, [jobId, cancelMut]);
+
+  const handleDownloadBlob = useCallback(async (path: string) => {
+    try {
+      const { blob, filename } = await apiDownload(path);
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(href);
+    } catch (err) {
+      setMsg(formatMutationError(err) || 'Tải file thất bại');
+    }
+  }, []);
+
   return (
     <div className="space-y-6 text-slate-900">
       <div className="rounded-xl border border-emerald-900/10 bg-white/90 p-5 shadow-sm">
         <div className="mb-4">
           <h2 className="text-lg font-semibold text-emerald-950">Lấy văn bản từ video</h2>
           <p className="mt-1 text-sm text-slate-600">
-            Dán link YouTube, hoặc tải video/audio trực tiếp (tối đa{' '}
-            {Math.round((job?.maxDurationSeconds || 30 * 60) / 60)} phút, 500MB). Facebook video/Reel:
-            tải file về máy rồi upload — hệ thống không scrape Facebook. Chỉ xử lý video bạn sở hữu
-            hoặc có quyền sử dụng.
+            Dán link YouTube (video/Shorts), Facebook (video/Reel/bài công khai), TikTok công khai,
+            hoặc tải file (tối đa {Math.round((job?.maxDurationSeconds || 30 * 60) / 60)} phút, 500MB).
+            Không hỗ trợ video riêng tư / DRM. Chỉ xử lý nội dung bạn sở hữu hoặc có quyền sử dụng.
           </p>
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2">
           <div className="space-y-2">
-            <Label>Link YouTube / Facebook video hoặc Reel</Label>
+            <Label>Link YouTube / Facebook / TikTok</Label>
             <Input
-              placeholder="https://www.youtube.com/watch?v=… (Facebook: vui lòng upload file)"
+              placeholder="https://www.youtube.com/watch?v=… · /shorts/… · facebook.com/… · tiktok.com/…"
               value={sourceUrl}
               disabled={busy || Boolean(file)}
               onChange={(e) => setSourceUrl(e.target.value)}
             />
+            {probeMut.isPending && sourceUrl.trim() && !file ? (
+              <p className="text-xs text-slate-500">
+                <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
+                Đang kiểm tra link…
+              </p>
+            ) : null}
+            {probe && !file ? (
+              <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+                {probe.ok ? (
+                  <div className="flex gap-3">
+                    {probe.thumbnailUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={probe.thumbnailUrl}
+                        alt=""
+                        className="h-16 w-28 rounded object-cover"
+                      />
+                    ) : null}
+                    <div className="min-w-0">
+                      <p className="font-medium text-slate-800 line-clamp-2">
+                        {probe.title || 'Không có tiêu đề'}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {probe.platform?.toUpperCase()} · {formatDuration(probe.durationSeconds)}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-amber-800">{probe.message}</p>
+                )}
+              </div>
+            ) : null}
           </div>
           <div className="space-y-2">
             <Label>Hoặc tải video/audio</Label>
@@ -323,7 +445,18 @@ export function VideoTranscriptionStudio() {
             )}
             Lấy văn bản
           </Button>
-          {job?.status === 'failed' ? (
+          {running ? (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={busy}
+              onClick={() => void handleCancel()}
+            >
+              <X className="mr-2 h-4 w-4" />
+              Hủy
+            </Button>
+          ) : null}
+          {job?.status === 'failed' || job?.status === 'cancelled' ? (
             <Button
               type="button"
               variant="outline"
@@ -334,6 +467,20 @@ export function VideoTranscriptionStudio() {
               Thử lại
             </Button>
           ) : null}
+          {jobId ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                clearPersistedJobId();
+                setJobId(null);
+                setEditorText('');
+              }}
+            >
+              Job mới
+            </Button>
+          ) : null}
         </div>
         {msg ? <p className="mt-3 text-sm text-amber-800">{msg}</p> : null}
       </div>
@@ -342,15 +489,31 @@ export function VideoTranscriptionStudio() {
         <div className="rounded-xl border border-emerald-900/10 bg-white/90 p-5 shadow-sm">
           <div className="mb-4 flex items-center justify-between gap-2">
             <h3 className="font-semibold text-emerald-950">Tiến trình</h3>
-            {isFetching && job?.status !== 'completed' && job?.status !== 'failed' ? (
+            {isFetching && running ? (
               <Loader2 className="h-4 w-4 animate-spin text-emerald-700" />
             ) : null}
           </div>
+          {(job?.sourceTitle || job?.thumbnailUrl) && (
+            <div className="mb-4 flex gap-3 rounded-lg border border-slate-100 bg-slate-50 p-3 text-sm">
+              {job.thumbnailUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={job.thumbnailUrl} alt="" className="h-14 w-24 rounded object-cover" />
+              ) : null}
+              <div className="min-w-0">
+                <p className="font-medium line-clamp-2">{job.sourceTitle || 'Video'}</p>
+                <p className="text-xs text-slate-500">
+                  {job.sourceType} · {formatDuration(job.durationSeconds)}
+                </p>
+              </div>
+            </div>
+          )}
           <ol className="space-y-2">
             {PROGRESS_STAGES.map((s, i) => {
               const done = job?.status === 'completed' || (idx >= 0 && i < idx);
-              const active = idx === i && job?.status !== 'completed' && job?.status !== 'failed';
-              const failed = job?.status === 'failed' && (idx === i || (idx < 0 && i === 0));
+              const active = idx === i && running;
+              const failed =
+                (job?.status === 'failed' || job?.status === 'cancelled') &&
+                (idx === i || (idx < 0 && i === 0));
               return (
                 <li
                   key={s}
@@ -433,6 +596,30 @@ export function VideoTranscriptionStudio() {
               Kết quả
             </h3>
             <div className="video-transcription-actions flex flex-wrap gap-2">
+              {jobId && job?.videoDownloadAvailable ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="text-white [&_svg]:text-white"
+                  onClick={() => void handleDownloadBlob(videoDownloadUrl(jobId))}
+                >
+                  <Download className="mr-1 h-3.5 w-3.5" />
+                  Tải video
+                </Button>
+              ) : null}
+              {jobId && (job?.transcriptDownloadAvailable || editorText.trim()) ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="text-white [&_svg]:text-white"
+                  onClick={() => void handleDownloadBlob(transcriptDownloadUrl(jobId))}
+                >
+                  <Download className="mr-1 h-3.5 w-3.5" />
+                  Tải .txt
+                </Button>
+              ) : null}
               <Button
                 type="button"
                 variant="outline"
@@ -506,7 +693,6 @@ export function VideoTranscriptionStudio() {
         </div>
       ) : null}
 
-      {/* Keep stage list referenced for tree-shaking safety with shared package */}
       <span className="hidden">{VIDEO_TRANSCRIPTION_STAGES.join(',')}</span>
     </div>
   );
