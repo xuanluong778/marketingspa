@@ -122,8 +122,11 @@ export function buildFacebookPostUrl(
     const [pid, storyId] = facebookPostId.split('_');
     const usePage = pageId || pid;
     if (usePage && storyId) {
-      return `https://www.facebook.com/${usePage}/posts/${storyId}`;
+      // permalink.php ổn định hơn /{pageId}/posts/{storyId} (page id công khai có thể khác Graph id)
+      return `https://www.facebook.com/permalink.php?story_fbid=${encodeURIComponent(storyId)}&id=${encodeURIComponent(usePage)}`;
     }
   }
+  if (/^https?:\/\//i.test(facebookPostId)) return facebookPostId;
   return `https://www.facebook.com/${facebookPostId}`;
 }
+

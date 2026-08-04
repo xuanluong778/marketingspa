@@ -96,6 +96,7 @@ export function AdvancedPostStudio({
   const [draftLoaded, setDraftLoaded] = useState(false);
   const [isCreatingLoading, setIsCreatingLoading] = useState(false);
   const [contentPreviewOpen, setContentPreviewOpen] = useState(false);
+  const [analysisExpanded, setAnalysisExpanded] = useState(false);
   const resultSectionRef = useRef<HTMLDivElement>(null);
   const scrollToResultLockRef = useRef(false);
 
@@ -212,6 +213,7 @@ export function AdvancedPostStudio({
     if (isCreatingLoading || generateAdvanced.isPending) return;
     setIsCreatingLoading(true);
     setResult(null);
+    setAnalysisExpanded(false);
     try {
       const data = await generateAdvanced.mutateAsync(form);
       setResult(data);
@@ -699,8 +701,11 @@ export function AdvancedPostStudio({
               {result.analysis_16_steps.length > 0 && (
                 <div className="rounded-xl border border-white/20 bg-[#0A3D30] p-4 text-white md:p-5">
                   <h4 className="mb-3 font-semibold text-white">Phân tích khung 16 bước</h4>
-                  <div className="max-h-[360px] space-y-2 overflow-y-auto">
-                    {result.analysis_16_steps.map((step) => (
+                  <div className="space-y-2">
+                    {(analysisExpanded
+                      ? result.analysis_16_steps
+                      : result.analysis_16_steps.slice(0, 5)
+                    ).map((step) => (
                       <div key={step.step} className="rounded-lg bg-white/10 px-3 py-2 text-sm">
                         <span className="font-medium text-orange-300">Bước {step.step}:</span>{' '}
                         <span className="text-white/85">{step.label}</span>
@@ -708,6 +713,19 @@ export function AdvancedPostStudio({
                       </div>
                     ))}
                   </div>
+                  {result.analysis_16_steps.length > 5 ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="mt-3 w-full text-white hover:bg-white/10 hover:text-[#F97316]"
+                      onClick={() => setAnalysisExpanded((v) => !v)}
+                    >
+                      {analysisExpanded
+                        ? 'Thu gọn'
+                        : `Xem chi tiết (${result.analysis_16_steps.length} bước)`}
+                    </Button>
+                  ) : null}
                 </div>
               )}
 

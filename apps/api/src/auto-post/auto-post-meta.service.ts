@@ -30,6 +30,7 @@ export type { MetaPageAccountParsed as MetaPageAccount };
 
 export interface MetaPublishResult {
   id: string;
+  permalinkUrl?: string | null;
 }
 
 @Injectable()
@@ -257,33 +258,204 @@ export class AutoPostMetaService {
       this.logger.log(`publish media normalize: ${media.note}`);
     }
 
+    let published: MetaPublishResult;
     if (media.imageUrl) {
       const params = new URLSearchParams({
         url: media.imageUrl,
         caption: payload.message,
+        published: 'true',
         access_token: pageAccessToken,
       });
       const res = await fetch(
         `https://graph.facebook.com/${this.apiVersion}/${pageId}/photos?${params.toString()}`,
         { method: 'POST' },
       );
-      return this.parsePublishResponse(res);
+      published = await this.parsePublishResponse(res);
+    } else {
+      const body: Record<string, string> = {
+        message: payload.message,
+        published: 'true',
+        access_token: pageAccessToken,
+      };
+      if (media.linkUrl) {
+        body.link = media.linkUrl;
+      }
+
+      const res = await fetch(`https://graph.facebook.com/${this.apiVersion}/${pageId}/feed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      published = await this.parsePublishResponse(res);
     }
 
-    const body: Record<string, string> = {
-      message: payload.message,
-      access_token: pageAccessToken,
-    };
-    if (media.linkUrl) {
-      body.link = media.linkUrl;
-    }
+    const permalinkUrl = await this.fetchPostPermalink(published.id, pageAccessToken);
+    return { ...published, permalinkUrl };
+  }
 
-    const res = await fetch(`https://graph.facebook.com/${this.apiVersion}/${pageId}/feed`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    return this.parsePublishResponse(res);
+  /** Lấy permalink công khai — page id trên URL thường khác Graph page id. */
+  private async fetchPostPermalink(
+    postId: string,
+    pageAccessToken: string,
+  ): Promise<string | null> {
+    try {
+      const url =
+        `https://graph.facebook.com/${this.apiVersion}/${encodeURIComponent(postId)}` +
+        `?fields=permalink_url,is_published` +
+        `&access_token=${encodeURIComponent(pageAccessToken)}`;
+      const res = await fetch(url);
+      const body = (await res.json()) as {
+        permalink_url?: string;
+        is_published?: boolean;
+        error?: { message?: string };
+      };
+      if (!res.ok || body.error) {
+        this.logger.warn(
+          `fetch permalink failed for ${postId}: ${body.error?.message || res.status}`,
+        );
+        return null;
+      }
+      if (body.is_published === false) {
+        this.logger.warn(`Meta post ${postId} is_published=false`);
+      }
+      return body.permalink_url?.trim() || null;
+    } catch (err) {
+      this.logger.warn(
+        `fetch permalink error: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Kiểm tra bài còn trên Fanpage không.
+   * - exists: Graph trả về id
+   * - deleted: object không còn
+   * - unknown: lỗi mạng / token hết hạn — không được xóa bản ghi local
+   *
+   * Lưu ý: bài đã xóa thường trả OAuthException code 10 + "does not exist"
+   * (không phải chỉ code 100). Không được coi mọi OAuthException là unknown.
+   */
+  async checkFacebookPostExists(
+    postId: string,
+    pageAccessToken: string,
+  ): Promise<'exists' | 'deleted' | 'unknown'> {
+    const id = postId?.trim();
+    if (!id) return 'unknown';
+    try {
+      const url =
+        `https://graph.facebook.com/${this.apiVersion}/${encodeURIComponent(id)}` +
+        `?fields=id` +
+        `&access_token=${encodeURIComponent(pageAccessToken)}`;
+      const res = await fetch(url);
+      const body = (await res.json()) as {
+        id?: string;
+        error?: {
+          message?: string;
+          code?: number;
+          type?: string;
+          error_subcode?: number;
+        };
+      };
+      if (res.ok && body.id && !body.error) return 'exists';
+
+      const code = body.error?.code;
+      const subcode = body.error?.error_subcode;
+      const msg = (body.error?.message || '').toLowerCase();
+
+      // Token hết hạn / invalid — giữ bản ghi local
+      if (code === 190) return 'unknown';
+      // Rate limit
+      if (code === 4 || code === 17 || code === 32 || res.status === 429) return 'unknown';
+
+      if (
+        code === 10 ||
+        code === 100 ||
+        subcode === 33 ||
+        msg.includes('does not exist') ||
+        msg.includes('unsupported get request')
+      ) {
+        return 'deleted';
+      }
+
+      this.logger.warn(
+        `checkFacebookPostExists unknown for ${id}: ${body.error?.message || res.status}`,
+      );
+      return 'unknown';
+    } catch (err) {
+      this.logger.warn(
+        `checkFacebookPostExists error: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return 'unknown';
+    }
+  }
+
+  /**
+   * Danh sách id bài còn trên Fanpage (published_posts).
+   * Tin cậy hơn GET từng post (GET hay trả code 10 mơ hồ).
+   * Trả null nếu API lỗi — caller không được purge.
+   */
+  async listPublishedPostIds(
+    pageId: string,
+    pageAccessToken: string,
+    sinceUnix: number,
+  ): Promise<Set<string> | null> {
+    const id = pageId?.trim();
+    if (!id || !pageAccessToken) return null;
+    const found = new Set<string>();
+    let nextUrl: string | null =
+      `https://graph.facebook.com/${this.apiVersion}/${encodeURIComponent(id)}/published_posts` +
+      `?fields=id` +
+      `&since=${Math.max(0, Math.floor(sinceUnix))}` +
+      `&limit=100` +
+      `&access_token=${encodeURIComponent(pageAccessToken)}`;
+
+    try {
+      for (let page = 0; nextUrl && page < 10; page += 1) {
+        const res = await fetch(nextUrl);
+        const body = (await res.json()) as {
+          data?: Array<{ id?: string }>;
+          paging?: { next?: string };
+          error?: { message?: string; code?: number };
+        };
+        if (!res.ok || body.error) {
+          this.logger.warn(
+            `listPublishedPostIds failed for ${id}: ${body.error?.message || res.status}`,
+          );
+          return null;
+        }
+        for (const row of body.data ?? []) {
+          if (row.id) found.add(row.id);
+        }
+        nextUrl = body.paging?.next?.trim() || null;
+      }
+      return found;
+    } catch (err) {
+      this.logger.warn(
+        `listPublishedPostIds error: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return null;
+    }
+  }
+
+  /** Xác nhận page token còn dùng được trước khi tin kết quả "post deleted". */
+  async assertPageTokenUsable(
+    pageId: string,
+    pageAccessToken: string,
+  ): Promise<boolean> {
+    const id = pageId?.trim();
+    if (!id || !pageAccessToken) return false;
+    try {
+      const url =
+        `https://graph.facebook.com/${this.apiVersion}/${encodeURIComponent(id)}` +
+        `?fields=id` +
+        `&access_token=${encodeURIComponent(pageAccessToken)}`;
+      const res = await fetch(url);
+      const body = (await res.json()) as { id?: string; error?: { message?: string } };
+      return Boolean(res.ok && body.id && !body.error);
+    } catch {
+      return false;
+    }
   }
 
   async debugToken(

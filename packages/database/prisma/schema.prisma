@@ -3467,6 +3467,8 @@ model AutoPost {
   scheduledAt    DateTime?      @map("scheduled_at")
   publishedAt    DateTime?      @map("published_at")
   facebookPostId String?        @map("facebook_post_id")
+  /// Permalink công khai từ Graph (ưu tiên hơn URL tự dựng)
+  facebookPermalink String?     @map("facebook_permalink") @db.VarChar(2000)
   errorMessage   String?        @map("error_message")
   approvedAt     DateTime?      @map("approved_at")
   createdAt      DateTime       @default(now()) @map("created_at")

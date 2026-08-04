@@ -20,6 +20,9 @@ import {
 } from '@/lib/content-auto-post-routes';
 import type { ContentHistoryItem } from '@/types/content-marketing';
 
+/** Chiều cao thanh tab (py-2 + trigger ~36px) — spacer tránh content bị che. */
+const CONTENT_TAB_BAR_H = 'h-12';
+
 export function ContentAutoPostShell() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -30,7 +33,6 @@ export function ContentAutoPostShell() {
     : legacyTabToContentAutoPostTab(tabParam) ?? 'create';
   const { section: resolvedSection, invalid: sectionInvalid } =
     resolveContentCreateSection(sectionParam);
-  // Canonical section (ads-check → facebook-check). Các section khác giữ nguyên.
 
   const [historyEditItem, setHistoryEditItem] = useState<ContentHistoryItem | null>(null);
   const [libraryRefreshKey, setLibraryRefreshKey] = useState(0);
@@ -59,7 +61,6 @@ export function ContentAutoPostShell() {
       router.replace(buildContentAutoPostHref('create'));
       return;
     }
-    // Điều hướng section: invalid → ad; ads-check → facebook-check (alias).
     if (activeTab === 'create') {
       if (sectionInvalid) {
         router.replace(buildContentAutoPostHref('create', { section: 'ad' }));
@@ -85,57 +86,68 @@ export function ContentAutoPostShell() {
   }, []);
 
   return (
-    <div className="space-y-6 pb-10">
-      <PageHeader
-        title="Content Studio"
-        description={CONTENT_AUTO_POST_MENU_DESCRIPTION}
-        titleClassName="text-2xl font-bold tracking-tight text-[#F97316] sm:text-3xl"
-      />
+    <div className="pb-10">
+      <Tabs value={activeTab} onValueChange={(v) => setTab(v as ContentAutoPostTab)}>
+        {/*
+          fixed ngay dưới Topbar (h-14) theo viewport — không phụ thuộc sticky/main padding.
+          lg:left-64 tránh đè sidebar.
+        */}
+        <div className="fixed inset-x-0 top-14 z-40 border-b border-white/10 bg-[#0A3D30] lg:left-64">
+          <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 rounded-none bg-transparent p-2 text-white">
+            {CONTENT_AUTO_POST_TABS.map((t) => (
+              <TabsTrigger
+                key={t.value}
+                value={t.value}
+                className="rounded-md text-xs sm:text-sm data-[state=active]:bg-white data-[state=active]:text-black data-[state=inactive]:text-white/80"
+              >
+                {t.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
 
-      <Tabs value={activeTab} onValueChange={(v) => setTab(v as ContentAutoPostTab)} className="space-y-6">
-        <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 bg-white/15 p-1 text-white">
-          {CONTENT_AUTO_POST_TABS.map((t) => (
-            <TabsTrigger
-              key={t.value}
-              value={t.value}
-              className="text-xs sm:text-sm data-[state=active]:bg-white data-[state=active]:text-black data-[state=inactive]:text-white/80"
-            >
-              {t.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
+        {/* Spacer = chiều cao bar fixed để nội dung không bị che / không tạo khoảng hở ảo */}
+        <div className={CONTENT_TAB_BAR_H} aria-hidden />
 
-        <TabsContent value="create" className="mt-0">
-          <ContentCreatePanel
-            initialTab={resolvedSection}
-            historyEditItem={historyEditItem}
-            onHistoryEditApplied={handleHistoryEditApplied}
-            onHistoryChange={handleHistoryChange}
+        <div className="mt-4 space-y-6">
+          <PageHeader
+            title="Content Studio"
+            description={CONTENT_AUTO_POST_MENU_DESCRIPTION}
+            titleClassName="text-2xl font-bold tracking-tight text-[#F97316] sm:text-3xl"
           />
-        </TabsContent>
 
-        <TabsContent value="library" className="mt-0">
-          <ContentLibraryPanel
-            refreshKey={libraryRefreshKey}
-            onEditItem={handleEditFromLibrary}
-            onNavigateTab={setTab}
-          />
-        </TabsContent>
+          <TabsContent value="create" className="mt-0">
+            <ContentCreatePanel
+              initialTab={resolvedSection}
+              historyEditItem={historyEditItem}
+              onHistoryEditApplied={handleHistoryEditApplied}
+              onHistoryChange={handleHistoryChange}
+            />
+          </TabsContent>
 
-        <TabsContent value="auto-post" className="mt-0">
-          <AutoPostPublishPanel
-            libraryRefreshKey={libraryRefreshKey}
-            onScheduled={() => setScheduleRefreshKey((k) => k + 1)}
-          />
-        </TabsContent>
+          <TabsContent value="library" className="mt-0">
+            <ContentLibraryPanel
+              refreshKey={libraryRefreshKey}
+              onEditItem={handleEditFromLibrary}
+              onNavigateTab={setTab}
+            />
+          </TabsContent>
 
-        <TabsContent value="schedule" className="mt-0" key={scheduleRefreshKey}>
-          <AutoPostSchedulePanel />
-        </TabsContent>
+          <TabsContent value="auto-post" className="mt-0">
+            <AutoPostPublishPanel
+              libraryRefreshKey={libraryRefreshKey}
+              onScheduled={() => setScheduleRefreshKey((k) => k + 1)}
+            />
+          </TabsContent>
 
-        <TabsContent value="channels" className="mt-0">
-          <AutoPostChannelsPanel />
-        </TabsContent>
+          <TabsContent value="schedule" className="mt-0" key={scheduleRefreshKey}>
+            <AutoPostSchedulePanel />
+          </TabsContent>
+
+          <TabsContent value="channels" className="mt-0">
+            <AutoPostChannelsPanel />
+          </TabsContent>
+        </div>
       </Tabs>
     </div>
   );

@@ -95,10 +95,10 @@ export function ContentLibraryPanel({
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h2 className="text-lg font-semibold text-slate-900">
+        <h2 className="text-lg font-semibold text-white">
           Thư viện bài viết
           {filteredHistory.length > 0 ? (
-            <span className="ml-2 text-sm font-normal text-slate-500">
+            <span className="ml-2 text-sm font-normal text-white/70">
               ({filteredHistory.length})
             </span>
           ) : null}

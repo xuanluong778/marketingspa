@@ -108,7 +108,7 @@ export async function processAutoPostPublish(
       }
 
       const accessToken = decryptSecret(page.encryptedPageAccessToken);
-      const fbPostId = await publishToFacebookPage(page.pageId, accessToken, {
+      const published = await publishToFacebookPage(page.pageId, accessToken, {
         message: post.caption.trim(),
         link: post.linkUrl ?? undefined,
         imageUrl: post.imageUrl ?? undefined,
@@ -119,7 +119,8 @@ export async function processAutoPostPublish(
         data: {
           status: AutoPostStatus.PUBLISHED,
           publishedAt: new Date(),
-          facebookPostId: fbPostId,
+          facebookPostId: published.id,
+          facebookPermalink: published.permalinkUrl,
           errorMessage: null,
         },
       });
@@ -130,11 +131,11 @@ export async function processAutoPostPublish(
           postId,
           action: 'scheduled_publish',
           status: 'success',
-          facebookPostId: fbPostId,
+          facebookPostId: published.id,
         },
       });
 
-      return { ok: true, facebookPostId: fbPostId };
+      return { ok: true, facebookPostId: published.id };
     } catch (e) {
       const raw = e instanceof Error ? e.message : 'Đăng bài thất bại';
       const msg = sanitizePublishErrorMessage(raw);

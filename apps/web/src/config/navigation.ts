@@ -43,7 +43,7 @@ export const mainNav: NavItem[] = [
   { title: 'Phễu Marketing', href: '/funnel', icon: Filter },
   { title: 'Lịch hẹn', href: '/appointments', icon: CalendarDays },
   { title: 'Ads', href: '/ads', icon: Megaphone },
-  { title: 'Tin nhắn tự động', href: '/automation', icon: Bot },
+  { title: 'Tin nhắn tự động', href: '/automation?tab=flows', icon: Bot },
   { title: 'Nhắn tin hàng loạt', href: '/automation?tab=campaigns', icon: Megaphone },
   { title: 'Quản Lý Nhân Sự', href: '/hrm/employees', icon: UserCog },
   { title: 'Doanh thu & Lãi lỗ', href: '/finance', icon: TrendingUp },
@@ -113,7 +113,7 @@ export const sidebarNavGroups: NavGroup[] = [
     items: [
       { title: 'Nhắn tin hàng loạt', href: '/automation?tab=campaigns', icon: Megaphone },
       { title: 'Tệp khách hàng', href: '/automation?tab=audience', icon: Users },
-      { title: 'Tin nhắn tự động', href: '/automation', icon: Bot },
+      { title: 'Tin nhắn tự động', href: '/automation?tab=flows', icon: Bot },
       { title: 'Chatbot CSKH', href: '/chatbot-cskh', icon: MessageCircle },
     ],
   },

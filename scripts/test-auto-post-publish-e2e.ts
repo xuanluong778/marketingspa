@@ -78,19 +78,19 @@ async function main() {
     } as Response;
   }) as typeof fetch;
 
-  const photoId = await publishToFacebookPage('page-1', 'PAGE_TOKEN', {
+  const photoRes = await publishToFacebookPage('page-1', 'PAGE_TOKEN', {
     message: 'hello',
     imageUrl: 'https://example.com/a.jpg',
   });
-  assert.equal(photoId, 'photo-1');
+  assert.equal(photoRes.id, 'photo-1');
   assert.ok(calls.some((u) => u.includes('/photos') && u.includes('v21.0')));
 
   calls.length = 0;
-  const feedId = await publishToFacebookPage('page-1', 'PAGE_TOKEN', {
+  const feedRes = await publishToFacebookPage('page-1', 'PAGE_TOKEN', {
     message: 'hello',
     link: 'https://example.com',
   });
-  assert.equal(feedId, 'page_feed1');
+  assert.equal(feedRes.id, 'page_feed1');
   assert.ok(calls.some((u) => u.includes('/feed')));
   globalThis.fetch = originalFetch;
 

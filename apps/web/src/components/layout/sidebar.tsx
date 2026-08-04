@@ -38,11 +38,13 @@ export function Sidebar({ onNavigate }: SidebarProps) {
   const isNavItemActive = useMemo(
     () => (item: NavItem) => {
       if (!item.href) return false;
-      if (item.href.startsWith(`${CONTENT_AUTO_POST_BASE}?`)) {
-        // Match by tab (+ section when present) so active state is stable.
-        try {
-          const want = new URL(item.href, 'http://local');
-          const have = new URL(currentPathWithQuery, 'http://local');
+
+      try {
+        const want = new URL(item.href, 'http://local');
+        const have = new URL(currentPathWithQuery, 'http://local');
+
+        if (item.href.startsWith(`${CONTENT_AUTO_POST_BASE}?`)) {
+          // Match by tab (+ section when present) so active state is stable.
           if (have.pathname !== CONTENT_AUTO_POST_BASE) return false;
           const wantTab = want.searchParams.get('tab');
           const haveTab = have.searchParams.get('tab') || 'create';
@@ -56,10 +58,49 @@ export function Sidebar({ onNavigate }: SidebarProps) {
           }
           // Tab-only links (library / auto-post / …): active when tab matches.
           return true;
-        } catch {
-          return currentPathWithQuery === item.href;
         }
+
+        // /automation?tab=* — match by pathname + tab query
+        if (want.pathname === '/automation' && want.searchParams.has('tab')) {
+          if (have.pathname !== '/automation') return false;
+          const wantTab = want.searchParams.get('tab');
+          const haveTab = have.searchParams.get('tab') || 'campaigns';
+          // Tin nhắn tự động (flows): cũng sáng khi đang ở templates/logs/channels
+          if (wantTab === 'flows') {
+            return (
+              haveTab === 'flows' ||
+              haveTab === 'templates' ||
+              haveTab === 'logs' ||
+              haveTab === 'channels'
+            );
+          }
+          return wantTab === haveTab;
+        }
+
+        // Legacy /automation không có tab
+        if (want.pathname === '/automation' && !want.search) {
+          if (have.pathname !== '/automation') return false;
+          const haveTab = have.searchParams.get('tab') || 'campaigns';
+          return (
+            haveTab === 'flows' ||
+            haveTab === 'templates' ||
+            haveTab === 'logs' ||
+            haveTab === 'channels'
+          );
+        }
+
+        // Other links that include a query string
+        if (want.search) {
+          if (have.pathname !== want.pathname) return false;
+          for (const [key, value] of want.searchParams.entries()) {
+            if (have.searchParams.get(key) !== value) return false;
+          }
+          return true;
+        }
+      } catch {
+        return currentPathWithQuery === item.href;
       }
+
       return (
         pathname === item.href ||
         pathname.startsWith(`${item.href}/`) ||

@@ -214,6 +214,7 @@ export interface AutoPostItem {
   publishedAt: string | null;
   facebookPostId: string | null;
   facebookPostUrl?: string | null;
+  facebookPermalink?: string | null;
   errorMessage: string | null;
   approvedAt: string | null;
   createdAt: string;

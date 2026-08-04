@@ -242,6 +242,7 @@ export function VideoTranscriptionStudio() {
       user?.id,
     );
     setMsg('Đã lưu văn bản vào Thư viện bài viết (máy này).');
+    window.alert('Đã lưu văn bản thành công vào Thư viện bài viết (máy này).');
   }, [editorText, user?.id]);
 
   const handleWriteArticle = useCallback(() => {

@@ -72,8 +72,14 @@ function AutomationPageInner() {
   useEffect(() => {
     if (tabParam && (TAB_VALUES as readonly string[]).includes(tabParam)) {
       setActiveTab(tabParam as TabValue);
+      return;
     }
-  }, [tabParam]);
+    // Không có ?tab= → mặc định campaigns; vẫn đồng bộ URL để sidebar active đúng
+    setActiveTab('campaigns');
+    if (!tabParam) {
+      router.replace('/automation?tab=campaigns', { scroll: false });
+    }
+  }, [tabParam, router]);
 
   function changeTab(v: string) {
     const next = (TAB_VALUES as readonly string[]).includes(v) ? (v as TabValue) : 'campaigns';

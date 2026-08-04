@@ -350,7 +350,7 @@ export function ChannelConnectionsPanel() {
               disabled={reconnect.isPending || reconnectToken.trim().length < 10 || !reconnectTarget}
               onClick={() => {
                 if (!reconnectTarget) return;
-                const credentials =
+                const credentials: Record<string, string> =
                   reconnectTarget.channel === 'ZALO'
                     ? {
                         accessToken: reconnectToken.trim(),
