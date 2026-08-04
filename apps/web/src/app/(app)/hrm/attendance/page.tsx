@@ -31,7 +31,7 @@ import {
   useHrmTimesheetPeriods,
   useHrmTodayPunch,
 } from '@/hooks/use-hrm-attendance';
-import { HrmAttendanceCorrectDialog } from '@/components/hrm/hrm-attendance-correct-dialog';
+import HrmAttendanceCorrectDialog from '@/components/hrm/hrm-attendance-correct-dialog';
 import { ApiError } from '@/lib/api-client';
 import {
   ATTENDANCE_DAY_STATUS_OPTIONS,

@@ -7,7 +7,10 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
+  AutoPostFacebookConnectionStatus,
   AutoPostStatus,
+  IntegrationProvider,
+  IntegrationStatus,
   MessageChannel,
   MessagingCampaignStatus,
   MessagingChannelAccountStatus,
@@ -18,7 +21,11 @@ import type { Queue } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { encryptSecret, decryptSecret, maskSecret } from '../common/utils/encryption.util';
-import { redactForAudit, sanitizePublicMetadata } from '../common/utils/token-security.util';
+import {
+  decodeStoredSecret,
+  redactForAudit,
+  sanitizePublicMetadata,
+} from '../common/utils/token-security.util';
 import { AUTO_POST_QUEUE } from '../queue/queue.constants';
 import { MessagingProviderRegistry } from './providers/messaging-provider.registry';
 import type {
@@ -40,13 +47,207 @@ export class ChannelConnectionsService {
     @Inject(AUTO_POST_QUEUE) private readonly autoPostQueue: Queue,
   ) {}
 
-  list(organizationId: string) {
-    return this.prisma.messagingChannelConnection
-      .findMany({
-        where: { organizationId },
-        orderBy: [{ channel: 'asc' }, { displayName: 'asc' }],
-      })
-      .then((rows) => rows.map((r) => this.toPublic(r)));
+  async list(organizationId: string) {
+    // Hydrate once when empty so UI reflects Fanpages already connected via Content/Chatbot OAuth
+    const existing = await this.prisma.messagingChannelConnection.count({
+      where: { organizationId },
+    });
+    if (existing === 0) {
+      try {
+        await this.syncFromOrgSources(organizationId);
+      } catch (e) {
+        this.logger.warn(
+          `Auto-hydrate channel connections failed: ${e instanceof Error ? e.message : String(e)}`,
+        );
+      }
+    }
+    const rows = await this.prisma.messagingChannelConnection.findMany({
+      where: { organizationId },
+      orderBy: [{ channel: 'asc' }, { displayName: 'asc' }],
+    });
+    return rows.map((r) => this.toPublic(r));
+  }
+
+  /**
+   * Đồng bộ Fanpage/OA đã kết nối (Chatbot + Content Auto Post) → MessagingChannelConnection.
+   * Idempotent upsert; không ghi đè token hợp lệ bằng chuỗi rỗng.
+   */
+  async syncFromOrgSources(organizationId: string, userId?: string) {
+    const results: Array<{
+      pageId: string;
+      pageName: string | null;
+      source: 'chatbot' | 'auto_post' | 'integration_zalo';
+      ok: boolean;
+      error?: string;
+      connectionId?: string;
+    }> = [];
+
+    const chatbotPages = await this.prisma.chatbotFacebookPage.findMany({
+      where: {
+        organizationId,
+        OR: [{ status: 'connected' }, { status: 'CONNECTED' }, { pageAccessTokenEncrypted: { not: '' } }],
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    for (const page of chatbotPages) {
+      try {
+        const token = this.decodeFlexibleSecret(page.pageAccessTokenEncrypted);
+        if (!token) {
+          results.push({
+            pageId: page.pageId,
+            pageName: page.pageName,
+            source: 'chatbot',
+            ok: false,
+            error: 'Thiếu Page Access Token',
+          });
+          continue;
+        }
+        const connection = await this.upsertMessengerFromChatbot(
+          organizationId,
+          {
+            pageId: page.pageId,
+            pageAccessToken: token,
+            pageName: page.pageName ?? undefined,
+            subscribeWebhook: page.webhookSubscribed,
+          },
+          userId,
+        );
+        results.push({
+          pageId: page.pageId,
+          pageName: page.pageName,
+          source: 'chatbot',
+          ok: true,
+          connectionId: connection.id,
+        });
+      } catch (e) {
+        results.push({
+          pageId: page.pageId,
+          pageName: page.pageName,
+          source: 'chatbot',
+          ok: false,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+
+    const autoPostPages = await this.prisma.autoPostFacebookPage.findMany({
+      where: {
+        connection: {
+          organizationId,
+          status: AutoPostFacebookConnectionStatus.CONNECTED,
+        },
+      },
+      include: {
+        connection: { select: { organizationId: true, status: true } },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    for (const page of autoPostPages) {
+      try {
+        const token = this.decryptCredentialsOrRaw(page.encryptedPageAccessToken);
+        if (!token) {
+          results.push({
+            pageId: page.pageId,
+            pageName: page.pageName,
+            source: 'auto_post',
+            ok: false,
+            error: 'Thiếu Page Access Token (Auto Post)',
+          });
+          continue;
+        }
+        const connection = await this.upsertMessengerFromChatbot(
+          organizationId,
+          {
+            pageId: page.pageId,
+            pageAccessToken: token,
+            pageName: page.pageName ?? undefined,
+            subscribeWebhook: true,
+          },
+          userId,
+        );
+        results.push({
+          pageId: page.pageId,
+          pageName: page.pageName,
+          source: 'auto_post',
+          ok: true,
+          connectionId: connection.id,
+        });
+      } catch (e) {
+        results.push({
+          pageId: page.pageId,
+          pageName: page.pageName,
+          source: 'auto_post',
+          ok: false,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+
+    // Zalo OA từ Integration legacy (nếu có credential)
+    const zaloIntegrations = await this.prisma.integration.findMany({
+      where: {
+        organizationId,
+        provider: IntegrationProvider.ZALO_OA,
+        status: {
+          in: [
+            IntegrationStatus.ACTIVE,
+            IntegrationStatus.REAUTH_REQUIRED,
+            IntegrationStatus.EXPIRED,
+          ],
+        },
+      },
+    });
+    for (const row of zaloIntegrations) {
+      try {
+        const creds = this.decryptCredentials(row.encryptedCredentials);
+        const oaId = (creds.oaId || creds.accountId || creds.id || '').trim();
+        const accessToken = (creds.accessToken || creds.token || '').trim();
+        if (!oaId || !accessToken) {
+          results.push({
+            pageId: oaId || row.id,
+            pageName: null,
+            source: 'integration_zalo',
+            ok: false,
+            error: 'Integration Zalo thiếu oaId/token',
+          });
+          continue;
+        }
+        const connection = await this.connectZaloOa(
+          organizationId,
+          {
+            oaId,
+            accessToken,
+            oaName: typeof row.metadata === 'object' && row.metadata && 'name' in row.metadata
+              ? String((row.metadata as { name?: string }).name ?? oaId)
+              : oaId,
+          },
+          userId,
+        );
+        results.push({
+          pageId: oaId,
+          pageName: connection.displayName ?? oaId,
+          source: 'integration_zalo',
+          ok: true,
+          connectionId: connection.id,
+        });
+      } catch (e) {
+        results.push({
+          pageId: row.id,
+          pageName: null,
+          source: 'integration_zalo',
+          ok: false,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+
+    return {
+      synced: results.filter((r) => r.ok).length,
+      failed: results.filter((r) => !r.ok).length,
+      results,
+    };
   }
 
   async connectMessenger(organizationId: string, dto: ConnectMessengerChannelDto, userId?: string) {
@@ -67,29 +268,79 @@ export class ChannelConnectionsService {
   }
 
   /**
-   * Đồng bộ từ Chatbot — lưu connection kể cả khi Graph validate fail
+   * Đồng bộ từ Chatbot / Auto Post — lưu connection kể cả khi Graph validate fail
    * (token có thể thiếu permission; vẫn dùng được cho dry-run / cấu hình).
+   * Không ghi đè token hợp lệ bằng chuỗi rỗng.
    */
   async upsertMessengerFromChatbot(
     organizationId: string,
     dto: ConnectMessengerChannelDto,
     userId?: string,
   ) {
+    const pageId = dto.pageId.trim();
+    const incomingToken = dto.pageAccessToken.trim();
+    const existing = await this.prisma.messagingChannelConnection.findUnique({
+      where: {
+        organizationId_channel_accountRef: {
+          organizationId,
+          channel: MessageChannel.MESSENGER,
+          accountRef: pageId,
+        },
+      },
+    });
+
+    let pageAccessToken = incomingToken;
+    if (!pageAccessToken && existing?.encryptedCredentials) {
+      const prev = this.decryptCredentials(existing.encryptedCredentials);
+      pageAccessToken = prev.pageAccessToken?.trim() || prev.accessToken?.trim() || '';
+    }
+    if (!pageAccessToken) {
+      throw new BadRequestException('Thiếu Page Access Token để đồng bộ');
+    }
+
+    // Giữ token cũ nếu token mới trùng hoặc token mới rỗng (đã xử lý ở trên)
+    if (
+      existing?.encryptedCredentials &&
+      existing.status === MessagingChannelAccountStatus.ACTIVE &&
+      incomingToken
+    ) {
+      const prev = this.decryptCredentials(existing.encryptedCredentials);
+      const prevToken = prev.pageAccessToken?.trim() || '';
+      if (prevToken && prevToken === incomingToken) {
+        // Same token — only refresh metadata/timestamps
+        const updated = await this.prisma.messagingChannelConnection.update({
+          where: { id: existing.id },
+          data: {
+            displayName: dto.pageName ?? existing.displayName,
+            webhookSubscribed: dto.subscribeWebhook ?? existing.webhookSubscribed,
+            lastSyncedAt: new Date(),
+            isPaused: false,
+          },
+        });
+        return this.toPublic(updated);
+      }
+    }
+
     const credentials = {
-      pageAccessToken: dto.pageAccessToken.trim(),
-      pageId: dto.pageId.trim(),
+      pageAccessToken,
+      pageId,
     };
     try {
-      return await this.upsertConnection({
+      const row = await this.upsertConnection({
         organizationId,
         channel: MessageChannel.MESSENGER,
         providerKind: MessagingProviderKind.MESSENGER,
-        accountRef: dto.pageId.trim(),
+        accountRef: pageId,
         displayName: dto.pageName,
         credentials,
         userId,
         webhookSubscribed: dto.subscribeWebhook ?? false,
       });
+      await this.prisma.messagingChannelConnection.update({
+        where: { id: row.id },
+        data: { lastSyncedAt: new Date() },
+      });
+      return { ...row, lastSyncedAt: new Date() };
     } catch (e) {
       // Fallback: lưu credentials + REAUTH_REQUIRED nếu Meta reject token
       const encrypted = encryptSecret(JSON.stringify(credentials), this.getEncryptionKey());
@@ -98,20 +349,21 @@ export class ChannelConnectionsService {
           organizationId_channel_accountRef: {
             organizationId,
             channel: MessageChannel.MESSENGER,
-            accountRef: dto.pageId.trim(),
+            accountRef: pageId,
           },
         },
         create: {
           organizationId,
           channel: MessageChannel.MESSENGER,
           providerKind: MessagingProviderKind.MESSENGER,
-          accountRef: dto.pageId.trim(),
+          accountRef: pageId,
           displayName: dto.pageName,
           encryptedCredentials: encrypted,
           status: MessagingChannelAccountStatus.REAUTH_REQUIRED,
           permissions: [],
           webhookSubscribed: dto.subscribeWebhook ?? false,
           lastTestedAt: new Date(),
+          lastSyncedAt: new Date(),
         },
         update: {
           displayName: dto.pageName,
@@ -119,6 +371,7 @@ export class ChannelConnectionsService {
           status: MessagingChannelAccountStatus.REAUTH_REQUIRED,
           webhookSubscribed: dto.subscribeWebhook ?? undefined,
           lastTestedAt: new Date(),
+          lastSyncedAt: new Date(),
           isPaused: false,
         },
       });
@@ -130,7 +383,7 @@ export class ChannelConnectionsService {
         entityId: row.id,
         metadata: redactForAudit({
           channel: MessageChannel.MESSENGER,
-          accountRef: dto.pageId.trim(),
+          accountRef: pageId,
           reauthRequired: true,
           reason: e instanceof Error ? e.message : String(e),
         }) as Prisma.InputJsonValue,
@@ -448,6 +701,33 @@ export class ChannelConnectionsService {
     return JSON.parse(decryptSecret(encrypted, this.getEncryptionKey())) as Record<string, string>;
   }
 
+  /** Auto Post page tokens are encryptSecret(plainToken); Chatbot may use encodeStoredSecret. */
+  private decryptCredentialsOrRaw(encrypted: string | null | undefined): string {
+    if (!encrypted?.trim()) return '';
+    try {
+      return decryptSecret(encrypted, this.getEncryptionKey()).trim();
+    } catch {
+      try {
+        return decodeStoredSecret(encrypted, this.getEncryptionKey()).trim();
+      } catch {
+        return '';
+      }
+    }
+  }
+
+  private decodeFlexibleSecret(stored: string | null | undefined): string {
+    if (!stored?.trim()) return '';
+    try {
+      return decodeStoredSecret(stored, this.getEncryptionKey()).trim();
+    } catch {
+      try {
+        return decryptSecret(stored, this.getEncryptionKey()).trim();
+      } catch {
+        return '';
+      }
+    }
+  }
+
   private async upsertConnection(params: {
     organizationId: string;
     channel: MessageChannel;
@@ -500,6 +780,7 @@ export class ChannelConnectionsService {
         permissions: (validated.permissions ?? []) as Prisma.InputJsonValue,
         tokenExpiresAt: validated.tokenExpiresAt,
         lastTestedAt: new Date(),
+        lastSyncedAt: new Date(),
         webhookSubscribed: params.webhookSubscribed ?? false,
         metadata: metadata as Prisma.InputJsonValue,
       },
@@ -510,6 +791,7 @@ export class ChannelConnectionsService {
         permissions: (validated.permissions ?? []) as Prisma.InputJsonValue,
         tokenExpiresAt: validated.tokenExpiresAt,
         lastTestedAt: new Date(),
+        lastSyncedAt: new Date(),
         isPaused: false,
         webhookSubscribed: params.webhookSubscribed ?? undefined,
         metadata: metadata as Prisma.InputJsonValue,

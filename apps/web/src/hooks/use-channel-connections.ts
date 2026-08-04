@@ -105,7 +105,19 @@ export function useDeleteChannelConnection() {
   });
 }
 
-/** Đồng bộ Fanpage từ Chatbot CSKH → kết nối nhắn tin hàng loạt */
+export function useReconnectChannelConnection() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, credentials }: { id: string; credentials: Record<string, string> }) =>
+      apiClient<ChannelConnectionItem>(`/automation/channel-connections/${id}/reconnect`, {
+        method: 'POST',
+        body: JSON.stringify({ credentials }),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['automation', 'channel-connections'] }),
+  });
+}
+
+/** Đồng bộ Fanpage/OA từ Chatbot CSKH + Content OAuth → kết nối nhắn tin hàng loạt */
 export function useSyncMessagingFromChatbot() {
   const qc = useQueryClient();
   return useMutation({
@@ -113,7 +125,13 @@ export function useSyncMessagingFromChatbot() {
       apiClient<{
         synced: number;
         failed: number;
-        results: Array<{ pageId: string; pageName: string | null; ok: boolean; error?: string }>;
+        results: Array<{
+          pageId: string;
+          pageName: string | null;
+          source?: string;
+          ok: boolean;
+          error?: string;
+        }>;
       }>('/chatbot-cskh/facebook/pages/sync-messaging', { method: 'POST' }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['automation', 'channel-connections'] }),
   });

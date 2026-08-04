@@ -147,6 +147,24 @@ function spaTemplateOptions(
       cat === 'skin' ? caseStudySkin : cat === 'massage' ? caseStudyMassage : caseStudyGeneral;
     return pick(base);
   }
+  if (field === 'combo') {
+    return pick([
+      `Combo ${product || 'liệu trình'}: mua 8 buổi tặng 2 buổi (áp dụng có thời hạn)`,
+      `Gói tiết kiệm ${product || 'spa'}: giảm 15–20% khi đăng ký liệu trình đầy đủ`,
+      `Ưu đãi cặp đôi / mẹ & con: giảm thêm khi đặt 2 suất cùng ngày`,
+      `Combo chăm sóc + quà: liệu trình + sản phẩm mang về dùng kèm`,
+      `Flash deal cuối tuần: giữ giá ưu đãi khi inbox/đặt lịch trong hôm nay`,
+    ]);
+  }
+  if (field === 'gift') {
+    return pick([
+      'Tặng serum / kem dưỡng mini dùng kèm liệu trình',
+      'Tặng voucher buổi chăm sóc tiếp theo khi hoàn tất gói',
+      'Tặng khăn / túi premium mang về sau buổi đầu',
+      'Tặng buổi tư vấn da/cơ thể 1-1 miễn phí trước liệu trình',
+      'Tặng voucher giảm giá sản phẩm retail trong spa',
+    ]);
+  }
   return [];
 }
 
@@ -195,6 +213,24 @@ function genericTemplateOptions(
   if (field === 'differentiator') return diff;
   if (field === 'certification') return cert;
   if (field === 'caseStudy') return cases;
+  if (field === 'combo') {
+    return [
+      `Combo ${product}: mua gói dài hạn giảm 10–20% (có thời hạn)`,
+      `Ưu đãi đăng ký sớm cho ${product} trong tuần này`,
+      `Gói tiết kiệm: mua nhiều buổi / nhiều sản phẩm giá tốt hơn`,
+      `Ưu đãi nhóm / gia đình khi đặt cùng lúc`,
+      `Flash deal: giữ giá ưu đãi khi inbox/đặt trong hôm nay`,
+    ];
+  }
+  if (field === 'gift') {
+    return [
+      `Tặng quà kèm ${product} khi đăng ký trong chương trình`,
+      'Tặng voucher lần mua / lần dùng tiếp theo',
+      'Tặng tư vấn 1-1 miễn phí trước khi chốt gói',
+      'Tặng tài liệu / hướng dẫn sử dụng / chăm sóc sau',
+      'Tặng phụ kiện / sản phẩm mini đi kèm đơn',
+    ];
+  }
   return [];
 }
 
@@ -269,6 +305,8 @@ Yêu cầu:
 - Không cam kết 100%, không y khoa tuyệt đối
 - caseStudy: có tên tuổi giả định, ghi (tùy tình trạng) nếu nói kết quả
 - certification: cam kết thực tế doanh nghiệp có thể đưa ra
+- combo: gói/ưu đãi cụ thể, có thể kèm điều kiện thời hạn — không bịa % giảm nếu không chắc
+- gift: quà tặng thực tế, ngắn gọn, hấp dẫn — không cam kết pháp lý
 - 5 option phải khác góc nhìn, không lặp ý
 
 Trả JSON (không markdown):

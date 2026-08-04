@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Plus, Pencil, Trash2, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -52,7 +52,7 @@ function triggerLabel(v?: string) {
 const TAB_VALUES = ['audience', 'templates', 'campaigns', 'flows', 'logs', 'channels'] as const;
 type TabValue = (typeof TAB_VALUES)[number];
 
-export default function AutomationPage() {
+function AutomationPageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const tabParam = searchParams.get('tab');
@@ -360,5 +360,13 @@ export default function AutomationPage() {
         }
       />
     </div>
+  );
+}
+
+export default function AutomationPage() {
+  return (
+    <Suspense fallback={<LoadingState message="Đang tải trang nhắn tin…" />}>
+      <AutomationPageInner />
+    </Suspense>
   );
 }

@@ -1,9 +1,5 @@
 export type AdConnectionStatus =
-  | 'DISCONNECTED'
-  | 'CONNECTED'
-  | 'TOKEN_EXPIRED'
-  | 'INSUFFICIENT_PERMISSIONS'
-  | 'ERROR';
+  'DISCONNECTED' | 'CONNECTED' | 'TOKEN_EXPIRED' | 'INSUFFICIENT_PERMISSIONS' | 'ERROR';
 
 export interface AdConnectionItem {
   provider: 'META' | 'GOOGLE' | 'GMAIL';

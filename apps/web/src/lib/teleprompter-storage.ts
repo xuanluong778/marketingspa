@@ -4,6 +4,7 @@
  */
 
 export type TeleprompterTheme = 'dark' | 'light';
+export type TeleprompterTextAlign = 'left' | 'center' | 'right';
 
 /** Base px/s at 1× — tuned for on-camera reading (large teleprompter type). */
 export const TELEPROMPTER_BASE_SCROLL_PX = 45;
@@ -83,6 +84,7 @@ export type TeleprompterDraft = {
   contentWidth: number;
   mirrorMode: boolean;
   theme: TeleprompterTheme;
+  textAlign: TeleprompterTextAlign;
   countdown: 3 | 5 | 10;
   lastPosition: number;
   estimatedDuration: number;
@@ -117,6 +119,7 @@ export const DEFAULT_TELEPROMPTER_DRAFT: TeleprompterDraft = {
   contentWidth: 720,
   mirrorMode: false,
   theme: 'dark',
+  textAlign: 'left',
   countdown: 3,
   lastPosition: 0,
   estimatedDuration: 0,
@@ -187,6 +190,7 @@ export function normalizeTeleprompterDraft(
     contentWidth: clamp(Number(raw.contentWidth) || base.contentWidth, 360, 1100),
     mirrorMode: Boolean(raw.mirrorMode),
     theme: raw.theme === 'light' ? 'light' : 'dark',
+    textAlign: raw.textAlign === 'center' || raw.textAlign === 'right' ? raw.textAlign : 'left',
     countdown,
     lastPosition: clamp(Number(raw.lastPosition) || 0, 0, 1_000_000),
     estimatedDuration:

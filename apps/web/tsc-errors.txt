@@ -1,0 +1,71 @@
+src/app/(app)/affiliate/page.tsx(3,10): error TS2614: Module '"@/components/affiliate/affiliate-dashboard"' has no exported member 'AffiliateDashboard'. Did you mean to use 'import AffiliateDashboard from "@/components/affiliate/affiliate-dashboard"' instead?
+src/app/(app)/automation/page.tsx(14,10): error TS2614: Module '"@/components/automation/channel-connections-panel"' has no exported member 'ChannelConnectionsPanel'. Did you mean to use 'import ChannelConnectionsPanel from "@/components/automation/channel-connections-panel"' instead?
+src/app/(app)/automation/page.tsx(15,10): error TS2614: Module '"@/components/automation/audience-panel"' has no exported member 'AudiencePanel'. Did you mean to use 'import AudiencePanel from "@/components/automation/audience-panel"' instead?
+src/app/(app)/automation/page.tsx(17,3): error TS2614: Module '"@/components/automation/bulk-campaign-panel"' has no exported member 'BulkCampaignPanel'. Did you mean to use 'import BulkCampaignPanel from "@/components/automation/bulk-campaign-panel"' instead?
+src/app/(app)/automation/page.tsx(18,8): error TS2614: Module '"@/components/automation/bulk-campaign-panel"' has no exported member 'BulkCampaignPrefill'. Did you mean to use 'import BulkCampaignPrefill from "@/components/automation/bulk-campaign-panel"' instead?
+src/app/(app)/automation/page.tsx(20,10): error TS2614: Module '"@/components/automation/messaging-policy-panel"' has no exported member 'MessagingPolicyPanel'. Did you mean to use 'import MessagingPolicyPanel from "@/components/automation/messaging-policy-panel"' instead?
+src/app/(app)/automation/page.tsx(119,36): error TS7006: Parameter 'prefill' implicitly has an 'any' type.
+src/app/(app)/hrm/attendance/page.tsx(34,10): error TS2614: Module '"@/components/hrm/hrm-attendance-correct-dialog"' has no exported member 'HrmAttendanceCorrectDialog'. Did you mean to use 'import HrmAttendanceCorrectDialog from "@/components/hrm/hrm-attendance-correct-dialog"' instead?
+src/app/(app)/hrm/attendance/page.tsx(466,24): error TS7006: Parameter 'open' implicitly has an 'any' type.
+src/app/(app)/hrm/attendance/page.tsx(471,20): error TS7006: Parameter 'payload' implicitly has an 'any' type.
+src/app/(app)/hrm/leave/page.tsx(24,10): error TS2614: Module '"@/components/hrm/hrm-leave-create-dialog"' has no exported member 'HrmLeaveCreateDialog'. Did you mean to use 'import HrmLeaveCreateDialog from "@/components/hrm/hrm-leave-create-dialog"' instead?
+src/app/(app)/hrm/leave/page.tsx(25,10): error TS2614: Module '"@/components/hrm/hrm-ot-create-dialog"' has no exported member 'HrmOtCreateDialog'. Did you mean to use 'import HrmOtCreateDialog from "@/components/hrm/hrm-ot-create-dialog"' instead?
+src/app/(app)/hrm/leave/page.tsx(449,20): error TS7006: Parameter 'fd' implicitly has an 'any' type.
+src/app/(app)/hrm/leave/page.tsx(464,20): error TS7006: Parameter 'body' implicitly has an 'any' type.
+src/app/(app)/leads/page.tsx(9,10): error TS2614: Module '"@/components/ui/checkbox"' has no exported member 'Checkbox'. Did you mean to use 'import Checkbox from "@/components/ui/checkbox"' instead?
+src/app/(app)/leads/page.tsx(24,45): error TS2724: '"@/components/ui/dropdown-menu"' has no exported member named 'DropdownMenuCheckboxItem'. Did you mean 'DropdownMenuItem'?
+src/app/(app)/leads/page.tsx(25,10): error TS2614: Module '"@/components/crm/lead-page-header"' has no exported member 'LeadPageHeader'. Did you mean to use 'import LeadPageHeader from "@/components/crm/lead-page-header"' instead?
+src/app/(app)/leads/page.tsx(27,3): error TS2614: Module '"@/components/crm/lead-filter-bar"' has no exported member 'LeadFilterBar'. Did you mean to use 'import LeadFilterBar from "@/components/crm/lead-filter-bar"' instead?
+src/app/(app)/leads/page.tsx(28,3): error TS2614: Module '"@/components/crm/lead-filter-bar"' has no exported member 'EMPTY_LEAD_FILTERS'. Did you mean to use 'import EMPTY_LEAD_FILTERS from "@/components/crm/lead-filter-bar"' instead?
+src/app/(app)/leads/page.tsx(29,3): error TS2614: Module '"@/components/crm/lead-filter-bar"' has no exported member 'leadFiltersToQuery'. Did you mean to use 'import leadFiltersToQuery from "@/components/crm/lead-filter-bar"' instead?
+src/app/(app)/leads/page.tsx(30,8): error TS2614: Module '"@/components/crm/lead-filter-bar"' has no exported member 'LeadFilters'. Did you mean to use 'import LeadFilters from "@/components/crm/lead-filter-bar"' instead?
+src/app/(app)/leads/page.tsx(33,27): error TS2305: Module '"@/components/crm/lead-kanban"' has no exported member 'KanbanColumnState'.
+src/app/(app)/leads/page.tsx(34,10): error TS2614: Module '"@/components/crm/lead-detail-drawer"' has no exported member 'LeadDetailDrawer'. Did you mean to use 'import LeadDetailDrawer from "@/components/crm/lead-detail-drawer"' instead?
+src/app/(app)/leads/page.tsx(70,15): error TS2614: Module '"@/components/crm/lead-card"' has no exported member 'KanbanLead'. Did you mean to use 'import KanbanLead from "@/components/crm/lead-card"' instead?
+src/app/(app)/leads/page.tsx(360,41): error TS7006: Parameter 'checked' implicitly has an 'any' type.
+src/app/(app)/leads/page.tsx(378,11): error TS2322: Type '{ columns: { status: LeadPipelineStatus; label: string; color: string; }[]; columnData: Record<string, KanbanColumnState>; isLoading: boolean; isError: boolean; onRetry: () => Promise<QueryObserverResult<NoInfer<{ ...; }>, Error>>; ... 5 more ...; onDragEnd: () => void; }' is not assignable to type 'IntrinsicAttributes & LeadKanbanProps'.
+  Property 'columns' does not exist on type 'IntrinsicAttributes & LeadKanbanProps'.
+src/app/(app)/leads/page.tsx(384,24): error TS7006: Parameter 'lead' implicitly has an 'any' type.
+src/app/(app)/leads/page.tsx(480,43): error TS7006: Parameter 'c' implicitly has an 'any' type.
+src/app/(app)/leads/page.tsx(505,45): error TS7006: Parameter 'c' implicitly has an 'any' type.
+src/app/(app)/leads/page.tsx(564,24): error TS7006: Parameter 'o' implicitly has an 'any' type.
+src/app/(app)/settings/settings-inner.tsx(11,10): error TS2614: Module '"@/components/settings/content-industries-admin-panel"' has no exported member 'ContentIndustriesAdminPanel'. Did you mean to use 'import ContentIndustriesAdminPanel from "@/components/settings/content-industries-admin-panel"' instead?
+src/app/(app)/settings/settings-inner.tsx(12,10): error TS2614: Module '"@/components/knowledge-base/knowledge-base-page"' has no exported member 'KnowledgeBasePage'. Did you mean to use 'import KnowledgeBasePage from "@/components/knowledge-base/knowledge-base-page"' instead?
+src/app/(app)/teleprompter/page.tsx(4,10): error TS2614: Module '"@/components/teleprompter/teleprompter-studio"' has no exported member 'TeleprompterStudio'. Did you mean to use 'import TeleprompterStudio from "@/components/teleprompter/teleprompter-studio"' instead?
+src/app/(auth)/login/page.tsx(11,10): error TS2614: Module '"@/components/auth/google-sign-in-button"' has no exported member 'GoogleSignInButton'. Did you mean to use 'import GoogleSignInButton from "@/components/auth/google-sign-in-button"' instead?
+src/app/(auth)/login/page.tsx(12,10): error TS2614: Module '"@/components/brand/brand-logo"' has no exported member 'BrandLogo'. Did you mean to use 'import BrandLogo from "@/components/brand/brand-logo"' instead?
+src/app/(auth)/login/page.tsx(44,26): error TS7006: Parameter 'idToken' implicitly has an 'any' type.
+src/app/(auth)/register/page.tsx(16,10): error TS2614: Module '"@/components/auth/google-sign-in-button"' has no exported member 'GoogleSignInButton'. Did you mean to use 'import GoogleSignInButton from "@/components/auth/google-sign-in-button"' instead?
+src/app/(auth)/register/page.tsx(17,10): error TS2614: Module '"@/components/auth/otp-verify-form"' has no exported member 'OtpVerifyForm'. Did you mean to use 'import OtpVerifyForm from "@/components/auth/otp-verify-form"' instead?
+src/app/(auth)/register/page.tsx(18,10): error TS2614: Module '"@/components/brand/brand-logo"' has no exported member 'BrandLogo'. Did you mean to use 'import BrandLogo from "@/components/brand/brand-logo"' instead?
+src/app/(auth)/register/page.tsx(82,30): error TS7006: Parameter 'idToken' implicitly has an 'any' type.
+src/app/(auth)/register/page.tsx(150,26): error TS7006: Parameter 'otp' implicitly has an 'any' type.
+src/app/facebook/data-deletion/page.tsx(5,10): error TS2614: Module '"@/components/brand/brand-logo"' has no exported member 'BrandLogo'. Did you mean to use 'import BrandLogo from "@/components/brand/brand-logo"' instead?
+src/app/page.tsx(3,10): error TS2614: Module '"@/components/brand/brand-logo"' has no exported member 'BrandLogo'. Did you mean to use 'import BrandLogo from "@/components/brand/brand-logo"' instead?
+src/components/ai-ads-manager/ai-ads-manager-page.tsx(112,39): error TS2345: Argument of type 'string' is not assignable to parameter of type 'AdsCampaignFilters'.
+src/components/ai-ads-manager/ai-ads-manager-page.tsx(180,41): error TS18047: 'd.cpa' is possibly 'null'.
+src/components/ai-ads-manager/ai-ads-manager-page.tsx(180,65): error TS2345: Argument of type 'number | null' is not assignable to parameter of type 'number'.
+  Type 'null' is not assignable to type 'number'.
+src/components/ai-ads-manager/ai-ads-manager-page.tsx(237,44): error TS2345: Argument of type '{ customerId: string; refreshToken: string; }' is not assignable to parameter of type 'void'.
+src/components/ai-ads-manager/ai-ads-manager-page.tsx(322,70): error TS2345: Argument of type 'number | null' is not assignable to parameter of type 'number'.
+  Type 'null' is not assignable to type 'number'.
+src/components/ai-ads-manager/ai-ads-manager-page.tsx(324,28): error TS18047: 'c.cpa' is possibly 'null'.
+src/components/ai-ads-manager/ai-ads-manager-page.tsx(324,52): error TS2345: Argument of type 'number | null' is not assignable to parameter of type 'number'.
+  Type 'null' is not assignable to type 'number'.
+src/components/ai-ads-manager/ai-ads-manager-page.tsx(654,38): error TS2345: Argument of type 'number | null' is not assignable to parameter of type 'number'.
+  Type 'null' is not assignable to type 'number'.
+src/components/ai-ads-manager/ai-ads-manager-page.tsx(655,38): error TS2345: Argument of type 'number | null' is not assignable to parameter of type 'number'.
+  Type 'null' is not assignable to type 'number'.
+src/components/ai-ads-manager/ai-ads-manager-page.tsx(656,42): error TS18048: 'detailCampaign.leads' is possibly 'undefined'.
+src/components/content-marketing/facebook-policy/check-content-ads-panel.tsx(17,10): error TS2614: Module '"@/components/ui/checkbox"' has no exported member 'Checkbox'. Did you mean to use 'import Checkbox from "@/components/ui/checkbox"' instead?
+src/components/content-marketing/video-transcription/video-transcription-studio.tsx(26,10): error TS2614: Module '"@/components/ui/checkbox"' has no exported member 'Checkbox'. Did you mean to use 'import Checkbox from "@/components/ui/checkbox"' instead?
+src/components/content-marketing/video-transcription/video-transcription-studio.tsx(301,33): error TS7006: Parameter 'v' implicitly has an 'any' type.
+src/components/layout/sidebar.tsx(92,50): error TS2345: Argument of type 'NavItem | undefined' is not assignable to parameter of type 'NavItem'.
+  Type 'undefined' is not assignable to type 'NavItem'.
+src/components/layout/sidebar.tsx(96,25): error TS18048: 'onlyItem' is possibly 'undefined'.
+src/components/realtime/realtime-notifications.tsx(8,11): error TS2339: Property 'notifications' does not exist on type 'RealtimeContextValue'.
+src/components/realtime/realtime-notifications.tsx(8,26): error TS2339: Property 'dismiss' does not exist on type 'RealtimeContextValue'.
+src/components/realtime/realtime-notifications.tsx(14,27): error TS7006: Parameter 'n' implicitly has an 'any' type.
+src/components/settings/integrations-panel.tsx(33,7): error TS2367: This comparison appears to be unintentional because the types 'IntegrationStatus' and '"CONNECTED"' have no overlap.
+src/components/settings/integrations-panel.tsx(85,18): error TS2367: This comparison appears to be unintentional because the types 'IntegrationStatus' and '"CONNECTED"' have no overlap.
+src/providers/app-providers.tsx(6,10): error TS2614: Module '"@/components/affiliate/affiliate-ref-capture"' has no exported member 'AffiliateRefCapture'. Did you mean to use 'import AffiliateRefCapture from "@/components/affiliate/affiliate-ref-capture"' instead?

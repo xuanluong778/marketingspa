@@ -131,6 +131,30 @@ export function suggestAdvancedFieldLocal(input: {
         'Anh Đức (32 tuổi) — quy trình rõ ràng, đúng hẹn, không chờ lâu',
       ],
     },
+    combo: {
+      skin: [
+        `Combo ${p || 'liệu trình'}: mua 8 buổi tặng 2 buổi (có thời hạn)`,
+        'Gói tiết kiệm: giảm 15–20% khi đăng ký liệu trình đầy đủ',
+        'Ưu đãi mẹ & con / cặp đôi: giảm thêm khi đặt 2 suất',
+        'Combo chăm sóc + sản phẩm mang về dùng kèm',
+        'Flash deal: giữ giá ưu đãi khi inbox/đặt lịch hôm nay',
+      ],
+      massage: [],
+      slim: [],
+      general: [],
+    },
+    gift: {
+      skin: [
+        'Tặng serum / kem dưỡng mini dùng kèm liệu trình',
+        'Tặng voucher buổi chăm sóc tiếp theo khi hoàn tất gói',
+        'Tặng khăn / túi premium mang về sau buổi đầu',
+        'Tặng buổi tư vấn da 1-1 miễn phí trước liệu trình',
+        'Tặng voucher giảm giá sản phẩm retail trong spa',
+      ],
+      massage: [],
+      slim: [],
+      general: [],
+    },
   };
 
   const fieldMap = byField[input.field];
@@ -153,6 +177,24 @@ export function suggestAdvancedFieldLocal(input: {
       'Cam kết tư vấn trung thực — không hứa 100%',
       'Hỗ trợ điều chỉnh liệu trình khi cần',
       'Máy móc bảo trì định kỳ, minh bạch chi phí',
+    ];
+  }
+  if (input.field === 'combo' && !options.length) {
+    options = [
+      `Combo ${p || 'dịch vụ'}: mua gói dài hạn giảm 10–20% (có thời hạn)`,
+      'Ưu đãi đăng ký sớm trong tuần này',
+      'Gói tiết kiệm: mua nhiều buổi giá tốt hơn',
+      'Ưu đãi nhóm / gia đình khi đặt cùng lúc',
+      'Flash deal: giữ giá ưu đãi khi inbox hôm nay',
+    ];
+  }
+  if (input.field === 'gift' && !options.length) {
+    options = [
+      `Tặng quà kèm ${p || 'đơn hàng'} khi đăng ký trong chương trình`,
+      'Tặng voucher lần dùng tiếp theo',
+      'Tặng tư vấn 1-1 miễn phí trước khi chốt gói',
+      'Tặng hướng dẫn chăm sóc sau liệu trình',
+      'Tặng sản phẩm mini / phụ kiện đi kèm',
     ];
   }
 

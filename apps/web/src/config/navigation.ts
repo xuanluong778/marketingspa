@@ -18,7 +18,7 @@ import {
   ChevronRight,
   Clock,
   CreditCard,
-  MonitorPlay,
+  Handshake,
   type LucideIcon,
 } from 'lucide-react';
 import { CONTENT_AUTO_POST_BASE } from '@/lib/content-auto-post-routes';
@@ -87,11 +87,16 @@ export const sidebarNavGroups: NavGroup[] = [
         href: `${CONTENT_AUTO_POST_BASE}?tab=create&section=facebook-check`,
         icon: ChevronRight,
       },
+      {
+        title: 'Lấy văn bản từ video',
+        href: `${CONTENT_AUTO_POST_BASE}?tab=create&section=video-transcript`,
+        icon: ChevronRight,
+      },
       { title: 'Thư viện bài viết', href: `${CONTENT_AUTO_POST_BASE}?tab=library`, icon: ChevronRight },
       { title: 'Auto Post', href: `${CONTENT_AUTO_POST_BASE}?tab=auto-post`, icon: ChevronRight },
       { title: 'Lịch đăng', href: `${CONTENT_AUTO_POST_BASE}?tab=schedule`, icon: ChevronRight },
       { title: 'Kết nối Fanpage', href: `${CONTENT_AUTO_POST_BASE}?tab=channels`, icon: ChevronRight },
-      { title: 'Kịch bản quay video', href: '/teleprompter', icon: MonitorPlay },
+      { title: 'Kịch bản quay video', href: '/teleprompter', icon: ChevronRight },
     ],
   },
   {
@@ -128,6 +133,7 @@ export const sidebarNavGroups: NavGroup[] = [
     items: [
       { title: 'Doanh thu & Lãi lỗ', href: '/finance', icon: TrendingUp },
       { title: 'Mục tiêu kinh doanh', href: '/business-goals', icon: Target },
+      { title: 'Affiliate', href: '/affiliate', icon: Handshake },
       { title: 'Bảng giá', href: '/pricing', icon: CreditCard },
     ],
   },

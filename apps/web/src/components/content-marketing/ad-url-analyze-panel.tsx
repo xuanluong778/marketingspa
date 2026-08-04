@@ -25,11 +25,14 @@ export function AdUrlAnalyzePanel({
   brandName,
   form,
   onApplyForm,
+  onDirtyChange,
 }: {
   adPostKind: AdPostKind;
   brandName: string;
   form: ContentFormState;
   onApplyForm: (next: ContentFormState) => void;
+  /** Notify parent when panel has URL / job so “Làm mới” can confirm + clear. */
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const [sourceUrl, setSourceUrl] = useState('');
   const [jobId, setJobId] = useState<string | null>(null);
@@ -41,6 +44,10 @@ export function AdUrlAnalyzePanel({
   const startMut = useStartAdUrlAnalyze();
   const cancelMut = useCancelAdUrlAnalyze();
   const { data: job, isFetching } = useAdUrlAnalyzeJob(jobId);
+
+  useEffect(() => {
+    onDirtyChange?.(Boolean(sourceUrl.trim() || jobId));
+  }, [sourceUrl, jobId, onDirtyChange]);
 
   const previewFields = useMemo(() => {
     if (!job?.result) return [] as AdUrlPreviewField[];

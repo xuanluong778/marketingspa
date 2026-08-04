@@ -229,7 +229,7 @@ async function main() {
     {
       const plan = await prisma.subscriptionPlan.findFirst({ where: { code: 'msp-pro-6m' } });
       if (!plan) throw new Error('plan missing');
-      const code = `${PREFIX}TRIAL${stamp.slice(-6)}`.toUpperCase();
+      const code = `${PREFIX}${String(100000 + (Number(stamp.slice(-6)) % 900000))}`.toUpperCase();
       const order = await prisma.paymentOrder.create({
         data: {
           code,
@@ -239,17 +239,17 @@ async function main() {
           amountVnd: new Decimal(plan.priceVnd),
           status: PaymentOrderStatus.PENDING,
           transferContent: code,
-          bankCode: 'MB',
+          bankCode: 'ACB',
           accountNumber: ACCOUNT,
-          accountName: 'TEST',
+          accountName: 'CONG TY TNHH THE GIOI DIGI',
           expiresAt: new Date(Date.now() + 3600_000),
         },
       });
 
       const paidAt = new Date();
       const webhookBody = {
-        id: `ops-trial-${stamp}`,
-        gateway: 'MBBank',
+        id: `${Date.now()}${stamp.slice(-6)}`,
+        gateway: 'ACB',
         transactionDate: paidAt.toISOString(),
         accountNumber: ACCOUNT,
         transferType: 'in',
@@ -257,7 +257,7 @@ async function main() {
         accumulated: 0,
         code,
         content: code,
-        referenceCode: `REF-TRIAL-${stamp}`,
+        referenceCode: `REF${stamp.slice(-8)}`,
         description: code,
       };
 

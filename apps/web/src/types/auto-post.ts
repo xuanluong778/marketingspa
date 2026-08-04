@@ -9,13 +9,7 @@ export type AutoPostType =
   | 'INBOX_BOOKING';
 
 export type AutoPostStatus =
-  | 'DRAFT'
-  | 'PENDING'
-  | 'SCHEDULED'
-  | 'PUBLISHING'
-  | 'PUBLISHED'
-  | 'FAILED'
-  | 'CANCELLED';
+  'DRAFT' | 'PENDING' | 'SCHEDULED' | 'PUBLISHING' | 'PUBLISHED' | 'FAILED' | 'CANCELLED';
 
 export const AUTO_POST_TYPE_OPTIONS: { value: AutoPostType; label: string }[] = [
   { value: 'SPA_SALES', label: 'Bài bán hàng' },

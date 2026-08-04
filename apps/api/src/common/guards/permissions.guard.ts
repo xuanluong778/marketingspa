@@ -29,7 +29,8 @@ export class PermissionsGuard implements CanActivate {
       throw new ForbiddenException('Không có thông tin người dùng');
     }
 
-    if (user.role === SYSTEM_ROLES.OWNER) {
+    // Khớp frontend hasPermission: OWNER / SUPER_ADMIN bypass toàn bộ RBAC
+    if (user.role === SYSTEM_ROLES.OWNER || user.role === 'SUPER_ADMIN') {
       return true;
     }
 

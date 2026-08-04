@@ -121,12 +121,7 @@ export interface HrmEmployeeFilters {
   pageSize?: number;
 }
 
-export type AttendanceDayStatus =
-  | 'PRESENT'
-  | 'ABSENT'
-  | 'LEAVE'
-  | 'HOLIDAY'
-  | 'INCOMPLETE';
+export type AttendanceDayStatus = 'PRESENT' | 'ABSENT' | 'LEAVE' | 'HOLIDAY' | 'INCOMPLETE';
 export type TimesheetStatus = 'OPEN' | 'LOCKED' | 'ARCHIVED';
 export type LeaveRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
 export type LeaveType = 'ANNUAL' | 'SICK' | 'UNPAID' | 'MATERNITY' | 'OTHER';

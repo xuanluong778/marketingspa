@@ -89,15 +89,15 @@ export function deleteTeleprompterSession(id: string, userId?: string | null): v
   saveTeleprompterSessions(next, userId);
 }
 
-export function renameTeleprompterSession(
-  id: string,
-  title: string,
-  userId?: string | null,
-): void {
+export function renameTeleprompterSession(id: string, title: string, userId?: string | null): void {
   const sessions = loadTeleprompterSessions(userId);
   const idx = sessions.findIndex((x) => x.id === id);
   if (idx < 0) return;
-  sessions[idx] = { ...sessions[idx]!, title: title.trim() || sessions[idx]!.title, updatedAt: new Date().toISOString() };
+  sessions[idx] = {
+    ...sessions[idx]!,
+    title: title.trim() || sessions[idx]!.title,
+    updatedAt: new Date().toISOString(),
+  };
   saveTeleprompterSessions(sessions, userId);
 }
 

@@ -1089,7 +1089,7 @@ export class AuthService {
       },
     });
     // Khóa (isActive=false) hoặc soft-delete → JWT/session cũ không còn gọi được API
-    if (!user || !user.isActive || user.deletedAt) return null;
+    if (!user || !user.isActive || user.deletedAt || !user.role) return null;
     return {
       id: user.id,
       email: user.email,

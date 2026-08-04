@@ -1,6 +1,10 @@
 const { readFileSync, existsSync } = require('fs');
 const { resolve } = require('path');
 
+const NODE_HOME =
+  '/var/www/marketingaut_usr/data/.nvm/versions/node/v22.22.3';
+const NODE_BIN = `${NODE_HOME}/bin`;
+
 /** Load selected keys from monorepo .env so PM2 restarts keep canary allowlist. */
 function readRootEnvKeys(keys) {
   const envPath = resolve(__dirname, '.env');
@@ -28,13 +32,14 @@ module.exports = {
   apps: [
     {
       name: 'api',
-      script: '/var/www/marketingaut_usr75/data/.nvm/versions/node/v22.22.3/bin/npm',
+      script: `${NODE_BIN}/npm`,
       args: 'run start:prod',
       cwd: './apps/api',
-      interpreter: '/var/www/marketingaut_usr75/data/.nvm/versions/node/v22.22.3/bin/node',
+      interpreter: `${NODE_BIN}/node`,
       env: {
         NODE_ENV: 'production',
         PORT: 4000,
+        PATH: `${NODE_BIN}:/usr/local/bin:/usr/bin:/bin`,
         // Clear polluted META_FACEBOOK_OAUTH_REDIRECT_URI inherited from PM2 daemon.
         // Auto Post uses META_AUTO_POST_REDIRECT_URI from .env instead.
         META_FACEBOOK_OAUTH_REDIRECT_URI: '',
@@ -51,38 +56,39 @@ module.exports = {
       out_file: '../logs/api.out.log',
       error_file: '../logs/api.err.log',
       merge_logs: true,
-      time: true
+      time: true,
     },
     {
       name: 'worker',
-      script: '/var/www/marketingaut_usr75/data/.nvm/versions/node/v22.22.3/bin/npm',
+      script: `${NODE_BIN}/npm`,
       args: 'run start',
       cwd: './apps/worker',
-      interpreter: '/var/www/marketingaut_usr75/data/.nvm/versions/node/v22.22.3/bin/node',
+      interpreter: `${NODE_BIN}/node`,
       env: {
         NODE_ENV: 'production',
-        PATH:
-          '/var/www/marketingaut_usr75/data/.nvm/versions/node/v22.22.3/bin:/usr/local/bin:/usr/bin:/bin',
-        YT_DLP_NODE_PATH: '/var/www/marketingaut_usr75/data/.nvm/versions/node/v22.22.3/bin/node',
+        PATH: `${NODE_BIN}:/usr/local/bin:/usr/bin:/bin`,
+        YT_DLP_NODE_PATH: `${NODE_BIN}/node`,
         YT_DLP_REMOTE_COMPONENTS: 'ejs:github',
       },
       out_file: '../logs/worker.out.log',
       error_file: '../logs/worker.err.log',
       merge_logs: true,
-      time: true
+      time: true,
     },
     {
       name: 'web',
-      script: 'npx',
+      script: `${NODE_BIN}/npx`,
       args: 'next start -p 3002',
       cwd: './apps/web',
+      interpreter: `${NODE_BIN}/node`,
       env: {
-        NODE_ENV: 'production'
+        NODE_ENV: 'production',
+        PATH: `${NODE_BIN}:/usr/local/bin:/usr/bin:/bin`,
       },
       out_file: '../logs/web.out.log',
       error_file: '../logs/web.err.log',
       merge_logs: true,
-      time: true
-    }
-  ]
+      time: true,
+    },
+  ],
 };

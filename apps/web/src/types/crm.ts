@@ -1,12 +1,5 @@
 export type LeadPipelineStatus =
-  | 'NEW'
-  | 'CONTACTED'
-  | 'QUALIFIED'
-  | 'BOOKED'
-  | 'CONFIRMED'
-  | 'VISITED'
-  | 'PURCHASED'
-  | 'LOST';
+  'NEW' | 'CONTACTED' | 'QUALIFIED' | 'BOOKED' | 'CONFIRMED' | 'VISITED' | 'PURCHASED' | 'LOST';
 
 export const PIPELINE_COLUMNS: {
   status: LeadPipelineStatus;

@@ -1015,6 +1015,8 @@ Trả JSON: {"variants":["..."]}`;
 export interface AdInsightsSuggestion {
   painPoints: string;
   benefits: string;
+  features?: string;
+  differentiators?: string;
   source: 'ai' | 'template';
 }
 
@@ -1039,6 +1041,8 @@ function templateSuggestAdInsights(dto: {
     `Khó chọn giải pháp phù hợp ngành ${industry.label}, lo hiệu quả không như mong đợi, thiếu thời gian tìm hiểu kỹ`;
   let benefits =
     `Giải pháp rõ ràng cho ${product}, quy trình minh bạch, được tư vấn tận tâm`;
+  let features = `Thành phần / công nghệ nổi bật của ${product}, dễ dùng, phù hợp nhu cầu thực tế`;
+  let differentiators = `Khác biệt rõ so với lựa chọn thông thường — quy trình minh bạch, hỗ trợ sau bán tốt`;
 
   if (industry.isSpaBeauty) {
     if (/da|spa|trẻ hóa|facial|skincare|mụn|lỗ chân lông/i.test(lower)) {
@@ -1046,21 +1050,37 @@ function templateSuggestAdInsights(dto: {
         'Da xỉn màu, lỗ chân lông to, makeup không ăn, da lão hóa sớm do stress và thiếu chăm sóc';
       benefits =
         'Da sáng hơn, mịn màng hơn, makeup ăn nền, thư giãn toàn thân, cải thiện rõ sau liệu trình';
+      features =
+        'Công nghệ phục hồi chuyên sâu, serum dưỡng phù hợp loại da, bước chăm sóc cá nhân hóa';
+      differentiators =
+        'Liệu trình cá nhân hóa theo tình trạng da, theo dõi sau liệu trình, không “một công thức cho tất cả”';
     } else if (/massage|thư giãn|body|gội/i.test(lower)) {
       painPoints =
         'Mỏi vai gáy, căng cơ, mất ngủ, stress công việc, cơ thể luôn mệt mỏi';
       benefits =
         'Thư giãn sâu, giảm đau nhức, ngủ ngon hơn, tái tạo năng lượng, cảm giác nhẹ người';
+      features =
+        'Kỹ thuật massage chuyên sâu, liệu pháp nhiệt/đá hỗ trợ, không gian yên tĩnh';
+      differentiators =
+        'Kỹ thuật viên được đào tạo bài bản, áp lực massage điều chỉnh theo người, thư giãn thật sự không vội';
     } else if (/giảm cân|slim|eo|dáng|fit/i.test(lower)) {
       painPoints =
         'Mỡ bụng tích tụ, khó giảm cân dù đã thử nhiều cách, mất tự tin về vóc dáng';
       benefits =
         'Vóc dáng săn chắc hơn, giảm số đo có căn cứ, quy trình an toàn, tự tin hơn khi mặc đồ';
+      features =
+        'Công nghệ hỗ trợ đốt mỡ/ săn chắc, đo số liệu trước–sau, lộ trình theo dõi';
+      differentiators =
+        'Cam kết quy trình an toàn, số liệu đo thực tế, tư vấn duy trì sau liệu trình';
     } else if (/nail|mi|lash|phun xăm|làm đẹp/i.test(lower)) {
       painPoints =
         'Khó giữ nét đẹp lâu, sợ hỏng tự nhiên, không biết chọn dịch vụ uy tín';
       benefits =
         'Lên form chuẩn, bền màu, tự nhiên, được chăm sóc kỹ, phù hợp phong cách cá nhân';
+      features =
+        'Vật liệu chính hãng, kỹ thuật chuẩn form, vệ sinh dụng cụ nghiêm ngặt';
+      differentiators =
+        'Tự nhiên – bền – đúng form cá nhân, không làm quá tay, hậu mãi khi cần chỉnh';
     }
   }
 
@@ -1090,6 +1110,8 @@ function templateSuggestAdInsights(dto: {
   return {
     painPoints,
     benefits: `${benefits} — phù hợp cho ${product}`,
+    features,
+    differentiators,
     source: 'template',
   };
 }
@@ -1122,7 +1144,7 @@ export async function suggestAdInsights(
   });
 
   const prompt = `${industryExpertIntro(industry)}
-Dựa trên thông tin sau, gợi ý NỖI ĐAU khách hàng và LỢI ÍCH/giải pháp để viết quảng cáo.
+Dựa trên thông tin sau, gợi ý nội dung để viết quảng cáo bán hàng (sản phẩm/dịch vụ).
 
 ${block}
 
@@ -1132,26 +1154,33 @@ ${objective ? `Ưu tiên insight phù hợp: ${objective.generateHint}` : ''}
 Yêu cầu:
 - painPoints: 2–4 ý ngắn gọn, đúng ngành "${industry.label}"
 - benefits: 2–4 lợi ích cụ thể, không cam kết 100%
+- features: 2–4 tính năng / thành phần / công nghệ nổi bật (dùng cho form sản phẩm)
+- differentiators: 2–3 điểm khác biệt so với đối thủ / vì sao chọn sản phẩm này
 - ${industry.isSpaBeauty ? '' : 'CẤM insight spa/làm đẹp.'}
 - Tiếng Việt tự nhiên, phù hợp quảng cáo
 
 Trả JSON (không markdown):
-{"painPoints":"...","benefits":"..."}`;
+{"painPoints":"...","benefits":"...","features":"...","differentiators":"..."}`;
 
   try {
     const raw = await openai.chatCompletion({
       messages: [{ role: 'user', content: prompt }],
-      maxTokens: 400,
+      maxTokens: 550,
       temperature: 0.6,
     });
     const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim()) as {
       painPoints?: string;
       benefits?: string;
+      features?: string;
+      differentiators?: string;
     };
     const fallback = templateSuggestAdInsights(dto);
     return {
       painPoints: (parsed.painPoints ?? '').trim() || fallback.painPoints,
       benefits: (parsed.benefits ?? '').trim() || fallback.benefits,
+      features: (parsed.features ?? '').trim() || fallback.features,
+      differentiators:
+        (parsed.differentiators ?? '').trim() || fallback.differentiators,
       source: 'ai',
     };
   } catch {

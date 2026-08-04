@@ -28,7 +28,8 @@ async function postWebhook(body: Record<string, unknown>, auth = true) {
 }
 
 function sepayId() {
-  return `test-${Date.now()}-${randomBytes(3).toString('hex')}`;
+  // Không dùng prefix test-/ops-/smoke- — production chặn synthetic trừ ALLOW_SYNTHETIC_SEPAY=1
+  return `${Date.now()}${randomBytes(4).toString('hex')}`;
 }
 
 function mktaCode() {

@@ -1,14 +1,7 @@
 import type { MessageChannel } from './automation-messaging';
 
 export type MessagingCampaignStatus =
-  | 'DRAFT'
-  | 'SCHEDULED'
-  | 'PLANNING'
-  | 'RUNNING'
-  | 'PAUSED'
-  | 'COMPLETED'
-  | 'CANCELLED'
-  | 'FAILED';
+  'DRAFT' | 'SCHEDULED' | 'PLANNING' | 'RUNNING' | 'PAUSED' | 'COMPLETED' | 'CANCELLED' | 'FAILED';
 
 export type MessagingCampaignKind = 'AUTOMATION' | 'BROADCAST' | 'TRANSACTIONAL' | 'TEMPLATE';
 

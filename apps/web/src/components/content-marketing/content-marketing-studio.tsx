@@ -171,6 +171,8 @@ function ContentForm({
   suggestingProductField,
   productFieldSuggestMsg,
   lastProductSuggestField,
+  urlAnalyzeResetKey,
+  onUrlAnalyzeDirtyChange,
 }: {
   form: ContentFormState;
   onChange: (patch: Partial<ContentFormState>) => void;
@@ -185,6 +187,8 @@ function ContentForm({
   suggestingProductField?: 'features' | 'differentiators' | null;
   productFieldSuggestMsg?: string;
   lastProductSuggestField?: 'features' | 'differentiators' | null;
+  urlAnalyzeResetKey?: number;
+  onUrlAnalyzeDirtyChange?: (dirty: boolean) => void;
 }) {
   const kind = form.adPostKind === 'service' ? 'service' : 'product';
   const patchProduct = (patch: Partial<AdProductDetails>) => {
@@ -258,10 +262,12 @@ function ContentForm({
       </div>
 
       <AdUrlAnalyzePanel
+        key={urlAnalyzeResetKey ?? 0}
         adPostKind={kind}
         brandName={form.brandName}
         form={form}
         onApplyForm={(next) => onChange(next)}
+        onDirtyChange={onUrlAnalyzeDirtyChange}
       />
 
       {kind === 'product' ? (
@@ -766,6 +772,8 @@ export function AdStudioTabPanel({
   const [lastProductSuggestField, setLastProductSuggestField] = useState<
     'features' | 'differentiators' | null
   >(null);
+  const [urlAnalyzeResetKey, setUrlAnalyzeResetKey] = useState(0);
+  const [urlAnalyzeDirty, setUrlAnalyzeDirty] = useState(false);
   const [isCreatingLoading, setIsCreatingLoading] = useState(false);
   const resultSectionRef = useRef<HTMLDivElement>(null);
   const scrollToResultLockRef = useRef(false);
@@ -1179,9 +1187,18 @@ export function AdStudioTabPanel({
       form.targetAudience.trim() ||
       form.painPoints.trim() ||
       form.benefits.trim() ||
+      form.offer.trim() ||
+      form.cta.trim() ||
       form.brandName.trim() ||
       Object.values(form.productDetails).some((v) => String(v).trim()) ||
-      Object.values(form.serviceDetails).some((v) => String(v).trim())
+      Object.values(form.serviceDetails).some((v) => String(v).trim()) ||
+      urlAnalyzeDirty ||
+      headline.trim() ||
+      shortDescription.trim() ||
+      mediaSuggestions.length ||
+      variants.length ||
+      hooks.length ||
+      ctas.length
     );
     if (dirty && !window.confirm('Làm mới form và xóa kết quả hiện tại?')) return;
     setContent('');
@@ -1196,6 +1213,17 @@ export function AdStudioTabPanel({
     setMediaSuggestions([]);
     setFormError('');
     setLastGeneratedAt(undefined);
+    setSuggestMsg('');
+    setCtaSuggestMsg('');
+    setCtaAlternatives([]);
+    setProductFieldSuggestMsg('');
+    setSuggestingProductField(null);
+    setLastProductSuggestField(null);
+    setCopyMsg('');
+    setSaved(false);
+    setContentPreviewOpen(false);
+    setUrlAnalyzeDirty(false);
+    setUrlAnalyzeResetKey((k) => k + 1);
     clearAdWorkspaceDraft(userId);
     const empty = emptyAdWorkspaceDraft();
     if (user?.organization?.name?.trim()) {
@@ -1203,7 +1231,19 @@ export function AdStudioTabPanel({
     }
     setForm(empty.form);
     saveAdWorkspaceDraft(empty, userId, { force: true });
-  }, [content, form, userId, user?.organization?.name]);
+  }, [
+    content,
+    form,
+    userId,
+    user?.organization?.name,
+    urlAnalyzeDirty,
+    headline,
+    shortDescription,
+    mediaSuggestions.length,
+    variants.length,
+    hooks.length,
+    ctas.length,
+  ]);
 
   const handleCopy = useCallback(async () => {
     if (!content) return;
@@ -1269,6 +1309,8 @@ export function AdStudioTabPanel({
               suggestingProductField={suggestingProductField}
               productFieldSuggestMsg={productFieldSuggestMsg}
               lastProductSuggestField={lastProductSuggestField}
+              urlAnalyzeResetKey={urlAnalyzeResetKey}
+              onUrlAnalyzeDirtyChange={setUrlAnalyzeDirty}
             />
           </div>
           <div className="fixed bottom-0 left-0 right-0 z-40 flex h-[60px] flex-wrap items-center gap-2 border-t border-white/10 bg-[#2E594F] px-4 shadow-[0_-6px_16px_rgba(15,23,42,0.12)] lg:left-64">

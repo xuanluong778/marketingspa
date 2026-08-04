@@ -37,6 +37,8 @@ export const ADVANCED_SUGGEST_FIELDS = [
   'differentiator',
   'certification',
   'caseStudy',
+  'combo',
+  'gift',
 ] as const;
 
 export type AdvancedSuggestField = (typeof ADVANCED_SUGGEST_FIELDS)[number];
@@ -47,6 +49,8 @@ export const ADVANCED_SUGGEST_FIELD_LABELS: Record<AdvancedSuggestField, string>
   differentiator: 'Điểm khác biệt của thương hiệu',
   certification: 'Cam kết / chứng nhận',
   caseStudy: 'Câu chuyện khách hàng / case study',
+  combo: 'Combo / ưu đãi',
+  gift: 'Quà tặng',
 };
 
 export const ADVANCED_LENGTH_HINT: Record<string, string> = {

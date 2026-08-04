@@ -228,7 +228,7 @@ export class ChatbotCskhController {
   @UseGuards(PermissionsGuard)
   @RequirePermissions('automation.integration.manage')
   syncMessagingFromChatbot(@CurrentUser() user: AuthUser) {
-    return this.service.syncMessagingFromChatbotPages(user.organizationId);
+    return this.service.syncMessagingFromChatbotPages(user.organizationId, user.id);
   }
 
   @Delete('facebook/pages/:id')

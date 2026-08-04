@@ -37,21 +37,40 @@ export function suggestAdInsightsLocal(input: {
     'Khó tìm giải pháp phù hợp, lo ngại hiệu quả không như mong đợi, thiếu thời gian tìm hiểu kỹ';
   let benefits =
     'Giải pháp rõ ràng, quy trình minh bạch, cảm nhận khác biệt sau liệu trình, được tư vấn tận tâm';
+  let features = `Thành phần / công nghệ nổi bật của ${product}, dễ dùng, phù hợp nhu cầu thực tế`;
+  let differentiators =
+    'Khác biệt rõ so với lựa chọn thông thường — quy trình minh bạch, hỗ trợ sau bán tốt';
 
   if (/da|spa|trẻ hóa|facial|skincare|mụn|lỗ chân lông/i.test(lower)) {
     painPoints =
       'Da xỉn màu, lỗ chân lông to, makeup không ăn, da lão hóa sớm do stress và thiếu chăm sóc';
     benefits =
       'Da sáng hơn, mịn màng hơn, makeup ăn nền, thư giãn toàn thân, cải thiện rõ sau liệu trình';
+    features =
+      'Công nghệ phục hồi chuyên sâu, serum dưỡng phù hợp loại da, bước chăm sóc cá nhân hóa';
+    differentiators =
+      'Liệu trình cá nhân hóa theo tình trạng da, theo dõi sau liệu trình, không “một công thức cho tất cả”';
   } else if (/massage|thư giãn|body|gội/i.test(lower)) {
     painPoints = 'Mỏi vai gáy, căng cơ, mất ngủ, stress công việc, cơ thể luôn mệt mỏi';
     benefits = 'Thư giãn sâu, giảm đau nhức, ngủ ngon hơn, tái tạo năng lượng, cảm giác nhẹ người';
+    features =
+      'Kỹ thuật massage chuyên sâu, liệu pháp nhiệt/đá hỗ trợ, không gian yên tĩnh';
+    differentiators =
+      'Kỹ thuật viên đào tạo bài bản, áp lực điều chỉnh theo người, thư giãn thật sự không vội';
   } else if (/giảm cân|slim|eo|dáng|fit/i.test(lower)) {
     painPoints = 'Mỡ bụng tích tụ, khó giảm cân dù đã thử nhiều cách, mất tự tin về vóc dáng';
     benefits = 'Vóc dáng săn chắc hơn, giảm số đo có căn cứ, quy trình an toàn, tự tin hơn khi mặc đồ';
+    features =
+      'Công nghệ hỗ trợ săn chắc, đo số liệu trước–sau, lộ trình theo dõi';
+    differentiators =
+      'Quy trình an toàn, số liệu đo thực tế, tư vấn duy trì sau liệu trình';
   } else if (/nail|mi|lash|phun xăm|làm đẹp/i.test(lower)) {
     painPoints = 'Khó giữ nét đẹp lâu, sợ hỏng tự nhiên, không biết chọn dịch vụ uy tín';
     benefits = 'Lên form chuẩn, bền màu, tự nhiên, được chăm sóc kỹ, phù hợp phong cách cá nhân';
+    features =
+      'Vật liệu chính hãng, kỹ thuật chuẩn form, vệ sinh dụng cụ nghiêm ngặt';
+    differentiators =
+      'Tự nhiên – bền – đúng form cá nhân, không làm quá tay, hậu mãi khi cần chỉnh';
   }
 
   if (audience && audience !== 'khách hàng mục tiêu') {
@@ -68,6 +87,8 @@ export function suggestAdInsightsLocal(input: {
   return {
     painPoints,
     benefits: `${benefits} — phù hợp cho ${product}${objective ? ` (${objective.description})` : ''}`,
+    features,
+    differentiators,
     source: 'template',
   };
 }

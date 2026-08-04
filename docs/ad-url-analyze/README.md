@@ -29,27 +29,19 @@ Chỉ thêm **Phân tích link** trên tab Quảng cáo bán hàng. Không đụ
 - Chỉ điền trống; ghi đè cần `confirm`
 
 ## Files
-- `packages/shared/src/ad-url-analyze.ts`, `ssrf-fetch.ts`, exports + `QUEUE_NAMES`
+- `packages/shared/src/ad-url-analyze.ts`, `ssrf-fetch.ts` (server-only via `@marketingspa/shared/dist/ssrf-fetch`), exports + `QUEUE_NAMES`
 - `apps/api/.../ad-url-analyze.service.ts`, DTO, controller, module, queue wiring
 - `apps/worker/.../processors/ad-url-analyze.ts`, `lib/ad-url-analyze-ai.ts`, worker register
 - `apps/web/.../ad-url-analyze-panel.tsx`, hook, apply helper, studio mount
 - `scripts/test-ad-url-analyze.ts`
 
-## Test
-```bash
-pnpm --filter @marketingspa/shared build
-pnpm --filter @marketingspa/database exec tsx ../../scripts/test-ad-url-analyze.ts
-```
+## Commits
+- `bd7b2dc` feat(content): analyze product/service URL and autofill ad form
+- `57c3bce` fix(shared): drop package exports that blocked ssrf-fetch deep import
 
 ## Rollback
 ```bash
-git revert <commit>   # hoặc checkout tag trước deploy
+git checkout feat/ad-url-analyze-rollback   # 83cb801 — trước feature
 # rebuild shared + api dist + web .next; pm2 restart api web worker
+# hoặc: git revert 57c3bce bd7b2dc
 ```
-
-## Deploy checklist
-1. shared build
-2. API compile → `apps/api/dist`
-3. worker build/restart (consume queue mới)
-4. web build → runtime `.next`
-5. `pm2 restart api web worker`

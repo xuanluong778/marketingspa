@@ -687,72 +687,17 @@ export class ChatbotCskhService {
   }
 
   /**
-   * Đồng bộ mọi Fanpage chatbot → MessagingChannelConnection
-   * để Nhắn tin hàng loạt dùng chung Page.
+   * Đồng bộ mọi Fanpage/OA đã kết nối (Chatbot + Content OAuth) → MessagingChannelConnection
+   * để Nhắn tin hàng loạt dùng chung kênh.
    */
-  async syncMessagingFromChatbotPages(organizationId: string) {
-    const pages = await this.prisma.chatbotFacebookPage.findMany({
-      where: { organizationId, status: 'connected' },
-      orderBy: { updatedAt: 'desc' },
-    });
-    if (pages.length === 0) {
+  async syncMessagingFromChatbotPages(organizationId: string, userId?: string) {
+    const result = await this.channelConnections.syncFromOrgSources(organizationId, userId);
+    if (result.synced === 0 && result.failed === 0) {
       throw new BadRequestException(
-        'Chưa có Fanpage chatbot nào. Kết nối Fanpage ở Chatbot CSKH trước.',
+        'Chưa có Fanpage/Zalo OA nào để đồng bộ. Kết nối Fanpage tại Chatbot CSKH hoặc Nội dung → Kết nối kênh trước.',
       );
     }
-
-    const envToken = this.facebookWebhook.getMessengerPageToken();
-    const results: Array<{
-      pageId: string;
-      pageName: string | null;
-      ok: boolean;
-      error?: string;
-      connectionId?: string;
-    }> = [];
-
-    for (const page of pages) {
-      const storedToken = this.facebookWebhook.decodePageToken(page.pageAccessTokenEncrypted);
-      const pageAccessToken = storedToken || envToken;
-      if (!pageAccessToken) {
-        results.push({
-          pageId: page.pageId,
-          pageName: page.pageName,
-          ok: false,
-          error: 'Thiếu Page Access Token',
-        });
-        continue;
-      }
-      try {
-        const connection = await this.channelConnections.upsertMessengerFromChatbot(
-          organizationId,
-          {
-            pageId: page.pageId,
-            pageAccessToken,
-            pageName: page.pageName ?? undefined,
-            subscribeWebhook: page.webhookSubscribed,
-          },
-        );
-        results.push({
-          pageId: page.pageId,
-          pageName: page.pageName,
-          ok: true,
-          connectionId: connection.id,
-        });
-      } catch (e) {
-        results.push({
-          pageId: page.pageId,
-          pageName: page.pageName,
-          ok: false,
-          error: e instanceof Error ? e.message : String(e),
-        });
-      }
-    }
-
-    return {
-      synced: results.filter((r) => r.ok).length,
-      failed: results.filter((r) => !r.ok).length,
-      results,
-    };
+    return result;
   }
 
   async getUsageSnapshot(organizationId: string) {

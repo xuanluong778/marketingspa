@@ -17,11 +17,15 @@ import {
 import { Type } from 'class-transformer';
 
 export class AttendancePunchDto {
+  /** Optional — server falls back to actor.employeeId */
+  @IsOptional()
   @IsUUID()
-  employeeId!: string;
+  employeeId?: string;
 
+  /** Optional — server falls back to employee's branchId */
+  @IsOptional()
   @IsUUID()
-  branchId!: string;
+  branchId?: string;
 
   @IsEnum(AttendancePunchType)
   type!: AttendancePunchType;

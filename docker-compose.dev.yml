@@ -9,7 +9,8 @@ services:
       POSTGRES_PASSWORD: change_me_strong_password
       POSTGRES_DB: marketingspa
     ports:
-      - '5434:5432'
+      # Chỉ bind loopback — không publish 0.0.0.0/IPv6
+      - '127.0.0.1:5434:5432'
     volumes:
       - marketingspa_postgres_dev:/var/lib/postgresql/data
     healthcheck:
@@ -24,7 +25,8 @@ services:
     restart: unless-stopped
     # Ưu tiên 6379; nếu cổng bị chiếm (app khác), map sang 6380 và set REDIS_URL=redis://localhost:6380
     ports:
-      - '${REDIS_HOST_PORT:-6379}:6379'
+      # Chỉ bind loopback — không publish 0.0.0.0/IPv6
+      - '127.0.0.1:${REDIS_HOST_PORT:-6379}:6379'
 
 volumes:
   marketingspa_postgres_dev:

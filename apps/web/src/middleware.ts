@@ -13,8 +13,7 @@ export function middleware(request: NextRequest) {
     const secure = request.nextUrl.protocol === 'https:';
     const host = request.nextUrl.hostname;
     // Host-only cookie cho apex; thêm Domain=.example.com nếu vào qua www
-    const cookieDomain =
-      host.startsWith('www.') ? `.${host.slice(4)}` : undefined;
+    const cookieDomain = host.startsWith('www.') ? `.${host.slice(4)}` : undefined;
     const common = {
       sameSite: 'lax' as const,
       secure,

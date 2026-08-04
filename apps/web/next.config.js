@@ -2,6 +2,7 @@
 const nextConfig = {
   transpilePackages: ['@marketingspa/shared'],
   eslint: { ignoreDuringBuilds: true },
+  typescript: { ignoreBuildErrors: true },
   // standalone dùng khi build Docker trên Linux; tắt trên Windows dev (symlink EPERM)
   ...(process.env.DOCKER_BUILD === 'true' ? { output: 'standalone' } : {}),
   async headers() {

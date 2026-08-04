@@ -57,6 +57,7 @@ import {
 import { buildContentAutoPostHref } from '@/lib/content-auto-post-routes';
 import { formatMutationError } from '@/lib/format-mutation-error';
 import { apiClient, apiDownload } from '@/lib/api-client';
+import { MakeVideoButton } from '@/components/content-marketing/make-video-button';
 
 const PROGRESS_STAGES: VideoTranscriptionStage[] = [
   'validating',
@@ -664,6 +665,15 @@ export function VideoTranscriptionStudio() {
                 <Sparkles className="mr-1 h-3.5 w-3.5" />
                 Viết bài từ nội dung này
               </Button>
+              <MakeVideoButton
+                title={job?.sourceTitle || probe?.title || 'Văn bản từ video'}
+                editedScript={editorText}
+                originalScript={job?.rawTranscript || editorText}
+                sourceType="manual"
+                sourceRoute={sourceUrl.trim() || undefined}
+                className="text-white [&_svg]:text-white"
+                disabled={!editorText.trim()}
+              />
               <Button
                 type="button"
                 variant="outline"

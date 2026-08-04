@@ -195,6 +195,7 @@
   .content-create-tab .advanced-write-form textarea {
     background-color: #ffffff !important;
     color: #0f172a !important;
+    -webkit-text-fill-color: #0f172a !important;
     border-color: #cbd5e1 !important;
   }
 
@@ -215,22 +216,24 @@
   .content-create-tab .advanced-write-form .ai-suggest-options p,
   .content-create-tab .advanced-write-form .ai-suggest-options span,
   .content-create-tab .advanced-write-form .ai-suggest-options button,
-  .content-create-tab .advanced-write-form .ai-suggest-options li {
+  .content-create-tab .advanced-write-form .ai-suggest-options li,
+  .content-create-tab .advanced-write-form .ai-suggest-options * {
     color: #0f172a !important;
-  }
-
-  .content-create-tab .advanced-write-form .ai-suggest-options p.text-emerald-800,
-  .content-create-tab .advanced-write-form .ai-suggest-options .text-emerald-800 {
-    color: #065f46 !important;
+    -webkit-text-fill-color: #0f172a !important;
   }
 
   .content-create-tab .advanced-write-form .ai-suggest-options .text-slate-500,
-  .content-create-tab .advanced-write-form .ai-suggest-options .text-slate-600 {
+  .content-create-tab .advanced-write-form .ai-suggest-options span.text-slate-500 {
     color: #64748b !important;
+    -webkit-text-fill-color: #64748b !important;
   }
 
-  .content-create-tab .advanced-write-form .ai-suggest-options button:hover {
-    color: #0f172a !important;
+  .content-create-tab .advanced-write-form .ai-suggest-options button:hover,
+  .content-create-tab .advanced-write-form .ai-suggest-options button:hover *,
+  .content-create-tab .advanced-write-form .ai-suggest-options button:focus-visible,
+  .content-create-tab .advanced-write-form .ai-suggest-options button:focus-visible * {
+    color: #f97316 !important;
+    -webkit-text-fill-color: #f97316 !important;
   }
 
   .content-create-tab .advanced-write-tab > .flex button.text-white,
@@ -240,6 +243,63 @@
   .content-create-tab .advanced-write-form button.text-white span,
   .content-create-tab .advanced-write-form button.text-white svg {
     color: #ffffff !important;
+  }
+
+  /* Panel kết quả Viết bài nâng cao — chữ trắng trên nền xanh đậm */
+  .content-create-tab .advanced-result-panel,
+  .content-create-tab .advanced-result-panel h3,
+  .content-create-tab .advanced-result-panel h4,
+  .content-create-tab .advanced-result-panel p,
+  .content-create-tab .advanced-result-panel li,
+  .content-create-tab .advanced-result-panel span,
+  .content-create-tab .advanced-result-panel label {
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+  }
+
+  .content-create-tab .advanced-result-panel button.text-white,
+  .content-create-tab .advanced-result-panel button.text-white span,
+  .content-create-tab .advanced-result-panel button.text-white svg {
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+  }
+
+  .content-create-tab .advanced-result-panel button.text-white:hover,
+  .content-create-tab .advanced-result-panel button.text-white:hover span,
+  .content-create-tab .advanced-result-panel button.text-white:hover svg {
+    color: #f97316 !important;
+    -webkit-text-fill-color: #f97316 !important;
+  }
+
+  /* Nội dung bài trong box trắng: giữ chữ đen dễ đọc */
+  .content-create-tab .advanced-result-panel .advanced-result-article,
+  .content-create-tab .advanced-result-panel .advanced-result-article *,
+  .content-create-tab .advanced-result-panel .advanced-result-article p,
+  .content-create-tab .advanced-result-panel .advanced-result-article span,
+  .content-create-tab .advanced-result-panel .advanced-result-article li,
+  .content-create-tab .advanced-result-panel .advanced-result-article h1,
+  .content-create-tab .advanced-result-panel .advanced-result-article h2,
+  .content-create-tab .advanced-result-panel .advanced-result-article h3 {
+    color: #0f172a !important;
+    -webkit-text-fill-color: #0f172a !important;
+  }
+
+  /* Header Kết quả content / Xem lớn / Copy — chữ đen trên nền trắng */
+  .content-create-tab .advanced-result-panel .advanced-result-actions,
+  .content-create-tab .advanced-result-panel .advanced-result-actions *,
+  .content-create-tab .advanced-result-panel .advanced-result-actions h3,
+  .content-create-tab .advanced-result-panel .advanced-result-actions button,
+  .content-create-tab .advanced-result-panel .advanced-result-actions span,
+  .content-create-tab .advanced-result-panel .advanced-result-actions svg {
+    color: #0f172a !important;
+    -webkit-text-fill-color: #0f172a !important;
+  }
+
+  /* Tab đang chọn: chữ đen trên nền trắng */
+  .content-create-tab .advanced-result-panel [role='tab'][data-state='active'],
+  .content-create-tab .advanced-result-panel [role='tab'][data-state='active'] * {
+    color: #0f172a !important;
+    -webkit-text-fill-color: #0f172a !important;
   }
 
   /* Personal brand — title picker box must stay black on white (parent form is text-white) */
