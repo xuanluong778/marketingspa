@@ -168,11 +168,19 @@ export function CheckContentAdsPanel({
           : {}),
       };
       setForm(next);
-      setMsg(
-        res.insufficientData
-          ? `${res.message || 'INSUFFICIENT_DATA'} ${(res.warnings || []).join(' ')}`.trim()
-          : `Đã import (${res.sourceType}). Kiểm tra và chỉnh sửa trước khi chấm. ${(res.warnings || []).join(' ')}`.trim(),
-      );
+      if (res.insufficientData) {
+        setMsg(
+          `${res.message || 'INSUFFICIENT_DATA'} ${(res.warnings || []).join(' ')}`.trim(),
+        );
+      } else if ((res.primaryText || '').trim()) {
+        setMsg(
+          `Đã lấy nội dung (${res.sourceType}${res.pageName ? ` · ${res.pageName}` : ''}) — ${(res.primaryText || '').trim().length} ký tự. Kiểm tra rồi bấm Kiểm tra Content Ads. ${(res.warnings || []).join(' ')}`.trim(),
+        );
+      } else {
+        setMsg(
+          `Import xong nhưng thiếu caption. ${(res.warnings || []).join(' ')}`.trim(),
+        );
+      }
     } catch (err) {
       setMsg(formatMutationError(err) || 'Import URL thất bại');
     }

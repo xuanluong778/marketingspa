@@ -28,11 +28,13 @@ function isPrivateOrReservedIp(ip: string): boolean {
   if (v === 6) {
     const lower = ip.toLowerCase();
     if (lower === '::1' || lower === '::') return true;
-    if (lower.startsWith('fc') || lower.startsWith('fd')) return true;
-    if (lower.startsWith('fe80')) return true;
-    if (lower.startsWith('ff')) return true;
+    if (lower.startsWith('fc') || lower.startsWith('fd')) return true; // ULA
+    if (lower.startsWith('fe80')) return true; // link-local
+    if (lower.startsWith('ff')) return true; // multicast
     const mapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
     if (mapped?.[1]) return isPrivateOrReservedIp(mapped[1]);
+    // Public IPv6 is allowed
+    return false;
   }
   return true;
 }
@@ -86,11 +88,19 @@ export async function assertPublicHttpUrl(raw: string): Promise<URL> {
 
 export async function fetchPublicHtmlSafe(
   rawUrl: string,
-  opts?: { timeoutMs?: number; maxBytes?: number; maxRedirects?: number },
+  opts?: {
+    timeoutMs?: number;
+    maxBytes?: number;
+    maxRedirects?: number;
+    userAgent?: string;
+  },
 ): Promise<{ finalUrl: string; title: string; text: string; html: string }> {
   const timeoutMs = opts?.timeoutMs ?? 12_000;
   const maxBytes = opts?.maxBytes ?? 1_500_000;
   const maxRedirects = opts?.maxRedirects ?? 3;
+  const userAgent =
+    opts?.userAgent ??
+    'Mozilla/5.0 (compatible; MarketingAutoAZ-PolicyImporter/1.0)';
 
   let current = await assertPublicHttpUrl(rawUrl);
   let redirects = 0;
@@ -104,8 +114,9 @@ export async function fetchPublicHtmlSafe(
         method: 'GET',
         redirect: 'manual',
         headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; MarketingAutoAZ-PolicyImporter/1.0)',
+          'User-Agent': userAgent,
           Accept: 'text/html,application/xhtml+xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
         },
         signal: controller.signal,
       });

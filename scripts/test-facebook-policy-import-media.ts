@@ -90,14 +90,22 @@ async function main() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     config: mockConfig as any,
   });
-  assert.equal(fbMissing.statusHint, 'PERMISSION_REQUIRED');
-  assert.equal(fbMissing.insufficientData, true);
-  assert.ok(
-    /OAuth|Fanpage|caption|transcript/i.test(
-      [...fbMissing.warnings, fbMissing.message || ''].join(' '),
-    ),
-  );
   assert.equal(fbMissing.editable, true);
+  // No OAuth: either PERMISSION_REQUIRED, or public scrape result / insufficient
+  if (!fbMissing.primaryText?.trim()) {
+    assert.equal(fbMissing.insufficientData, true);
+    assert.ok(
+      fbMissing.statusHint === 'PERMISSION_REQUIRED' ||
+        fbMissing.statusHint === 'INSUFFICIENT_DATA',
+    );
+    assert.ok(
+      /OAuth|Fanpage|caption|transcript|nội dung|INSUFFICIENT|PERMISSION/i.test(
+        [...fbMissing.warnings, fbMissing.message || ''].join(' '),
+      ),
+    );
+  } else {
+    assert.equal(fbMissing.statusHint, 'OK');
+  }
 
   // Pages connected but missing scopes → PERMISSION_REQUIRED
   const mockPrismaNoScope = {
@@ -252,6 +260,21 @@ async function main() {
   assert.ok(
     ['REVIEW_REQUIRED', 'HIGH_RISK', 'PROHIBITED'].includes(landingMerged.overallStatus),
   );
+
+  // --- Caption extract from FB HTML (public) ---
+  const {
+    extractFacebookCaptionFromHtml,
+  } = await import(
+    '../apps/api/src/content-marketing/facebook-policy/facebook-policy-import.logic'
+  );
+  const fakeHtml = `
+    <html><head><title>Fanpage Demo</title></head>
+    <body>
+      <script>{"message":{"__typename":"TextWithEntities","text":"Serum dưỡng ẩm cho da nhạy cảm — dùng hàng ngày nhẹ nhàng."}}</script>
+    </body></html>
+  `;
+  const cap = extractFacebookCaptionFromHtml(fakeHtml);
+  assert.ok(cap.text.includes('Serum dưỡng ẩm'));
 
   console.log('test-facebook-policy-import-media: PASS');
 }
