@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { sidebarNavGroups, type NavGroup, type NavItem } from '@/config/navigation';
 import { CONTENT_AUTO_POST_BASE } from '@/lib/content-auto-post-routes';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { NavFlyout } from '@/components/layout/nav-flyout';
 
 /** Canonicalize create-section for active match (`ads-check` → `facebook-check`). */
 function normalizeContentSection(section: string | null | undefined): string {
@@ -92,7 +93,25 @@ export function Sidebar({ onNavigate }: SidebarProps) {
         // Other links that include a query string
         if (want.search) {
           if (have.pathname !== want.pathname) return false;
+          // Settings: bare /settings defaults to account
+          if (want.pathname === '/settings' && want.searchParams.get('tab') === 'account') {
+            const haveTab = have.searchParams.get('tab');
+            return !haveTab || haveTab === 'account' || haveTab === 'general';
+          }
           for (const [key, value] of want.searchParams.entries()) {
+            if (key === 'tab' && want.pathname === '/settings') {
+              const haveTab = have.searchParams.get('tab');
+              // Aliases legacy tabs
+              if (value === 'knowledge') {
+                return haveTab === 'knowledge' || haveTab === 'knowledge-base' || haveTab === 'kb';
+              }
+              if (value === 'api') {
+                return haveTab === 'api' || haveTab === 'integrations';
+              }
+              if (value === 'system') {
+                return haveTab === 'system' || haveTab === 'general';
+              }
+            }
             if (have.searchParams.get(key) !== value) return false;
           }
           return true;
@@ -118,10 +137,17 @@ export function Sidebar({ onNavigate }: SidebarProps) {
     () => (group: NavGroup) => {
       if (group.items?.some(isNavItemActive)) return true;
       if (!group.href) return false;
+      // Settings: active for any /settings tab
+      if (group.href === '/settings') {
+        return pathname === '/settings' || pathname.startsWith('/settings/');
+      }
       if (group.href === CONTENT_AUTO_POST_BASE) {
         // Keep Content Marketing open/active for create-tab sections and teleprompter.
         if (pathname === '/teleprompter' || pathname.startsWith('/teleprompter/')) return true;
-        if (pathname === CONTENT_AUTO_POST_BASE || pathname.startsWith(`${CONTENT_AUTO_POST_BASE}/`)) {
+        if (
+          pathname === CONTENT_AUTO_POST_BASE ||
+          pathname.startsWith(`${CONTENT_AUTO_POST_BASE}/`)
+        ) {
           const tab = searchParams.get('tab') || 'create';
           if (tab === 'create') {
             const section = searchParams.get('section') || 'ad';
@@ -214,8 +240,23 @@ export function Sidebar({ onNavigate }: SidebarProps) {
               );
             }
 
+            if (group.flyout && group.items?.length) {
+              return (
+                <NavFlyout
+                  key={group.title}
+                  group={group}
+                  active={active}
+                  isItemActive={isNavItemActive}
+                  onNavigate={onNavigate}
+                />
+              );
+            }
+
             return (
-              <div key={group.title} className="rounded-xl border border-transparent bg-transparent">
+              <div
+                key={group.title}
+                className="rounded-xl border border-transparent bg-transparent"
+              >
                 <button
                   type="button"
                   onClick={() => toggleGroup(group.title)}

@@ -19,6 +19,9 @@ import {
   Clock,
   CreditCard,
   Handshake,
+  User,
+  BookOpen,
+  KeyRound,
   type LucideIcon,
 } from 'lucide-react';
 import { CONTENT_AUTO_POST_BASE } from '@/lib/content-auto-post-routes';
@@ -34,7 +37,19 @@ export interface NavGroup {
   icon: LucideIcon;
   href?: string;
   items?: NavItem[];
+  /** Flyout submenu (hover desktop + click mobile). Default: inline expand. */
+  flyout?: boolean;
 }
+
+export const SETTINGS_TABS = ['account', 'knowledge', 'api', 'system'] as const;
+export type SettingsTab = (typeof SETTINGS_TABS)[number];
+
+export const settingsNavItems: NavItem[] = [
+  { title: 'Account', href: '/settings?tab=account', icon: User },
+  { title: 'AI Knowledge Base', href: '/settings?tab=knowledge', icon: BookOpen },
+  { title: 'API', href: '/settings?tab=api', icon: KeyRound },
+  { title: 'System', href: '/settings?tab=system', icon: Settings },
+];
 
 export const mainNav: NavItem[] = [
   { title: 'Tổng quan', href: '/overview', icon: LayoutDashboard },
@@ -92,10 +107,18 @@ export const sidebarNavGroups: NavGroup[] = [
         href: `${CONTENT_AUTO_POST_BASE}?tab=create&section=video-transcript`,
         icon: ChevronRight,
       },
-      { title: 'Thư viện bài viết', href: `${CONTENT_AUTO_POST_BASE}?tab=library`, icon: ChevronRight },
+      {
+        title: 'Thư viện bài viết',
+        href: `${CONTENT_AUTO_POST_BASE}?tab=library`,
+        icon: ChevronRight,
+      },
       { title: 'Auto Post', href: `${CONTENT_AUTO_POST_BASE}?tab=auto-post`, icon: ChevronRight },
       { title: 'Lịch đăng', href: `${CONTENT_AUTO_POST_BASE}?tab=schedule`, icon: ChevronRight },
-      { title: 'Kết nối Fanpage', href: `${CONTENT_AUTO_POST_BASE}?tab=channels`, icon: ChevronRight },
+      {
+        title: 'Kết nối Fanpage',
+        href: `${CONTENT_AUTO_POST_BASE}?tab=channels`,
+        icon: ChevronRight,
+      },
       { title: 'Kịch bản quay video', href: '/teleprompter', icon: ChevronRight },
     ],
   },
@@ -138,8 +161,22 @@ export const sidebarNavGroups: NavGroup[] = [
     ],
   },
   { title: 'Báo cáo', href: '/reports', icon: FileBarChart },
-  { title: 'Cài đặt', href: '/settings', icon: Settings },
+  {
+    title: 'Cài đặt',
+    href: '/settings',
+    icon: Settings,
+    flyout: true,
+    items: settingsNavItems,
+  },
 ];
+
+export function parseSettingsTab(raw: string | null | undefined): SettingsTab {
+  const v = (raw || '').trim().toLowerCase();
+  if (v === 'knowledge' || v === 'knowledge-base' || v === 'kb') return 'knowledge';
+  if (v === 'api' || v === 'integrations') return 'api';
+  if (v === 'system' || v === 'general') return 'system';
+  return 'account';
+}
 
 export function getPageTitle(pathname: string): string {
   if (pathname === '/teleprompter' || pathname.startsWith('/teleprompter/')) {

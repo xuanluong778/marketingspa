@@ -91,7 +91,21 @@ export function useEmployees() {
 export function useOrganization() {
   return useQuery({
     queryKey: ['organization'],
-    queryFn: () => apiClient<{ id: string; name: string; slug: string }>('/organizations/current'),
+    queryFn: () =>
+      apiClient<{
+        id: string;
+        name: string;
+        slug: string;
+        phone?: string | null;
+        email?: string | null;
+        address?: string | null;
+        _count?: {
+          customers?: number;
+          leads?: number;
+          employees?: number;
+          appointments?: number;
+        };
+      }>('/organizations/current'),
   });
 }
 

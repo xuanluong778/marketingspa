@@ -2,6 +2,8 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@n
 import { OrganizationsService } from './organizations.service';
 import { JwtAuthGuard } from '../common/guards/auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
+import { PermissionsGuard } from '../common/guards/permissions.guard';
+import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { UpdateOrganizationDto } from './dto/update-organization.dto';
@@ -18,6 +20,8 @@ export class OrganizationsController {
   }
 
   @Patch('current')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('settings.manage')
   update(@CurrentUser() user: AuthUser, @Body() dto: UpdateOrganizationDto) {
     return this.service.update(user.organizationId, dto);
   }
