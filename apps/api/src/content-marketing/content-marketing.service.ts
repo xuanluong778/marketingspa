@@ -236,14 +236,13 @@ export class ContentMarketingService {
   }
 
   checkFacebookPolicy(dto: FacebookPolicyCheckDto, organizationId?: string | null) {
+    const { organizationId: _ignoredOrg, ...safeDto } = dto;
+    const input = { ...safeDto, organizationId: organizationId ?? null };
     const hasMediaExtras = Boolean(
       dto.imageOcrText?.trim() || dto.transcript?.trim() || dto.landingPageText?.trim(),
     );
     if (!hasMediaExtras) {
-      return checkFacebookAdPolicy(
-        { ...dto, organizationId: organizationId ?? null },
-        this.openai,
-      );
+      return checkFacebookAdPolicy(input, this.openai);
     }
 
     const media = [];
@@ -277,13 +276,13 @@ export class ContentMarketingService {
     }
 
     return checkFacebookAdPolicyMerged({
-      input: { ...dto, organizationId: organizationId ?? null },
+      input,
       media,
       landingImport: dto.landingPageText?.trim()
         ? {
-            sourceType: 'landing_page',
+            sourceType: 'landing_page' as const,
             url: dto.landingUrl || '',
-            editable: true,
+            editable: true as const,
             primaryText: dto.landingPageText,
             warnings: [],
             insufficientData: false,
@@ -295,10 +294,11 @@ export class ContentMarketingService {
   }
 
   rewriteFacebookPolicy(dto: FacebookPolicyRewriteDto, organizationId?: string | null) {
+    const { organizationId: _ignoredOrg, ...safeDto } = dto;
     const primaryText = dto.primaryText?.trim() || dto.contentToRewrite?.trim() || '';
     return rewriteFacebookAdPolicy(
       {
-        ...dto,
+        ...safeDto,
         primaryText: primaryText || dto.primaryText,
         organizationId: organizationId ?? null,
       },
@@ -306,20 +306,24 @@ export class ContentMarketingService {
     );
   }
 
-  importFacebookPolicyUrl(
+  async importFacebookPolicyUrl(
     dto: FacebookPolicyImportUrlDto,
     userId: string,
     organizationId: string,
   ) {
-    return importPolicyUrl({
-      url: dto.url,
-      urlKind: dto.urlKind,
-      fanpageId: dto.fanpageId,
-      userId,
-      organizationId,
-      prisma: this.prisma,
-      config: this.config,
-    });
+    try {
+      return await importPolicyUrl({
+        url: dto.url,
+        urlKind: dto.urlKind,
+        fanpageId: dto.fanpageId,
+        userId,
+        organizationId,
+        prisma: this.prisma,
+        config: this.config,
+      });
+    } catch (e) {
+      throw new BadRequestException(e instanceof Error ? e.message : 'Import URL thất bại');
+    }
   }
 
   async analyzeFacebookPolicyMedia(
