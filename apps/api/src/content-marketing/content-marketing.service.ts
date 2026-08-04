@@ -236,39 +236,38 @@ export class ContentMarketingService {
   }
 
   checkFacebookPolicy(dto: FacebookPolicyCheckDto, organizationId?: string | null) {
-    const { organizationId: _ignoredOrg, ...safeDto } = dto;
-    const input = { ...safeDto, organizationId: organizationId ?? null };
+    const input = this.normalizeFacebookPolicyInput(dto, organizationId);
     const hasMediaExtras = Boolean(
-      dto.imageOcrText?.trim() || dto.transcript?.trim() || dto.landingPageText?.trim(),
+      input.imageOcrText?.trim() || input.transcript?.trim() || input.landingPageText?.trim(),
     );
     if (!hasMediaExtras) {
       return checkFacebookAdPolicy(input, this.openai);
     }
 
     const media = [];
-    if (dto.imageOcrText?.trim()) {
+    if (input.imageOcrText?.trim()) {
       media.push({
         mediaType: 'image' as const,
-        ocrText: dto.imageOcrText,
+        ocrText: input.imageOcrText,
         transcript: '',
         caption: '',
         visualNotes: [],
         regions: [],
-        findings: findingsFromMediaText(dto.imageOcrText, 'img'),
+        findings: findingsFromMediaText(input.imageOcrText, 'img'),
         insufficientData: false,
         statusHint: 'OK' as const,
         warnings: [],
       });
     }
-    if (dto.transcript?.trim()) {
+    if (input.transcript?.trim()) {
       media.push({
         mediaType: 'transcript' as const,
         ocrText: '',
-        transcript: dto.transcript,
+        transcript: input.transcript,
         caption: '',
         visualNotes: [],
         regions: [],
-        findings: findingsFromMediaText(dto.transcript, 'tr'),
+        findings: findingsFromMediaText(input.transcript, 'tr'),
         insufficientData: false,
         statusHint: 'OK' as const,
         warnings: [],
@@ -278,15 +277,15 @@ export class ContentMarketingService {
     return checkFacebookAdPolicyMerged({
       input,
       media,
-      landingImport: dto.landingPageText?.trim()
+      landingImport: input.landingPageText?.trim()
         ? {
             sourceType: 'landing_page' as const,
-            url: dto.landingUrl || '',
+            url: input.landingUrl || '',
             editable: true as const,
-            primaryText: dto.landingPageText,
+            primaryText: input.landingPageText,
             warnings: [],
             insufficientData: false,
-            landing: analyzeLandingSignals('', dto.landingPageText),
+            landing: analyzeLandingSignals('', input.landingPageText),
           }
         : undefined,
       openai: this.openai,
@@ -294,16 +293,52 @@ export class ContentMarketingService {
   }
 
   rewriteFacebookPolicy(dto: FacebookPolicyRewriteDto, organizationId?: string | null) {
-    const { organizationId: _ignoredOrg, ...safeDto } = dto;
-    const primaryText = dto.primaryText?.trim() || dto.contentToRewrite?.trim() || '';
+    const input = this.normalizeFacebookPolicyInput(dto, organizationId);
+    const primaryText =
+      input.primaryText?.trim() || input.contentToRewrite?.trim() || '';
     return rewriteFacebookAdPolicy(
       {
-        ...safeDto,
-        primaryText: primaryText || dto.primaryText,
-        organizationId: organizationId ?? null,
+        ...input,
+        primaryText: primaryText || input.primaryText,
       },
       this.openai,
     );
+  }
+
+  /** Map FE aliases; drop UI-only fields; org from JWT only. */
+  private normalizeFacebookPolicyInput(
+    dto: FacebookPolicyCheckDto,
+    organizationId?: string | null,
+  ) {
+    const primaryText = [
+      dto.primaryText,
+      dto.content,
+      dto.text,
+      dto.adCopy,
+      dto.contentToRewrite,
+    ]
+      .map((s) => (typeof s === 'string' ? s.trim() : ''))
+      .find((s) => s.length > 0);
+
+    return {
+      headline: dto.headline,
+      primaryText: primaryText || dto.primaryText,
+      description: dto.description,
+      cta: dto.cta,
+      productService: dto.productService,
+      audience: dto.audience,
+      country: dto.country,
+      ageMin: dto.ageMin,
+      ageMax: dto.ageMax,
+      specialAdCategory: dto.specialAdCategory,
+      brandName: dto.brandName,
+      contentToRewrite: dto.contentToRewrite,
+      imageOcrText: dto.imageOcrText,
+      transcript: dto.transcript,
+      landingPageText: dto.landingPageText,
+      landingUrl: dto.landingUrl,
+      organizationId: organizationId ?? null,
+    };
   }
 
   async importFacebookPolicyUrl(

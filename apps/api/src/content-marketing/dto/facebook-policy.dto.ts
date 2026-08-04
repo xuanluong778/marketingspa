@@ -1,4 +1,4 @@
-import { IsInt, IsIn, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Max, MaxLength, Min, MinLength } from 'class-validator';
 import { Type } from 'class-transformer';
 
 const SPECIAL_AD_CATEGORIES = [
@@ -18,6 +18,10 @@ const URL_KINDS = [
   'unknown',
 ] as const;
 
+/**
+ * Check / rewrite body. Extra FE fields (mode, historyId, content/text/adCopy)
+ * are whitelisted so ValidationPipe does not 400, then normalized in the service.
+ */
 export class FacebookPolicyCheckDto {
   @IsOptional()
   @IsString()
@@ -28,6 +32,24 @@ export class FacebookPolicyCheckDto {
   @IsString()
   @MaxLength(20000)
   primaryText?: string;
+
+  /** FE alias → primaryText */
+  @IsOptional()
+  @IsString()
+  @MaxLength(20000)
+  content?: string;
+
+  /** FE alias → primaryText */
+  @IsOptional()
+  @IsString()
+  @MaxLength(20000)
+  text?: string;
+
+  /** FE alias → primaryText */
+  @IsOptional()
+  @IsString()
+  @MaxLength(20000)
+  adCopy?: string;
 
   @IsOptional()
   @IsString()
@@ -106,6 +128,23 @@ export class FacebookPolicyCheckDto {
   @IsOptional()
   @IsString()
   organizationId?: string;
+
+  /** FE UI mode — ignored by engine. */
+  @IsOptional()
+  @IsIn(['meta_ads', 'facebook_post'])
+  mode?: 'meta_ads' | 'facebook_post';
+
+  /** FE history bridge — ignored. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  historyId?: string;
+
+  /** FE import URL field leaked into form — ignored on check. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  importUrl?: string;
 }
 
 export class FacebookPolicyRewriteDto extends FacebookPolicyCheckDto {}

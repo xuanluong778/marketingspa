@@ -11,7 +11,7 @@ export function formatMutationError(error: unknown, fallback = ''): string {
       return 'Phiên đăng nhập hết hạn. Vui lòng tải lại trang hoặc đăng nhập lại.';
     }
     if (error.message === 'Validation failed' && error.statusCode === 400) {
-      return 'Dữ liệu không hợp lệ — kiểm tra topic, caption, fanpageId (UUID) và postType.';
+      return fallback || 'Dữ liệu gửi lên không hợp lệ (ValidationPipe). Kiểm tra lại các trường bắt buộc.';
     }
     return error.message || fallback;
   }

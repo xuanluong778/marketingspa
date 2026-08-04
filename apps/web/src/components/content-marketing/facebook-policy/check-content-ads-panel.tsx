@@ -35,6 +35,7 @@ import {
   applyFindingFixes,
   evaluateAdsSendGate,
   evaluateAutoPostGate,
+  formFieldsFromInitial,
   groupFindingsByBucket,
   needsSpecialAdCategory,
   savePendingAdsHandoff,
@@ -69,23 +70,7 @@ const BUCKET_ORDER: PolicyFindingBucket[] = [
   'Targeting',
 ];
 
-const emptyForm = (): FacebookPolicyCheckPayload => ({
-  headline: '',
-  primaryText: '',
-  description: '',
-  cta: '',
-  productService: '',
-  audience: '',
-  country: 'VN',
-  ageMin: 18,
-  ageMax: 65,
-  specialAdCategory: 'NONE',
-  brandName: '',
-  imageOcrText: '',
-  transcript: '',
-  landingPageText: '',
-  landingUrl: '',
-});
+const emptyForm = (): FacebookPolicyCheckPayload => formFieldsFromInitial(null);
 
 export type CheckContentAdsInitial = Partial<FacebookPolicyCheckPayload> & {
   mode?: PolicyCheckMode;
@@ -114,10 +99,9 @@ export function CheckContentAdsPanel({
   } = useContentMarketingMutations();
 
   const [mode, setMode] = useState<PolicyCheckMode>(initial?.mode ?? 'meta_ads');
-  const [form, setForm] = useState<FacebookPolicyCheckPayload>(() => ({
-    ...emptyForm(),
-    ...initial,
-  }));
+  const [form, setForm] = useState<FacebookPolicyCheckPayload>(() =>
+    formFieldsFromInitial(initial),
+  );
   const [importUrl, setImportUrl] = useState(initial?.importUrl ?? '');
   const [urlKind, setUrlKind] = useState<FacebookPolicyUrlKind | 'auto'>('auto');
   const [result, setResult] = useState<FacebookPolicyCheckResult | null>(null);
@@ -134,7 +118,7 @@ export function CheckContentAdsPanel({
 
   useEffect(() => {
     if (!initial) return;
-    setForm((prev) => ({ ...prev, ...initial }));
+    setForm((prev) => ({ ...prev, ...formFieldsFromInitial(initial) }));
     if (initial.mode) setMode(initial.mode);
     if (initial.importUrl) setImportUrl(initial.importUrl);
   }, [initial]);
@@ -226,6 +210,15 @@ export function CheckContentAdsPanel({
     setMsg('');
     setRewrite(null);
     setPendingApply(null);
+    const hasText = Boolean(
+      (form.primaryText || '').trim() ||
+        (form.headline || '').trim() ||
+        (form.description || '').trim(),
+    );
+    if (!hasText && !(form.imageOcrText || '').trim() && !(form.transcript || '').trim()) {
+      setMsg('Nhập nội dung (tiêu đề / nội dung chính) trước khi kiểm tra.');
+      return;
+    }
     try {
       const res = await checkFacebookPolicy.mutateAsync(form);
       setResult(res);
@@ -234,7 +227,7 @@ export function CheckContentAdsPanel({
       setMsg(res.summary);
       setSelectedIds(new Set(res.findings.filter((f) => !f.dismissedByAi).map((f) => f.id)));
     } catch (err) {
-      setMsg(formatMutationError(err) || 'Không kiểm tra được policy');
+      setMsg(formatMutationError(err, 'Không kiểm tra được Content Ads'));
     }
   };
 
@@ -760,18 +753,20 @@ export function CheckContentAdsPanel({
                         </span>
                       </div>
                       <p className="mt-2 rounded bg-slate-50 px-2 py-1 text-xs text-slate-700">
-                        “{f.excerpt}”
+                        “{f.evidence || f.excerpt}”
                       </p>
                       <p className="mt-2">
-                        <span className="font-medium">Lý do:</span> {f.reason}
+                        <span className="font-medium">Lý do:</span>{' '}
+                        {f.explanation || f.reason}
                       </p>
                       <p>
-                        <span className="font-medium">Cách xử lý:</span> {f.remediation}
+                        <span className="font-medium">Cách xử lý:</span>{' '}
+                        {f.suggestion || f.remediation}
                       </p>
-                      {f.suggestedReplacement ? (
+                      {f.suggestedReplacement || f.suggestion ? (
                         <p>
                           <span className="font-medium">Thay thế gợi ý:</span>{' '}
-                          {f.suggestedReplacement}
+                          {f.suggestedReplacement || f.suggestion}
                         </p>
                       ) : null}
                       <div className="mt-2 flex flex-wrap gap-2">

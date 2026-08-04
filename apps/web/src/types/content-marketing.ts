@@ -510,6 +510,10 @@ export interface GeneratePersonalResult {
 export interface AdInsightsSuggestion {
   painPoints: string;
   benefits: string;
+  /** Gợi ý cho form Bài viết sản phẩm — Tính năng */
+  features?: string;
+  /** Gợi ý cho form Bài viết sản phẩm — Điểm khác biệt */
+  differentiators?: string;
   source: 'ai' | 'template';
 }
 
@@ -544,12 +548,15 @@ export interface FacebookPolicyFinding {
   id: string;
   field: string;
   excerpt: string;
+  evidence?: string;
   policyGroup: string;
   policyCode: string;
   severity: FacebookPolicySeverity;
   reason: string;
+  explanation?: string;
   remediation: string;
   suggestedReplacement?: string;
+  suggestion?: string;
   signalCount: number;
   signals: string[];
   source: 'rule' | 'ai' | 'hybrid';
@@ -741,7 +748,13 @@ export type AdvancedArticleGoal =
 export type AdvancedCtaType = 'comment' | 'inbox' | 'hotline' | 'booking';
 
 export type AdvancedSuggestField =
-  'painPoints' | 'desires' | 'differentiator' | 'certification' | 'caseStudy';
+  | 'painPoints'
+  | 'desires'
+  | 'differentiator'
+  | 'certification'
+  | 'caseStudy'
+  | 'combo'
+  | 'gift';
 
 export interface AdvancedFieldSuggestion {
   options: string[];

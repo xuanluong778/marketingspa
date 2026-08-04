@@ -1,6 +1,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiClient, apiUpload } from '@/lib/api-client';
 import { buildAdGeneratePayload } from '@/lib/content-marketing-form';
+import { sanitizeFacebookPolicyCheckPayload } from '@/lib/facebook-policy-ui';
 import type {
   AdCtaSuggestion,
   AdInsightsSuggestion,
@@ -423,7 +424,7 @@ type IndustryBody = {
     mutationFn: (body: FacebookPolicyCheckPayload) =>
       apiClient<FacebookPolicyCheckResult>(`${BASE}/facebook-policy/check`, {
         method: 'POST',
-        body: JSON.stringify(body),
+        body: JSON.stringify(sanitizeFacebookPolicyCheckPayload(body)),
       }),
   });
 
@@ -431,7 +432,7 @@ type IndustryBody = {
     mutationFn: (body: FacebookPolicyCheckPayload) =>
       apiClient<FacebookPolicyRewriteResult>(`${BASE}/facebook-policy/rewrite`, {
         method: 'POST',
-        body: JSON.stringify(body),
+        body: JSON.stringify(sanitizeFacebookPolicyCheckPayload(body)),
       }),
   });
 

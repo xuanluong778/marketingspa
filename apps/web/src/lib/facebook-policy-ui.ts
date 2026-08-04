@@ -397,6 +397,75 @@ export function payloadFromPostFields(input: {
   };
 }
 
+/** Strip UI-only keys and map content/text/adCopy → primaryText before API call. */
+export function sanitizeFacebookPolicyCheckPayload(
+  raw: Record<string, unknown> | FacebookPolicyCheckPayload,
+): FacebookPolicyCheckPayload {
+  const r = raw as Record<string, unknown>;
+  const pickStr = (...keys: string[]) => {
+    for (const k of keys) {
+      const v = r[k];
+      if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+    return undefined;
+  };
+  const primaryText = pickStr('primaryText', 'content', 'text', 'adCopy', 'contentToRewrite');
+  const ageMin =
+    typeof r.ageMin === 'number' && Number.isFinite(r.ageMin)
+      ? Math.min(65, Math.max(13, Math.round(r.ageMin)))
+      : typeof r.ageMin === 'string' && r.ageMin.trim()
+        ? Math.min(65, Math.max(13, Number(r.ageMin) || 18))
+        : undefined;
+  const ageMax =
+    typeof r.ageMax === 'number' && Number.isFinite(r.ageMax)
+      ? Math.min(65, Math.max(13, Math.round(r.ageMax)))
+      : typeof r.ageMax === 'string' && r.ageMax.trim()
+        ? Math.min(65, Math.max(13, Number(r.ageMax) || 65))
+        : undefined;
+
+  const special = r.specialAdCategory;
+  const specialAdCategory =
+    special === 'NONE' ||
+    special === 'CREDIT' ||
+    special === 'EMPLOYMENT' ||
+    special === 'HOUSING' ||
+    special === 'SOCIAL_ISSUES_ELECTIONS_POLITICS'
+      ? special
+      : undefined;
+
+  return {
+    headline: pickStr('headline'),
+    primaryText,
+    description: pickStr('description'),
+    cta: pickStr('cta'),
+    productService: pickStr('productService'),
+    audience: pickStr('audience'),
+    country: pickStr('country') || 'VN',
+    ageMin: ageMin ?? 18,
+    ageMax: ageMax ?? 65,
+    specialAdCategory: specialAdCategory ?? 'NONE',
+    brandName: pickStr('brandName'),
+    contentToRewrite: pickStr('contentToRewrite'),
+    imageOcrText: pickStr('imageOcrText'),
+    transcript: pickStr('transcript'),
+    landingPageText: pickStr('landingPageText'),
+    landingUrl: pickStr('landingUrl'),
+  };
+}
+
+/** Form fields only — never mode / historyId / importUrl. */
+export function formFieldsFromInitial(
+  initial?: Partial<FacebookPolicyCheckPayload> & {
+    mode?: unknown;
+    historyId?: unknown;
+    importUrl?: unknown;
+  } | null,
+): FacebookPolicyCheckPayload {
+  if (!initial) return sanitizeFacebookPolicyCheckPayload({});
+  const { mode: _m, historyId: _h, importUrl: _u, ...rest } = initial;
+  return sanitizeFacebookPolicyCheckPayload(rest as FacebookPolicyCheckPayload);
+}
+
 const ADS_BRIDGE_KEY = 'ms_ads_from_content_policy';
 
 export function savePendingAdsHandoff(payload: {

@@ -10,10 +10,12 @@ import {
   evaluateAdsSendGate,
   evaluateAutoPostGate,
   findingBucket,
+  formFieldsFromInitial,
   hashesFromPayload,
   isPolicySnapshotStale,
   payloadFromPostFields,
   resolvePolicyBadge,
+  sanitizeFacebookPolicyCheckPayload,
   snapshotFromCheckResult,
   type ContentPolicySnapshot,
 } from '../apps/web/src/lib/facebook-policy-ui';
@@ -180,6 +182,29 @@ function main() {
 
   assert.ok(adsUsabilityLabel('PASS_CANDIDATE').length > 5);
   assert.ok(contentHashFromPayload(p1).length >= 8);
+
+  // Sanitize strips UI-only keys; maps content/text aliases
+  const dirty = {
+    primaryText: '',
+    content: 'Cam kết 100% chữa khỏi nám trong 7 ngày',
+    mode: 'meta_ads',
+    historyId: 'hist_1',
+    importUrl: 'https://example.com',
+    ageMin: 25,
+    specialAdCategory: 'NONE' as const,
+  };
+  const clean = sanitizeFacebookPolicyCheckPayload(dirty);
+  assert.equal(clean.primaryText, dirty.content);
+  assert.equal((clean as Record<string, unknown>).mode, undefined);
+  assert.equal((clean as Record<string, unknown>).historyId, undefined);
+  assert.equal((clean as Record<string, unknown>).importUrl, undefined);
+  const fromInitial = formFieldsFromInitial({
+    ...dirty,
+    mode: 'facebook_post',
+    historyId: 'x',
+  });
+  assert.equal(fromInitial.primaryText, dirty.content);
+  assert.equal((fromInitial as Record<string, unknown>).mode, undefined);
 
   console.log('test-facebook-policy-ui: PASS');
 }
