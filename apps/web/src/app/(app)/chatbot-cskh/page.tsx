@@ -401,6 +401,10 @@ export default function ChatbotCskhPage() {
                     ? canPastePageToken
                       ? 'Page Access Token đã hết hạn / thiếu quyền — Meta không gửi tin về hệ thống. Dán token mới bên dưới rồi Kết nối lại.'
                       : 'Token Fanpage hết hạn / thiếu quyền. Liên hệ admin hoặc kết nối lại qua OAuth tại Nội dung → Kết nối kênh.'
+                    : fbWebhook.data.lastErrorCode === 'MESSENGER_STANDARD_ACCESS'
+                      ? 'Token và webhook OK, nhưng Meta App chưa có Advanced Access pages_messaging — chỉ trả lời được Admin/Developer/Tester. Thêm Tester trong Meta App Roles hoặc xin Advanced Access.'
+                      : fbWebhook.data.lastErrorCode === 'MISSING_SCOPE'
+                        ? 'Token thiếu scope (pages_messaging / pages_manage_metadata). Kết nối lại Facebook OAuth để cấp token mới — không sửa DB thủ công.'
                     : fbWebhook.data.serverConfigured
                       ? (fbWebhook.data.connectedPageCount ?? 0) > 0
                         ? fbWebhook.data.webhookSubscribed
@@ -447,7 +451,15 @@ export default function ChatbotCskhPage() {
                       ? formatDateTime(fbWebhook.data.lastWebhookAt)
                       : 'chưa nhận'}
                     {' · '}Lỗi gần nhất:{' '}
-                    {fbWebhook.data.lastErrorCode || fbWebhook.data.lastWebhookError || 'không'}
+                    {fbWebhook.data.lastErrorCode === 'MESSENGER_STANDARD_ACCESS'
+                      ? 'MESSENGER_STANDARD_ACCESS (chưa Advanced Access)'
+                      : fbWebhook.data.lastErrorCode === 'MISSING_SCOPE'
+                        ? 'MISSING_SCOPE (reconnect OAuth)'
+                        : fbWebhook.data.lastErrorCode === 'TOKEN_EXPIRED'
+                          ? 'TOKEN_EXPIRED'
+                          : fbWebhook.data.lastErrorCode ||
+                            fbWebhook.data.lastWebhookError ||
+                            'không'}
                   </li>
                   <li className="break-all">
                     Callback URL: {fbWebhook.data.webhookUrl || '—'}
@@ -655,7 +667,15 @@ export default function ChatbotCskhPage() {
                 {m.status ? (
                   <p className="mt-0.5 text-[10px] text-muted-foreground">
                     {m.status}
-                    {m.errorCode ? ` · ${m.errorCode}` : ''}
+                    {m.errorCode === 'MESSENGER_STANDARD_ACCESS'
+                      ? ' · Chưa Advanced Access (chỉ Admin/Dev/Tester)'
+                      : m.errorCode === 'MISSING_SCOPE'
+                        ? ' · Thiếu scope — reconnect OAuth'
+                        : m.errorCode === 'TOKEN_EXPIRED'
+                          ? ' · Token hết hạn'
+                          : m.errorCode
+                            ? ` · ${m.errorCode}`
+                            : ''}
                   </p>
                 ) : null}
               </div>

@@ -242,11 +242,30 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
   classifyErrorCode(raw: string | null | undefined): string | null {
     if (!raw) return null;
     const s = raw.toLowerCase();
-    if (s.includes('missing_scope') || s.includes('missing_permission') || s.includes('(#10)')) {
-      return CSKH_FB_ERROR.MISSING_SCOPE;
+    // Standard Access trước generic (#10) / missing_scope
+    if (
+      s.includes('messenger_standard_access') ||
+      s.includes('standard_access') ||
+      s.includes('không phải là quản trị') ||
+      s.includes('khong phai la quan tri') ||
+      s.includes('not a admin') ||
+      s.includes('not an admin') ||
+      s.includes('not a page admin') ||
+      (s.includes('tester') && s.includes('pages_messaging')) ||
+      (s.includes('pages_messaging') &&
+        (s.includes('xem xét') || s.includes('approved') || s.includes('review')))
+    ) {
+      return CSKH_FB_ERROR.MESSENGER_STANDARD_ACCESS;
     }
-    if (s.includes('token_expired') || s.includes('session has expired') || s.includes('190')) {
+    if (s.includes('token_expired') || s.includes('session has expired') || /\b190\b/.test(s)) {
       return CSKH_FB_ERROR.TOKEN_EXPIRED;
+    }
+    if (
+      s.includes('missing_scope') ||
+      s.includes('missing_permission') ||
+      s.includes('pages_manage_metadata')
+    ) {
+      return CSKH_FB_ERROR.MISSING_SCOPE;
     }
     if (s.includes('subscribe') || s.includes('webhook_not')) {
       return CSKH_FB_ERROR.WEBHOOK_NOT_SUBSCRIBED;
@@ -257,18 +276,63 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
     if (s.includes('send_failed') || s.includes('messenger_send')) {
       return CSKH_FB_ERROR.MESSENGER_SEND_FAILED;
     }
-    if (
-      s.includes('standard_access') ||
-      s.includes('không phải là quản trị') ||
-      s.includes('not a admin') ||
-      s.includes('not an admin') ||
-      s.includes('tester')
-    ) {
-      return CSKH_FB_ERROR.MESSENGER_STANDARD_ACCESS;
-    }
     if (s.includes('unmapped_page')) return CSKH_FB_ERROR.UNMAPPED_PAGE;
     if (s.includes('missing_page_token')) return CSKH_FB_ERROR.MISSING_PAGE_TOKEN;
     return raw.slice(0, 64);
+  }
+
+  /**
+   * Phân loại lỗi Graph Send — parse JSON để tránh miss khi message bị Unicode-escape.
+   */
+  classifyMessengerSendFailure(rawBody: string): string {
+    let code: number | null = null;
+    let message = rawBody;
+    try {
+      const parsed = JSON.parse(rawBody) as {
+        error?: { code?: number; message?: string; error_subcode?: number };
+      };
+      code = parsed.error?.code ?? null;
+      if (parsed.error?.message) message = parsed.error.message;
+    } catch {
+      /* raw text */
+    }
+    const low = message.toLowerCase();
+    if (code === 190 || low.includes('session has expired')) {
+      return CSKH_FB_ERROR.TOKEN_EXPIRED;
+    }
+    // Code 10 + thông điệp Admin/Dev/Tester / chờ duyệt pages_messaging → Standard Access
+    const standardAccess =
+      low.includes('quản trị') ||
+      low.includes('quan tri') ||
+      low.includes('nhà phát triển') ||
+      low.includes('nha phat trien') ||
+      low.includes('người thử nghiệm') ||
+      low.includes('nguoi thu nghiem') ||
+      low.includes('not an admin') ||
+      low.includes('not a admin') ||
+      low.includes('developers or testers') ||
+      low.includes('tester') ||
+      (low.includes('pages_messaging') &&
+        (low.includes('xem xét') ||
+          low.includes('duyệt') ||
+          low.includes('approved') ||
+          low.includes('review') ||
+          low.includes('chính thức')));
+    if (code === 10 && standardAccess) {
+      return CSKH_FB_ERROR.MESSENGER_STANDARD_ACCESS;
+    }
+    if (code === 10 || low.includes('permission') || low.includes('(#200)')) {
+      // Thiếu scope thật (vd pages_manage_metadata) — khác Standard Access
+      if (
+        low.includes('pages_manage_metadata') ||
+        low.includes('pages_messaging') && !standardAccess
+      ) {
+        return CSKH_FB_ERROR.MISSING_SCOPE;
+      }
+      if (standardAccess) return CSKH_FB_ERROR.MESSENGER_STANDARD_ACCESS;
+      return CSKH_FB_ERROR.MISSING_SCOPE;
+    }
+    return CSKH_FB_ERROR.MESSENGER_SEND_FAILED;
   }
 
   private buildStatusHints(input: {
@@ -300,7 +364,23 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
     }
     if (input.tokenHealth === 'expired') {
       hints.push(
-        'Page Access Token đã hết hạn hoặc thiếu quyền pages_messaging. Dán Page Access Token mới rồi bấm Kết nối lại.',
+        'Page Access Token đã hết hạn hoặc thiếu quyền pages_messaging. Kết nối lại Fanpage qua OAuth (Nội dung → Kết nối kênh).',
+      );
+    }
+    if (
+      input.lastWebhookError?.includes(CSKH_FB_ERROR.MESSENGER_STANDARD_ACCESS) ||
+      input.lastWebhookError === CSKH_FB_ERROR.MESSENGER_STANDARD_ACCESS
+    ) {
+      hints.push(
+        'Meta App đang ở Standard Access cho pages_messaging — chỉ gửi được cho Admin/Developer/Tester. Thêm Tester trong Meta App Roles hoặc xin Advanced Access.',
+      );
+    }
+    if (
+      input.lastWebhookError?.includes(CSKH_FB_ERROR.MISSING_SCOPE) ||
+      input.lastWebhookError === CSKH_FB_ERROR.MISSING_SCOPE
+    ) {
+      hints.push(
+        'Token thiếu quyền (pages_messaging / pages_manage_metadata). Kết nối lại Facebook OAuth để cấp lại token đủ scope — không sửa DB thủ công.',
       );
     }
     if (!input.lastWebhookAt) {
@@ -1011,11 +1091,16 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
 
     const sent = await this.sendText(fbPage.pageId, pageToken, psid, aiResult.reply);
     if (!sent) {
-      this.lastWebhookError =
+      const keep =
+        this.lastWebhookError === CSKH_FB_ERROR.TOKEN_EXPIRED ||
+        this.lastWebhookError === CSKH_FB_ERROR.MISSING_SCOPE ||
+        this.lastWebhookError === CSKH_FB_ERROR.MESSENGER_STANDARD_ACCESS ||
         this.lastWebhookError?.startsWith(CSKH_FB_ERROR.TOKEN_EXPIRED) ||
-        this.lastWebhookError?.startsWith(CSKH_FB_ERROR.MISSING_SCOPE)
-          ? this.lastWebhookError
-          : CSKH_FB_ERROR.MESSENGER_SEND_FAILED;
+        this.lastWebhookError?.startsWith(CSKH_FB_ERROR.MISSING_SCOPE) ||
+        this.lastWebhookError?.startsWith(CSKH_FB_ERROR.MESSENGER_STANDARD_ACCESS);
+      if (!keep) {
+        this.lastWebhookError = CSKH_FB_ERROR.MESSENGER_SEND_FAILED;
+      }
     }
 
     await this.prisma.chatbotMessage.update({
@@ -1136,20 +1221,7 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
       if (!res.ok) {
         const body = await res.text();
         this.logger.warn(`Send FB message failed page=${pageId}: ${body.slice(0, 300)}`);
-        if (body.includes('190') || body.toLowerCase().includes('session has expired')) {
-          this.lastWebhookError = CSKH_FB_ERROR.TOKEN_EXPIRED;
-        } else if (
-          body.includes('quản trị') ||
-          body.toLowerCase().includes('not a admin') ||
-          body.toLowerCase().includes('not an admin') ||
-          (body.includes('"code":10') && body.toLowerCase().includes('pages_messaging'))
-        ) {
-          this.lastWebhookError = CSKH_FB_ERROR.MESSENGER_STANDARD_ACCESS;
-        } else if (body.includes('10') || body.toLowerCase().includes('permission')) {
-          this.lastWebhookError = CSKH_FB_ERROR.MISSING_SCOPE;
-        } else {
-          this.lastWebhookError = CSKH_FB_ERROR.MESSENGER_SEND_FAILED;
-        }
+        this.lastWebhookError = this.classifyMessengerSendFailure(body);
         return false;
       }
       return true;
