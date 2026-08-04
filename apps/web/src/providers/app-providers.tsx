@@ -3,6 +3,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { initSentry } from '@/lib/sentry';
+import { AffiliateRefCapture } from '@/components/affiliate/affiliate-ref-capture';
 
 export function AppProviders({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -22,5 +23,10 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
     initSentry();
   }, []);
 
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AffiliateRefCapture />
+      {children}
+    </QueryClientProvider>
+  );
 }

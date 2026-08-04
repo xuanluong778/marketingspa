@@ -5,8 +5,13 @@ import {
   Param,
   Post,
   Query,
+  Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import { JwtAuthGuard } from '../common/guards/auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
@@ -18,7 +23,10 @@ import { HrmLeaveService } from './hrm-leave.service';
 import {
   CreateLeaveRequestDto,
   CreateOvertimeRequestDto,
+  LeaveBalanceQueryDto,
+  LeaveCancelDto,
   LeaveDecisionDto,
+  LeaveRejectDto,
   LeaveRequestQueryDto,
   OvertimeRequestQueryDto,
 } from './dto/leave.dto';
@@ -31,20 +39,62 @@ export class HrmLeaveController {
   @Get()
   @RequirePermissions('hrm.leave.read')
   list(@CurrentUser() user: AuthUser, @Query() query: LeaveRequestQueryDto) {
-    return this.leave.listLeave(user.organizationId, query);
+    return this.leave.listLeave(user.organizationId, query, user);
+  }
+
+  @Get('balance')
+  @RequirePermissions('hrm.leave.read')
+  balance(@CurrentUser() user: AuthUser, @Query() query: LeaveBalanceQueryDto) {
+    return this.leave.getBalance(user.organizationId, query, user);
   }
 
   @Post()
   @RequirePermissions('hrm.leave.write')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 5 * 1024 * 1024 },
+    }),
+  )
   create(
     @CurrentUser() user: AuthUser,
     @Body() dto: CreateLeaveRequestDto,
+    @UploadedFile()
+    file:
+      | {
+          originalname?: string;
+          mimetype?: string;
+          size?: number;
+          buffer?: Buffer;
+        }
+      | undefined,
     @ClientIp() ipAddress?: string,
   ) {
-    return this.leave.createLeave(user.organizationId, dto, {
+    return this.leave.createLeave(user.organizationId, dto, file, {
       userId: user.id,
       ipAddress,
+      role: user.role,
+      employeeId: user.employeeId,
     });
+  }
+
+  @Get(':id/attachment')
+  @RequirePermissions('hrm.leave.read')
+  async attachment(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const { file, mime, filename } = await this.leave.getLeaveAttachment(
+      user.organizationId,
+      id,
+      user,
+    );
+    res.setHeader('Content-Type', mime);
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${encodeURIComponent(filename)}"`,
+    );
+    return file;
   }
 
   @Post(':id/approve')
@@ -58,6 +108,8 @@ export class HrmLeaveController {
     return this.leave.approveLeave(user.organizationId, id, dto, user.id, {
       userId: user.id,
       ipAddress,
+      role: user.role,
+      employeeId: user.employeeId,
     });
   }
 
@@ -66,12 +118,30 @@ export class HrmLeaveController {
   reject(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
-    @Body() dto: LeaveDecisionDto,
+    @Body() dto: LeaveRejectDto,
     @ClientIp() ipAddress?: string,
   ) {
     return this.leave.rejectLeave(user.organizationId, id, dto, user.id, {
       userId: user.id,
       ipAddress,
+      role: user.role,
+      employeeId: user.employeeId,
+    });
+  }
+
+  @Post(':id/cancel')
+  @RequirePermissions('hrm.leave.write')
+  cancel(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: LeaveCancelDto,
+    @ClientIp() ipAddress?: string,
+  ) {
+    return this.leave.cancelLeave(user.organizationId, id, dto, {
+      userId: user.id,
+      ipAddress,
+      role: user.role,
+      employeeId: user.employeeId,
     });
   }
 }
@@ -84,7 +154,7 @@ export class HrmOvertimeController {
   @Get()
   @RequirePermissions('hrm.leave.read')
   list(@CurrentUser() user: AuthUser, @Query() query: OvertimeRequestQueryDto) {
-    return this.leave.listOvertime(user.organizationId, query);
+    return this.leave.listOvertime(user.organizationId, query, user);
   }
 
   @Post()
@@ -97,6 +167,8 @@ export class HrmOvertimeController {
     return this.leave.createOvertime(user.organizationId, dto, {
       userId: user.id,
       ipAddress,
+      role: user.role,
+      employeeId: user.employeeId,
     });
   }
 
@@ -111,6 +183,8 @@ export class HrmOvertimeController {
     return this.leave.approveOvertime(user.organizationId, id, dto, user.id, {
       userId: user.id,
       ipAddress,
+      role: user.role,
+      employeeId: user.employeeId,
     });
   }
 
@@ -119,12 +193,30 @@ export class HrmOvertimeController {
   reject(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
-    @Body() dto: LeaveDecisionDto,
+    @Body() dto: LeaveRejectDto,
     @ClientIp() ipAddress?: string,
   ) {
     return this.leave.rejectOvertime(user.organizationId, id, dto, user.id, {
       userId: user.id,
       ipAddress,
+      role: user.role,
+      employeeId: user.employeeId,
+    });
+  }
+
+  @Post(':id/cancel')
+  @RequirePermissions('hrm.leave.write')
+  cancel(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: LeaveCancelDto,
+    @ClientIp() ipAddress?: string,
+  ) {
+    return this.leave.cancelOvertime(user.organizationId, id, dto, {
+      userId: user.id,
+      ipAddress,
+      role: user.role,
+      employeeId: user.employeeId,
     });
   }
 }

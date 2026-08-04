@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { resolveEnvFilePaths } from './config/env-paths';
+import { CommonModule } from './common/common.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule } from './redis/redis.module';
 import { QueueModule } from './queue/queue.module';
@@ -24,8 +25,20 @@ import { OpenAiModule } from './openai/openai.module';
 import { AdPerformanceModule } from './ad-performance/ad-performance.module';
 import { ContentMarketingModule } from './content-marketing/content-marketing.module';
 import { AiAdsManagerModule } from './ai-ads-manager/ai-ads-manager.module';
+import { AdsMcpModule } from './ads-mcp/ads-mcp.module';
+import { AdsActionsModule } from './ads-actions/ads-actions.module';
 import { AutoPostModule } from './auto-post/auto-post.module';
 import { MetaFanpageModule } from './meta-fanpage/meta-fanpage.module';
+import { RagKbModule } from './rag-kb/rag-kb.module';
+import { AttributionModule } from './attribution/attribution.module';
+import { CrmModule } from './crm/crm.module';
+import { MessagingIdentityModule } from './messaging-identity/messaging-identity.module';
+import { MessagingModule } from './messaging/messaging.module';
+import { MessagingCampaignModule } from './messaging-campaign/messaging-campaign.module';
+import { BillingModule } from './billing/billing.module';
+import { PlatformAdminModule } from './platform-admin/platform-admin.module';
+import { AffiliateModule } from './affiliate/affiliate.module';
+import { VideoTranscriptionModule } from './video-transcription/video-transcription.module';
 
 @Module({
   imports: [
@@ -33,6 +46,7 @@ import { MetaFanpageModule } from './meta-fanpage/meta-fanpage.module';
       isGlobal: true,
       envFilePath: resolveEnvFilePaths(),
     }),
+    CommonModule,
     OpenAiModule,
     AuditModule,
     PrismaModule,
@@ -54,10 +68,22 @@ import { MetaFanpageModule } from './meta-fanpage/meta-fanpage.module';
     BusinessGoalsModule,
     ChatbotCskhModule,
     AdPerformanceModule,
+    AdsMcpModule,
+    AdsActionsModule,
     ContentMarketingModule,
     AiAdsManagerModule,
     AutoPostModule,
     MetaFanpageModule,
+    RagKbModule,
+    AttributionModule,
+    CrmModule,
+    MessagingIdentityModule,
+    MessagingModule,
+    MessagingCampaignModule,
+    BillingModule,
+    PlatformAdminModule,
+    AffiliateModule,
+    VideoTranscriptionModule,
   ],
 })
 export class AppModule {}

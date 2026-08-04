@@ -49,6 +49,8 @@ import {
   useUpdateChatbotSettings,
   useConnectFacebookPage,
   useDisconnectFacebookPage,
+  useSyncChatbotFacebookFromAutoPost,
+  useChatbotTakeover,
   useChatbotConversation,
 } from '@/hooks/use-chatbot-cskh';
 import { CHANNEL_LABELS, SOURCE_TYPE_LABELS, type ChatbotBot } from '@/types/chatbot-cskh';
@@ -56,6 +58,8 @@ import { formatDateTime } from '@/lib/format';
 import { copyToClipboard } from '@/lib/copy-to-clipboard';
 import { BotFormPanel } from '@/components/chatbot-cskh/bot-form-panel';
 import { ChatbotEmbedList } from '@/components/chatbot-cskh/chatbot-embed-list';
+import { useAutoPostStatus } from '@/hooks/use-auto-post';
+import Link from 'next/link';
 
 function StatCard({
   label,
@@ -86,7 +90,7 @@ export default function ChatbotCskhPage() {
   const [inboxId, setInboxId] = useState<string | null>(null);
   const [botForm, setBotForm] = useState<Partial<ChatbotBot> | null>(null);
   const [kbForm, setKbForm] = useState({ title: '', content: '', sourceType: 'FAQ' });
-  const [fbForm, setFbForm] = useState({ pageId: '', pageName: '', pageAccessToken: '' });
+  const [fbForm, setFbForm] = useState({ pageName: '', pageId: '', pageAccessToken: '' });
   const [settingsForm, setSettingsForm] = useState<{
     model?: string;
     temperature?: number;
@@ -98,6 +102,8 @@ export default function ChatbotCskhPage() {
   const overview = useChatbotOverview();
   const bots = useChatbotBots();
   const knowledge = useChatbotKnowledge(selectedBotId ?? undefined);
+  const { data: autoPostStatus } = useAutoPostStatus();
+  const canPastePageToken = Boolean(autoPostStatus?.canUseServerEnv);
   const channels = useChatbotChannels();
   const inbox = useChatbotInbox();
   const conversation = useChatbotConversation(inboxId);
@@ -118,6 +124,8 @@ export default function ChatbotCskhPage() {
   const updateSettings = useUpdateChatbotSettings();
   const connectFb = useConnectFacebookPage();
   const disconnectFb = useDisconnectFacebookPage();
+  const syncFbFromAutoPost = useSyncChatbotFacebookFromAutoPost();
+  const takeover = useChatbotTakeover();
 
   useEffect(() => {
     if (!selectedBotId && bots.data?.[0]?.id) {
@@ -136,7 +144,7 @@ export default function ChatbotCskhPage() {
     <div className="space-y-6">
       <PageHeader
         title="Chatbot CSKH"
-        description="Tạo chatbot AI, quản lý kiến thức và triển khai lên website, Zalo, Facebook Fanpage"
+        description="Tạo chatbot tư vấn khách, quản lý kiến thức và gắn lên website hoặc Facebook"
       />
 
       {overview.isLoading && <LoadingState />}
@@ -144,15 +152,15 @@ export default function ChatbotCskhPage() {
 
       {overview.data && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="Chatbot" value={overview.data.botsActive} icon={Bot} />
+          <StatCard label="Chatbot đang chạy" value={overview.data.botsActive} icon={Bot} />
           <StatCard
             label="Hội thoại"
             value={overview.data.conversationsTotal}
             icon={MessageSquare}
           />
-          <StatCard label="Lead hôm nay" value={overview.data.leadsToday} icon={Users} />
+          <StatCard label="Khách tiềm năng hôm nay" value={overview.data.leadsToday} icon={Users} />
           <StatCard
-            label="AI replies còn lại"
+            label="Câu trả lời AI còn lại"
             value={`${overview.data.repliesRemaining}/${overview.data.monthlyReplyLimit}`}
             icon={Zap}
           />
@@ -163,10 +171,10 @@ export default function ChatbotCskhPage() {
         <TabsList className="flex flex-wrap h-auto gap-1">
           <TabsTrigger value="bots">Chatbot</TabsTrigger>
           <TabsTrigger value="knowledge">Kiến thức</TabsTrigger>
-          <TabsTrigger value="channels">Kênh triển khai</TabsTrigger>
-          <TabsTrigger value="embed">Mã nhúng</TabsTrigger>
+          <TabsTrigger value="channels">Kênh chat</TabsTrigger>
+          <TabsTrigger value="embed">Gắn lên website</TabsTrigger>
           <TabsTrigger value="inbox">Hộp thư</TabsTrigger>
-          <TabsTrigger value="leads">Lead</TabsTrigger>
+          <TabsTrigger value="leads">Khách tiềm năng</TabsTrigger>
           <TabsTrigger value="settings">Cài đặt AI</TabsTrigger>
         </TabsList>
 
@@ -326,12 +334,12 @@ export default function ChatbotCskhPage() {
                   <h3 className="font-medium">{CHANNEL_LABELS[type]}</h3>
                 </div>
                 <p className="text-sm text-muted-foreground mb-3">
-                  {type === 'WEBSITE_WIDGET' && 'Nhúng widget JS lên website spa.'}
-                  {type === 'ZALO' && 'Kết nối Zalo OA qua webhook (cấu hình token trong kênh).'}
+                  {type === 'WEBSITE_WIDGET' && 'Hiện ô chat trên website spa của bạn.'}
+                  {type === 'ZALO' && 'Nhận tin nhắn từ Zalo OA (nhờ hỗ trợ kỹ thuật cấu hình).'}
                   {type === 'FACEBOOK' &&
-                    'Kết nối Fanpage Messenger — xem tab mã nhúng & Facebook.'}
-                  {type === 'TELEGRAM' && 'Bot Telegram qua API token.'}
-                  {type === 'API' && 'Tích hợp qua REST API public message/lead.'}
+                    'Nhận tin nhắn từ trang Facebook — kết nối bên dưới.'}
+                  {type === 'TELEGRAM' && 'Nhận tin nhắn qua Telegram (nhờ hỗ trợ cấu hình).'}
+                  {type === 'API' && 'Kết nối phần mềm khác — nhờ hỗ trợ kỹ thuật.'}
                 </p>
                 {type !== 'WEBSITE_WIDGET' && (
                   <Button
@@ -371,59 +379,170 @@ export default function ChatbotCskhPage() {
 
           <div className="rounded-lg border p-4 space-y-3 max-w-xl">
             <h3 className="font-semibold flex items-center gap-2">
-              <Facebook className="h-4 w-4" /> Kết nối Facebook Fanpage
+              <Facebook className="h-4 w-4" /> Kết nối trang Facebook
             </h3>
-            {fbWebhook.data?.webhookUrl && (
-              <div className="rounded-md bg-muted/50 p-3 text-xs space-y-1">
-                <p className="font-medium">Webhook Messenger (VPS HTTPS)</p>
-                <code className="break-all block">{fbWebhook.data.webhookUrl}</code>
-                <p className="text-muted-foreground">
-                  Chỉ cần Page Access Token bên dưới — không cần META_APP_ID.
-                  Verify Token (nếu Meta hỏi): {fbWebhook.data.verifyTokenHint}
-                </p>
+            <p className="text-sm text-muted-foreground">
+              {canPastePageToken
+                ? 'Admin/allowlist có thể dán Page Access Token để gia hạn. Token không hiển thị lại sau khi lưu.'
+                : 'Kết nối Fanpage qua OAuth tại Nội dung → Kết nối kênh. Không nhập Page Access Token trên trình duyệt.'}
+            </p>
+            {fbWebhook.data && (
+              <div className="space-y-2">
+                <div
+                  className={`rounded-md p-3 text-sm ${
+                    fbWebhook.data.tokenHealth === 'ok' &&
+                    fbWebhook.data.webhookSubscribed &&
+                    (fbWebhook.data.connectedPageCount ?? 0) > 0
+                      ? 'bg-emerald-50 text-emerald-800'
+                      : 'bg-amber-50 text-amber-900'
+                  }`}
+                >
+                  {fbWebhook.data.tokenHealth === 'expired'
+                    ? canPastePageToken
+                      ? 'Page Access Token đã hết hạn / thiếu quyền — Meta không gửi tin về hệ thống. Dán token mới bên dưới rồi Kết nối lại.'
+                      : 'Token Fanpage hết hạn / thiếu quyền. Liên hệ admin hoặc kết nối lại qua OAuth tại Nội dung → Kết nối kênh.'
+                    : fbWebhook.data.serverConfigured
+                      ? (fbWebhook.data.connectedPageCount ?? 0) > 0
+                        ? fbWebhook.data.webhookSubscribed
+                          ? 'Fanpage đã kết nối và webhook sẵn sàng nhận tin Messenger.'
+                          : 'Fanpage đã kết nối nhưng chưa subscribe webhook — bấm Kết nối lại.'
+                        : 'Hệ thống đã cấu hình Page. Chọn chatbot rồi bấm Kết nối.'
+                      : canPastePageToken
+                        ? 'Chưa cấu hình Fanpage. Nhập Page ID + Page Access Token bên dưới.'
+                        : 'Chưa cấu hình Fanpage. Dùng «Kết nối Facebook» tại Nội dung → Kết nối kênh.'}
+                </div>
+                <ul className="text-xs text-muted-foreground space-y-1">
+                  <li>
+                    Token Page:{' '}
+                    {fbWebhook.data.tokenHealth === 'ok'
+                      ? 'hợp lệ'
+                      : fbWebhook.data.tokenHealth === 'expired'
+                        ? 'HẾT HẠN / THIẾU QUYỀN'
+                        : fbWebhook.data.tokenHealth === 'decode_failed'
+                          ? 'lỗi giải mã'
+                          : fbWebhook.data.tokenHealth === 'missing'
+                            ? 'thiếu'
+                            : '—'}
+                    {fbWebhook.data.tokenError ? ` (${fbWebhook.data.tokenError})` : ''}
+                    {' · '}Webhook verify:{' '}
+                    {fbWebhook.data.verifyTokenConfigured ? 'đã cấu hình' : 'thiếu'}
+                    {' · '}Bot:{' '}
+                    {fbWebhook.data.botActive ? 'ACTIVE' : 'chưa ACTIVE'}
+                    {' · '}AI:{' '}
+                    {fbWebhook.data.aiEnabled ? 'bật' : 'tắt'}
+                  </li>
+                  <li>
+                    subscribed_apps:{' '}
+                    {(fbWebhook.data.subscribedFields || []).join(', ') || '—'}
+                    {' · '}
+                    {fbWebhook.data.webhookSubscribed ? 'đã đăng ký' : 'chưa đăng ký'}
+                  </li>
+                  <li>
+                    Realtime:{' '}
+                    {fbWebhook.data.realtime?.connected
+                      ? 'Redis OK'
+                      : `Redis ${fbWebhook.data.realtime?.status || 'offline'}`}
+                    {' · '}Lần nhận tin gần nhất:{' '}
+                    {fbWebhook.data.lastWebhookAt
+                      ? formatDateTime(fbWebhook.data.lastWebhookAt)
+                      : 'chưa nhận'}
+                    {' · '}Lỗi gần nhất:{' '}
+                    {fbWebhook.data.lastErrorCode || fbWebhook.data.lastWebhookError || 'không'}
+                  </li>
+                  <li className="break-all">
+                    Callback URL: {fbWebhook.data.webhookUrl || '—'}
+                  </li>
+                </ul>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={syncFbFromAutoPost.isPending}
+                  onClick={() => syncFbFromAutoPost.mutate()}
+                >
+                  {syncFbFromAutoPost.isPending
+                    ? 'Đang đồng bộ…'
+                    : 'Đồng bộ Fanpage từ Auto Post'}
+                </Button>
+                {syncFbFromAutoPost.isError && (
+                  <p className="text-sm text-red-700">
+                    {(syncFbFromAutoPost.error as Error)?.message || 'Đồng bộ thất bại'}
+                  </p>
+                )}
+                {(fbWebhook.data.hints?.length ?? 0) > 0 && (
+                  <ul className="text-xs text-amber-800 list-disc pl-4 space-y-0.5">
+                    {fbWebhook.data.hints!.map((h) => (
+                      <li key={h}>{h}</li>
+                    ))}
+                  </ul>
+                )}
               </div>
             )}
-            <Input
-              placeholder="Page ID"
-              value={fbForm.pageId}
-              onChange={(e) => setFbForm({ ...fbForm, pageId: e.target.value })}
-            />
-            <Input
-              placeholder="Tên Fanpage"
-              value={fbForm.pageName}
-              onChange={(e) => setFbForm({ ...fbForm, pageName: e.target.value })}
-            />
-            <Input
-              type="password"
-              placeholder="Page Access Token (Messenger)"
-              value={fbForm.pageAccessToken}
-              onChange={(e) => setFbForm({ ...fbForm, pageAccessToken: e.target.value })}
-            />
-            <Button
-              disabled={!botId || !fbForm.pageId || !fbForm.pageAccessToken || connectFb.isPending}
-              onClick={() =>
-                botId &&
-                connectFb.mutate(
-                  { botId, ...fbForm },
-                  { onSuccess: () => setFbForm({ pageId: '', pageName: '', pageAccessToken: '' }) },
-                )
-              }
-            >
-              Kết nối Fanpage
-            </Button>
+            {canPastePageToken ? (
+              <>
+                <Input
+                  placeholder="Page ID (vd: 1234567890)"
+                  value={fbForm.pageId}
+                  onChange={(e) => setFbForm({ ...fbForm, pageId: e.target.value })}
+                />
+                <Input
+                  type="password"
+                  placeholder="Page Access Token mới (bắt buộc nếu token hết hạn)"
+                  value={fbForm.pageAccessToken}
+                  onChange={(e) => setFbForm({ ...fbForm, pageAccessToken: e.target.value })}
+                  autoComplete="off"
+                />
+                <Input
+                  placeholder="Tên trang (tuỳ chọn)"
+                  value={fbForm.pageName}
+                  onChange={(e) => setFbForm({ ...fbForm, pageName: e.target.value })}
+                />
+                <Button
+                  disabled={!botId || connectFb.isPending}
+                  onClick={() =>
+                    botId &&
+                    connectFb.mutate(
+                      {
+                        botId,
+                        pageName: fbForm.pageName || undefined,
+                        pageId: fbForm.pageId || undefined,
+                        pageAccessToken: fbForm.pageAccessToken || undefined,
+                      },
+                      {
+                        onSuccess: () =>
+                          setFbForm({ pageName: '', pageId: '', pageAccessToken: '' }),
+                      },
+                    )
+                  }
+                >
+                  {connectFb.isPending ? 'Đang kết nối…' : 'Kết nối / Gia hạn Fanpage'}
+                </Button>
+              </>
+            ) : (
+              <Button variant="outline" asChild>
+                <Link href="/content?tab=channels">Kết nối Facebook</Link>
+              </Button>
+            )}
+            {connectFb.isError && (
+              <p className="text-sm text-red-700">
+                {(connectFb.error as Error)?.message || 'Kết nối thất bại'}
+              </p>
+            )}
             {facebook.data?.map((p) => (
               <div key={p.id} className="flex justify-between items-center text-sm border-t pt-2">
                 <span>
-                  {p.pageName} ({p.pageId})
+                  {p.pageName}
                   {p.webhookSubscribed === false && (
-                    <span className="ml-2 text-amber-600">· webhook chưa subscribe</span>
+                    <span className="ml-2 text-amber-600">· webhook chưa đăng ký</span>
                   )}
                   {p.webhookSubscribed && (
                     <span className="ml-2 text-emerald-700">· webhook OK</span>
                   )}
+                  <span className="ml-2 text-muted-foreground">
+                    · AI {p.aiEnabled ? 'bật' : 'tắt'}
+                  </span>
                 </span>
                 <Button size="sm" variant="ghost" onClick={() => disconnectFb.mutate(p.id)}>
-                  Ngắt
+                  Ngắt kết nối
                 </Button>
               </div>
             ))}
@@ -463,7 +582,9 @@ export default function ChatbotCskhPage() {
               <Button size="sm" variant="outline" onClick={() => copyText(embed.data!.embedCode)}>
                 <Copy className="h-4 w-4 mr-2" /> Sao chép mã
               </Button>
-              <p className="text-xs text-muted-foreground">API public: {embed.data.publicApiUrl}</p>
+              <p className="text-xs text-muted-foreground">
+                Sau khi dán mã, ô chat sẽ hiện trên website của bạn.
+              </p>
             </div>
           )}
         </TabsContent>
@@ -478,10 +599,15 @@ export default function ChatbotCskhPage() {
                 className={`w-full text-left rounded-lg border p-3 ${inboxId === c.id ? 'border-primary' : ''}`}
               >
                 <p className="font-medium">
-                  {c.visitorName || c.visitorPhone || c.sessionId.slice(0, 8)}
+                  {c.visitorName ||
+                    (c.channel === 'facebook' ? 'Khách Messenger' : null) ||
+                    c.visitorPhone ||
+                    c.sessionId.slice(0, 8)}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {c.bot?.botName} · {c.channel} · {formatDateTime(c.updatedAt)}
+                  {c.bot?.botName} ·{' '}
+                  {c.channel === 'facebook' ? 'Messenger' : c.channel} ·{' '}
+                  {formatDateTime(c.updatedAt)}
                 </p>
                 <p className="text-sm line-clamp-1 mt-1">{c.messages?.[0]?.message}</p>
               </button>
@@ -491,6 +617,34 @@ export default function ChatbotCskhPage() {
             {!inboxId && (
               <p className="text-muted-foreground text-sm">Chọn hội thoại để xem chi tiết</p>
             )}
+            {inboxId && conversation.data && (
+              <div className="mb-3 flex flex-wrap items-center gap-2 border-b pb-2">
+                <span className="text-xs text-muted-foreground">
+                  {conversation.data.humanTakeover
+                    ? 'AI đang tạm dừng (human takeover)'
+                    : 'AI đang trả lời tự động'}
+                </span>
+                {conversation.data.humanTakeover ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={takeover.isPending}
+                    onClick={() => takeover.mutate({ id: inboxId, resumeBot: true })}
+                  >
+                    Bật lại AI
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={takeover.isPending}
+                    onClick={() => takeover.mutate({ id: inboxId, resumeBot: false })}
+                  >
+                    Nhân viên tiếp quản
+                  </Button>
+                )}
+              </div>
+            )}
             {conversation.data?.messages?.map((m) => (
               <div key={m.id} className={`mb-2 text-sm ${m.role === 'user' ? 'text-right' : ''}`}>
                 <span
@@ -498,6 +652,12 @@ export default function ChatbotCskhPage() {
                 >
                   {m.message}
                 </span>
+                {m.status ? (
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">
+                    {m.status}
+                    {m.errorCode ? ` · ${m.errorCode}` : ''}
+                  </p>
+                ) : null}
               </div>
             ))}
           </div>
@@ -521,10 +681,10 @@ export default function ChatbotCskhPage() {
 
         <TabsContent value="settings" className="max-w-2xl space-y-4">
           <div className="rounded-lg border p-4 space-y-3">
-            <h3 className="font-semibold">OpenAI API</h3>
+            <h3 className="font-semibold">Trợ lý AI</h3>
             <p className="text-sm text-muted-foreground">
-              Thêm <code>OPENAI_API_KEY</code> vào file <code>.env</code> của server API rồi khởi
-              động lại API.
+              Chatbot dùng AI để trả lời khách dựa trên kiến thức bạn đã nhập. Nếu AI chưa bật,
+              hãy liên hệ hỗ trợ để kích hoạt.
             </p>
             {openAiStatus.data && (
               <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -538,16 +698,17 @@ export default function ChatbotCskhPage() {
                   }`}
                 >
                   {openAiStatus.data.configured && openAiStatus.data.ok
-                    ? 'Đã kết nối OpenAI'
+                    ? 'AI đã sẵn sàng'
                     : openAiStatus.data.configured
-                      ? 'Key có nhưng chưa xác minh'
-                      : 'Chưa cấu hình key'}
+                      ? 'AI đang kiểm tra'
+                      : 'AI chưa được bật'}
                 </span>
-                <span className="text-muted-foreground">Model: {openAiStatus.data.model}</span>
               </div>
             )}
             {openAiStatus.data?.error && (
-              <p className="text-sm text-amber-700">{openAiStatus.data.error}</p>
+              <p className="text-sm text-amber-700">
+                Không kiểm tra được AI. Vui lòng thử lại hoặc liên hệ hỗ trợ.
+              </p>
             )}
             <Button
               type="button"
@@ -556,21 +717,25 @@ export default function ChatbotCskhPage() {
               disabled={openAiStatus.isFetching}
               onClick={() => setTestOpenAi(true)}
             >
-              {openAiStatus.isFetching ? 'Đang kiểm tra…' : 'Kiểm tra kết nối OpenAI'}
+              {openAiStatus.isFetching ? 'Đang kiểm tra…' : 'Kiểm tra AI'}
             </Button>
           </div>
 
           {settings.data && (
             <div className="rounded-lg border p-4 space-y-3">
               <div className="space-y-1">
-                <Label>Model OpenAI</Label>
+                <Label>Chế độ AI</Label>
                 <Input
                   value={settingsForm?.model ?? settings.data.model}
                   onChange={(e) => setSettingsForm({ ...settingsForm, model: e.target.value })}
+                  placeholder="Mặc định hệ thống"
                 />
+                <p className="text-xs text-muted-foreground">
+                  Để trống theo mặc định nếu không chắc — hỗ trợ sẽ cấu hình giúp bạn.
+                </p>
               </div>
               <div className="space-y-1">
-                <Label>Temperature (0-1)</Label>
+                <Label>Mức sáng tạo câu trả lời (0 = thận trọng, 1 = linh hoạt)</Label>
                 <Input
                   type="number"
                   step="0.1"
@@ -583,7 +748,7 @@ export default function ChatbotCskhPage() {
                 />
               </div>
               <div className="space-y-1">
-                <Label>Giới hạn reply/tháng</Label>
+                <Label>Giới hạn số câu trả lời AI mỗi tháng</Label>
                 <Input
                   type="number"
                   value={settingsForm?.monthlyLimit ?? settings.data.monthlyLimit}
@@ -593,9 +758,10 @@ export default function ChatbotCskhPage() {
                 />
               </div>
               <div className="space-y-1">
-                <Label>System prompt bổ sung</Label>
+                <Label>Hướng dẫn thêm cho chatbot</Label>
                 <Textarea
                   rows={4}
+                  placeholder="Ví dụ: luôn nhắc khách đặt lịch, xưng hô anh/chị…"
                   value={settingsForm?.systemPrompt ?? settings.data.systemPrompt ?? ''}
                   onChange={(e) =>
                     setSettingsForm({ ...settingsForm, systemPrompt: e.target.value })
@@ -612,8 +778,8 @@ export default function ChatbotCskhPage() {
                 Lưu cài đặt
               </Button>
               <p className="text-xs text-muted-foreground">
-                Model và temperature áp dụng cho mọi chatbot trong tổ chức. Không có OpenAI key,
-                chatbot vẫn trả lời từ kiến thức đã nhập.
+                Áp dụng cho mọi chatbot của spa. Nếu AI chưa bật, chatbot vẫn trả lời từ tab Kiến
+                thức.
               </p>
             </div>
           )}

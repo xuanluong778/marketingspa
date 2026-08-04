@@ -11,6 +11,8 @@ export class RealtimeBridgeService implements OnModuleInit, OnModuleDestroy {
   private subscriber: Redis | null = null;
   private connecting = false;
   private reconnectTimer: NodeJS.Timeout | null = null;
+  private subscribed = false;
+  private lastError: string | null = null;
 
   constructor(
     private readonly config: ConfigService,
@@ -19,6 +21,20 @@ export class RealtimeBridgeService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit() {
     void this.connectSubscriber();
+  }
+
+  isHealthy(): boolean {
+    return Boolean(this.subscriber && this.subscribed && this.subscriber.status === 'ready');
+  }
+
+  getStatus() {
+    return {
+      connected: this.isHealthy(),
+      status: this.subscriber?.status ?? 'disconnected',
+      subscribed: this.subscribed,
+      lastError: this.lastError,
+      channel: REALTIME_CHANNEL,
+    };
   }
 
   private scheduleReconnect() {
@@ -32,11 +48,13 @@ export class RealtimeBridgeService implements OnModuleInit, OnModuleDestroy {
   private async connectSubscriber() {
     if (this.connecting) return;
     this.connecting = true;
+    this.subscribed = false;
 
     const redisUrl = this.config.get<string>('REDIS_URL', 'redis://localhost:6379');
 
     if (this.subscriber) {
       try {
+        this.subscriber.removeAllListeners();
         await this.subscriber.quit();
       } catch {
         // ignore cleanup errors
@@ -47,13 +65,21 @@ export class RealtimeBridgeService implements OnModuleInit, OnModuleDestroy {
     const subscriber = new Redis(redisUrl, {
       maxRetriesPerRequest: null,
       connectTimeout: 5_000,
-      retryStrategy: () => null,
+      // Tránh lỗi "already connecting/connected" khi gọi connect() lần 2
+      lazyConnect: true,
       enableOfflineQueue: false,
+      retryStrategy: () => null,
     });
     this.subscriber = subscriber;
 
     subscriber.on('error', (err) => {
+      this.lastError = err.message;
       this.logger.warn(`Redis subscriber error: ${err.message}`);
+    });
+
+    subscriber.on('end', () => {
+      this.subscribed = false;
+      this.scheduleReconnect();
     });
 
     subscriber.on('message', (channel, message) => {
@@ -72,11 +98,35 @@ export class RealtimeBridgeService implements OnModuleInit, OnModuleDestroy {
     });
 
     try {
-      await subscriber.connect();
+      if (subscriber.status === 'wait') {
+        await subscriber.connect();
+      } else if (subscriber.status === 'connecting') {
+        await new Promise<void>((resolve, reject) => {
+          const onReady = () => {
+            cleanup();
+            resolve();
+          };
+          const onError = (err: Error) => {
+            cleanup();
+            reject(err);
+          };
+          const cleanup = () => {
+            subscriber.off('ready', onReady);
+            subscriber.off('error', onError);
+          };
+          subscriber.once('ready', onReady);
+          subscriber.once('error', onError);
+        });
+      }
+
       await subscriber.subscribe(REALTIME_CHANNEL);
+      this.subscribed = true;
+      this.lastError = null;
       this.logger.log(`Subscribed to ${REALTIME_CHANNEL}`);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      this.lastError = message;
+      this.subscribed = false;
       this.logger.warn(
         `Redis unavailable — realtime bridge paused (API vẫn chạy bình thường): ${message}`,
       );
@@ -92,7 +142,12 @@ export class RealtimeBridgeService implements OnModuleInit, OnModuleDestroy {
       this.reconnectTimer = null;
     }
     if (this.subscriber) {
-      await this.subscriber.quit();
+      try {
+        this.subscriber.removeAllListeners();
+        await this.subscriber.quit();
+      } catch {
+        /* ignore */
+      }
       this.subscriber = null;
     }
   }

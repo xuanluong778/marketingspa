@@ -1,5 +1,5 @@
-import { IsOptional, IsString, IsEnum, IsUUID, IsInt, IsDateString, Min } from 'class-validator';
-import { AppointmentStatus } from '@marketingspa/database';
+import { IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min, MinLength } from 'class-validator';
+import { AppointmentDepositStatus, AppointmentStatus } from '@marketingspa/database';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { Type } from 'class-transformer';
 
@@ -35,6 +35,26 @@ export class CreateAppointmentDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  @IsOptional()
+  @IsString()
+  adCampaignId?: string;
+  @IsOptional()
+  @IsString()
+  bedId?: string;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  depositAmount?: number;
+  @IsOptional()
+  @IsEnum(AppointmentDepositStatus)
+  depositStatus?: AppointmentDepositStatus;
+  @IsOptional()
+  @IsString()
+  equipmentId?: string;
+  @IsOptional()
+  @IsString()
+  roomId?: string;
 }
 
 export class UpdateAppointmentDto {
@@ -70,11 +90,32 @@ export class UpdateAppointmentDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  @IsOptional()
+  @IsString()
+  bedId?: string;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  depositAmount?: number;
+  @IsOptional()
+  @IsString()
+  equipmentId?: string;
+  @IsOptional()
+  @IsString()
+  roomId?: string;
 }
 
 export class UpdateAppointmentStatusDto {
   @IsEnum(AppointmentStatus)
   status!: AppointmentStatus;
+
+  @IsOptional()
+  @IsString()
+  cancelledReason?: string;
+  @IsOptional()
+  @IsString()
+  noShowReason?: string;
 }
 
 export class AppointmentQueryDto extends PaginationDto {
@@ -101,6 +142,10 @@ export class AppointmentQueryDto extends PaginationDto {
   @IsOptional()
   @IsUUID()
   customerId?: string;
+
+  @IsOptional()
+  @IsString()
+  serviceId?: string;
 }
 
 export class CalendarQueryDto {
@@ -118,4 +163,46 @@ export class CalendarQueryDto {
   @IsOptional()
   @IsUUID()
   employeeId?: string;
+
+  @IsOptional()
+  @IsString()
+  serviceId?: string;
+  @IsOptional()
+  @IsEnum(AppointmentStatus)
+  status?: AppointmentStatus;
+}
+
+export class RescheduleAppointmentDto {
+  @IsDateString()
+  scheduledAt!: string;
+  @IsOptional()
+  @IsString()
+  startAt?: string;
+  @IsOptional()
+  @IsString()
+  endAt?: string;
+  @IsOptional()
+  @IsString()
+  reason?: string;
+  @IsOptional()
+  @IsString()
+  roomId?: string;
+  @IsOptional()
+  @IsString()
+  bedId?: string;
+  @IsOptional()
+  @IsString()
+  equipmentId?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(15)
+  durationMinutes?: number;
+  @IsOptional()
+  @IsString()
+  employeeId?: string;
+  @IsOptional()
+  @IsString()
+  note?: string;
 }

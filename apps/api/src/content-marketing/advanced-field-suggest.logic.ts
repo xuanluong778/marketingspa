@@ -4,32 +4,33 @@ import {
   DEMOGRAPHIC_LABELS,
   type AdvancedSuggestField,
 } from './advanced-article-config';
+import {
+  industryExpertIntro,
+  regulatedComplianceBlock,
+  resolveIndustryContext,
+  type IndustryFields,
+} from './industry-context.util';
 
 export interface AdvancedFieldSuggestion {
   options: string[];
   source: 'ai' | 'template';
 }
 
-function productCategory(product: string): 'skin' | 'massage' | 'slim' | 'beauty' | 'general' {
+function spaProductCategory(product: string): 'skin' | 'massage' | 'slim' | 'beauty' | 'general' {
   const lower = product.toLowerCase();
   if (/da|spa|trẻ hóa|facial|skincare|mụn|lỗ chân lông|nám|tàn nhang/i.test(lower)) return 'skin';
   if (/massage|thư giãn|body|gội|đá nóng/i.test(lower)) return 'massage';
   if (/giảm cân|slim|eo|dáng|fit|mỡ/i.test(lower)) return 'slim';
-  if (/nail|mi|lash|phun xăm|làm đẹm|nhuộm/i.test(lower)) return 'beauty';
+  if (/nail|mi|lash|phun xăm|làm đẹp|nhuộm/i.test(lower)) return 'beauty';
   return 'general';
 }
 
-function templateOptions(
+function spaTemplateOptions(
   field: AdvancedSuggestField,
   product: string,
   demographic?: string,
-  painPoints?: string,
 ): string[] {
-  const cat = productCategory(product);
-  const demo = demographic && demographic in DEMOGRAPHIC_LABELS
-    ? DEMOGRAPHIC_LABELS[demographic as keyof typeof DEMOGRAPHIC_LABELS]
-    : '';
-
+  const cat = spaProductCategory(product);
   const skinPain = [
     'Da nám xỉn, makeup không che được, tự ti khi giao tiếp',
     'Lỗ chân lông to, da dầu bóng, makeup trôi nhanh giữa ngày',
@@ -58,7 +59,6 @@ function templateOptions(
     'Không biết chọn liệu trình phù hợp cơ địa',
     'Lo chi phí cao nhưng hiệu quả không rõ ràng',
   ];
-
   const skinDesire = [
     'Da sáng đều, tự tin không cần che khuyết điểm dày',
     'Makeup ăn nền, da mịn và căng bóng tự nhiên',
@@ -87,25 +87,20 @@ function templateOptions(
     'An tâm về chất lượng, minh bạch quy trình',
     'Tự tin hơn về ngoại hình và sức khỏe',
   ];
-
   const diffOptions = [
     `Chuyên viên 8+ năm kinh nghiệm, máy công nghệ Hàn, không gian riêng tư`,
     `Quy trình chuẩn spa quốc tế, sản phẩm có nguồn gốc rõ ràng, không chen lịch`,
     `Tư vấn 1-1 theo cơ địa trước liệu trình — không bán gói không phù hợp`,
     `Không gian premium, phòng riêng, playlist thư giãn — trải nghiệm cao cấp`,
     `Đội ngũ được đào tạo bài bản, cập nhật công nghệ mới định kỳ`,
-    `Đặt lịch linh hoạt, nhắc lịch Zalo, hỗ trợ sau liệu trình tận tâm`,
   ];
-
   const certOptions = [
     'Quy trình chuẩn spa, sản phẩm có nguồn gốc rõ ràng, không pha trộn',
     'Chuyên viên được đào tạo chứng chỉ nghề, vệ sinh dụng cụ theo chuẩn',
     'Cam kết tư vấn trung thực — không hứa hẹn 100%, có disclaimer phù hợp cơ địa',
     'Bảo hành / hỗ trợ điều chỉnh liệu trình nếu da/cơ thể phản ứng bất thường',
     'Spa đạt tiêu chuẩn vệ sinh, máy móc bảo trì định kỳ, hóa đơn minh bạch',
-    'Không ép mua thêm gói — khách được giải thích rõ từng bước trước khi làm',
   ];
-
   const caseStudySkin = [
     'Chị Lan (35 tuổi) sau 6 buổi thấy da sáng hơn, vết nám mờ dần (tùy cơ địa)',
     'Chị Hương (32 tuổi, sau sinh) — nám giảm rõ sau 8 buổi, tự tin makeup nhẹ',
@@ -125,45 +120,146 @@ function templateOptions(
   ];
 
   const pick = <T>(arr: T[], n = 5): T[] => arr.slice(0, n);
+  void demographic;
 
   if (field === 'painPoints') {
     const base =
       cat === 'skin' ? skinPain : cat === 'massage' ? massagePain : cat === 'slim' ? slimPain : generalPain;
-    return pick(demo ? base.map((b) => `${b}`) : base);
+    return pick(base);
   }
   if (field === 'desires') {
     const base =
-      cat === 'skin' ? skinDesire : cat === 'massage' ? massageDesire : cat === 'slim' ? slimDesire : generalDesire;
+      cat === 'skin'
+        ? skinDesire
+        : cat === 'massage'
+          ? massageDesire
+          : cat === 'slim'
+            ? slimDesire
+            : generalDesire;
     return pick(base);
   }
   if (field === 'differentiator') {
-    const tagged = diffOptions.map((d) => (product ? d.replace('spa', product) : d));
-    return pick(tagged);
+    return pick(diffOptions.map((d) => (product ? d.replace(/spa/gi, product) : d)));
   }
-  if (field === 'certification') {
-    return pick(certOptions);
-  }
+  if (field === 'certification') return pick(certOptions);
   if (field === 'caseStudy') {
     const base =
       cat === 'skin' ? caseStudySkin : cat === 'massage' ? caseStudyMassage : caseStudyGeneral;
-    const withProduct = base.map((c) => c.replace(/liệu trình|buổi chăm sóc/gi, (m) => `${m} ${product}`.trim()));
-    return pick(withProduct);
+    return pick(base);
   }
-
+  if (field === 'combo') {
+    return pick([
+      `Combo ${product || 'liệu trình'}: mua 8 buổi tặng 2 buổi (áp dụng có thời hạn)`,
+      `Gói tiết kiệm ${product || 'spa'}: giảm 15–20% khi đăng ký liệu trình đầy đủ`,
+      `Ưu đãi cặp đôi / mẹ & con: giảm thêm khi đặt 2 suất cùng ngày`,
+      `Combo chăm sóc + quà: liệu trình + sản phẩm mang về dùng kèm`,
+      `Flash deal cuối tuần: giữ giá ưu đãi khi inbox/đặt lịch trong hôm nay`,
+    ]);
+  }
+  if (field === 'gift') {
+    return pick([
+      'Tặng serum / kem dưỡng mini dùng kèm liệu trình',
+      'Tặng voucher buổi chăm sóc tiếp theo khi hoàn tất gói',
+      'Tặng khăn / túi premium mang về sau buổi đầu',
+      'Tặng buổi tư vấn da/cơ thể 1-1 miễn phí trước liệu trình',
+      'Tặng voucher giảm giá sản phẩm retail trong spa',
+    ]);
+  }
   return [];
 }
 
-export function templateSuggestAdvancedField(dto: {
-  field: AdvancedSuggestField;
-  productService: string;
-  demographic?: string;
-  painPoints?: string;
-}): AdvancedFieldSuggestion {
+function genericTemplateOptions(
+  field: AdvancedSuggestField,
+  product: string,
+  industryLabel: string,
+): string[] {
+  const pain = [
+    `Khó chọn giải pháp phù hợp trong ngành ${industryLabel}`,
+    `Đã thử nhiều nơi nhưng chưa hài lòng với ${product}`,
+    `Thiếu thời gian so sánh / tìm hiểu trước khi quyết định`,
+    `Lo chi phí cao nhưng hiệu quả không rõ ràng`,
+    `Cần tư vấn rõ ràng, minh bạch trước khi cam kết`,
+  ];
+  const desire = [
+    `Có lựa chọn rõ ràng, phù hợp nhu cầu với ${product}`,
+    `Tiết kiệm thời gian — quy trình tư vấn / mua gọn`,
+    `An tâm về chất lượng và minh bạch chi phí`,
+    `Cảm thấy được đồng hành, không bị ép mua`,
+    `Kết quả / trải nghiệm xứng đáng với ngân sách`,
+  ];
+  const diff = [
+    `Đội ngũ am hiểu ngành ${industryLabel}, tư vấn theo nhu cầu thật`,
+    `Quy trình minh bạch, báo giá rõ ràng cho ${product}`,
+    `Hỗ trợ sau bán / sau dịch vụ tận tâm`,
+    `Kinh nghiệm triển khai thực tế, case khách tham khảo`,
+    `Linh hoạt lịch / gói phù hợp người bận rộn`,
+  ];
+  const cert = [
+    `Cam kết tư vấn trung thực — không hứa 100%`,
+    `Minh bạch điều khoản / quy trình trước khi ký / đặt`,
+    `Hỗ trợ điều chỉnh nếu phát sinh bất thường`,
+    `Hóa đơn / chứng từ rõ ràng`,
+    `Không ép mua thêm gói không cần thiết`,
+  ];
+  const cases = [
+    `Khách hàng ngành ${industryLabel} hài lòng với ${product} sau khi được tư vấn rõ ràng`,
+    `Khách lần đầu — ấn tượng quy trình minh bạch, không ép mua`,
+    `Khách quay lại vì thái độ phục vụ và kết quả phù hợp kỳ vọng (tùy tình trạng)`,
+    `Doanh nghiệp / cá nhân tiết kiệm thời gian nhờ quy trình gọn`,
+    `Case tham khảo: chọn đúng gói ${product} sau 1 buổi tư vấn`,
+  ];
+  if (field === 'painPoints') return pain;
+  if (field === 'desires') return desire;
+  if (field === 'differentiator') return diff;
+  if (field === 'certification') return cert;
+  if (field === 'caseStudy') return cases;
+  if (field === 'combo') {
+    return [
+      `Combo ${product}: mua gói dài hạn giảm 10–20% (có thời hạn)`,
+      `Ưu đãi đăng ký sớm cho ${product} trong tuần này`,
+      `Gói tiết kiệm: mua nhiều buổi / nhiều sản phẩm giá tốt hơn`,
+      `Ưu đãi nhóm / gia đình khi đặt cùng lúc`,
+      `Flash deal: giữ giá ưu đãi khi inbox/đặt trong hôm nay`,
+    ];
+  }
+  if (field === 'gift') {
+    return [
+      `Tặng quà kèm ${product} khi đăng ký trong chương trình`,
+      'Tặng voucher lần mua / lần dùng tiếp theo',
+      'Tặng tư vấn 1-1 miễn phí trước khi chốt gói',
+      'Tặng tài liệu / hướng dẫn sử dụng / chăm sóc sau',
+      'Tặng phụ kiện / sản phẩm mini đi kèm đơn',
+    ];
+  }
+  return [];
+}
+
+function templateOptions(
+  field: AdvancedSuggestField,
+  product: string,
+  industry: ReturnType<typeof resolveIndustryContext>,
+  demographic?: string,
+): string[] {
+  if (industry.isSpaBeauty) {
+    return spaTemplateOptions(field, product, demographic);
+  }
+  return genericTemplateOptions(field, product, industry.label);
+}
+
+export function templateSuggestAdvancedField(
+  dto: {
+    field: AdvancedSuggestField;
+    productService: string;
+    demographic?: string;
+    painPoints?: string;
+  } & IndustryFields,
+): AdvancedFieldSuggestion {
+  const industry = resolveIndustryContext(dto);
   const options = templateOptions(
     dto.field,
     dto.productService.trim(),
+    industry,
     dto.demographic,
-    dto.painPoints,
   );
   return { options, source: 'template' };
 }
@@ -177,10 +273,11 @@ export async function suggestAdvancedField(
     writingStyle?: string;
     painPoints?: string;
     currentValue?: string;
-  },
+  } & IndustryFields,
   openai?: OpenAiService,
 ): Promise<AdvancedFieldSuggestion> {
   const fallback = templateSuggestAdvancedField(dto);
+  const industry = resolveIndustryContext(dto);
 
   if (!openai?.isConfigured()) {
     return fallback;
@@ -192,20 +289,24 @@ export async function suggestAdvancedField(
       ? DEMOGRAPHIC_LABELS[dto.demographic as keyof typeof DEMOGRAPHIC_LABELS]
       : 'chưa chọn';
 
-  const prompt = `Bạn là copywriter marketing spa/wellness tại Việt Nam.
-Gợi ý 5 lựa chọn KHÁC NHAU cho trường "${fieldLabel}" khi viết bài bán hàng spa.
+  const prompt = `${industryExpertIntro(industry)}
+Gợi ý 5 lựa chọn KHÁC NHAU cho trường "${fieldLabel}" khi viết bài bán hàng ngành "${industry.label}".
 
 Dịch vụ/sản phẩm: ${dto.productService}
 Nhân khẩu học: ${demo}
 Mục tiêu bài: ${dto.articleGoal ?? 'bán hàng'}
 ${dto.painPoints ? `Nỗi đau khách (tham khảo): ${dto.painPoints.slice(0, 200)}` : ''}
 ${dto.currentValue ? `Giá trị hiện tại (tránh trùng): ${dto.currentValue.slice(0, 150)}` : ''}
+${regulatedComplianceBlock(industry)}
+${industry.isSpaBeauty ? '' : 'CẤM gợi ý spa/làm đẹp/chăm sóc da.'}
 
 Yêu cầu:
 - Mỗi option 1–2 câu, tiếng Việt tự nhiên, cụ thể với dịch vụ trên
 - Không cam kết 100%, không y khoa tuyệt đối
-- caseStudy: có tên tuổi giả định, ghi (tùy cơ địa) nếu nói kết quả
-- certification: cam kết thực tế spa có thể đưa ra
+- caseStudy: có tên tuổi giả định, ghi (tùy tình trạng) nếu nói kết quả
+- certification: cam kết thực tế doanh nghiệp có thể đưa ra
+- combo: gói/ưu đãi cụ thể, có thể kèm điều kiện thời hạn — không bịa % giảm nếu không chắc
+- gift: quà tặng thực tế, ngắn gọn, hấp dẫn — không cam kết pháp lý
 - 5 option phải khác góc nhìn, không lặp ý
 
 Trả JSON (không markdown):

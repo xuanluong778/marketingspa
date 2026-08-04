@@ -37,6 +37,8 @@ export const ADVANCED_SUGGEST_FIELDS = [
   'differentiator',
   'certification',
   'caseStudy',
+  'combo',
+  'gift',
 ] as const;
 
 export type AdvancedSuggestField = (typeof ADVANCED_SUGGEST_FIELDS)[number];
@@ -44,9 +46,11 @@ export type AdvancedSuggestField = (typeof ADVANCED_SUGGEST_FIELDS)[number];
 export const ADVANCED_SUGGEST_FIELD_LABELS: Record<AdvancedSuggestField, string> = {
   painPoints: 'Nỗi đau khách hàng',
   desires: 'Mong muốn khách hàng',
-  differentiator: 'Điểm khác biệt của spa',
+  differentiator: 'Điểm khác biệt của thương hiệu',
   certification: 'Cam kết / chứng nhận',
   caseStudy: 'Câu chuyện khách hàng / case study',
+  combo: 'Combo / ưu đãi',
+  gift: 'Quà tặng',
 };
 
 export const ADVANCED_LENGTH_HINT: Record<string, string> = {
@@ -129,8 +133,9 @@ export const ADVANCED_COMPLIANCE_RULES = `Quy tắc bắt buộc:
 - Không bịa số liệu, chứng nhận, bác sĩ, giấy phép, kết quả khách hàng nếu người dùng không cung cấp.
 - Không cam kết chữa khỏi bệnh.
 - Không cam kết kết quả tuyệt đối.
-- Với dịch vụ giảm béo, trị nám, trị mụn, trẻ hóa, phải dùng ngôn ngữ an toàn: "tùy cơ địa", "tùy tình trạng", "theo liệu trình tư vấn".
-- Viết tự nhiên, cảm xúc, có tính chuyển đổi cao.
+- Với ngành sức khỏe / phụ khoa / giảm cân / bảo hiểm / làm đẹp nhạy cảm: dùng ngôn ngữ an toàn ("có thể hỗ trợ", "tùy cơ địa", "tham khảo chuyên gia").
+- Viết tự nhiên, cảm xúc, có tính chuyển đổi cao — thuật ngữ đúng ngành đã chọn.
+- Nếu ngành KHÔNG phải Spa/Làm đẹp: CẤM chèn spa, liệu trình da, chăm sóc da, thẩm mỹ viện.
 - Mở bài phải đánh trúng nỗi đau.
 - Cuối bài phải có CTA mạnh.
 - Tích hợp 16 bước MƯỢT vào final_article — KHÔNG liệt kê số 1-16 trong bài.
@@ -147,7 +152,7 @@ Quy tắc variants.website (bài blog):
 - Có thể dùng ## tiêu đề phụ, bullet, **in đậm** cho giá/deadline.
 - variants.ads: copy ngắn, súc tích, không tiêu đề dài.`;
 
-/** Prompt chuẩn copywriting spa — dùng cho generate & rewrite */
+/** Prompt chuẩn copywriting đa ngành — dùng cho generate & rewrite */
 export function buildAdvancedArticlePrompt(params: {
   style: string;
   demographic: string;
@@ -166,10 +171,19 @@ export function buildAdvancedArticlePrompt(params: {
   sales_area?: string;
   certification?: string;
   rewriteNote?: string;
+  industryLabel?: string;
+  isSpaBeauty?: boolean;
+  regulatedNote?: string;
 }): string {
   const steps = ADVANCED_16_STEPS.map((s, i) => `${i + 1}. ${s}.`).join('\n');
+  const industry = params.industryLabel?.trim() || 'Spa/Làm đẹp';
+  const isSpa =
+    params.isSpaBeauty ?? /spa|làm đẹp|lam dep/i.test(industry);
+  const expert = isSpa
+    ? 'Bạn là chuyên gia copywriting bán hàng cho ngành spa, thẩm mỹ, làm đẹp và chăm sóc sức khỏe.'
+    : `Bạn là chuyên gia copywriting bán hàng cho ngành "${industry}". Tuyệt đối không dùng ngữ cảnh spa/làm đẹp.`;
 
-  return `Bạn là chuyên gia copywriting bán hàng cho ngành spa, thẩm mỹ, làm đẹp và chăm sóc sức khỏe. Hãy viết một bài bán hàng chuyên nghiệp dựa trên thông tin người dùng cung cấp.
+  return `${expert} Hãy viết một bài bán hàng chuyên nghiệp dựa trên thông tin người dùng cung cấp.
 
 Bài viết phải bám theo cấu trúc 16 bước:
 
@@ -177,6 +191,7 @@ ${steps}
 
 Yêu cầu:
 
+* Ngành nghề: ${industry}
 * Phong cách viết: ${params.style}
 * Nhân khẩu học: ${params.demographic}
 * Mục tiêu bài viết: ${params.goal}
@@ -193,12 +208,14 @@ Yêu cầu:
 * Câu chuyện khách hàng: ${params.customer_story || '(chưa cung cấp — không bịa case study)'}
 * CTA mong muốn: ${params.cta_type}
 * Độ dài: ${params.length}
+${params.regulatedNote ? `* Compliance ngành: ${params.regulatedNote}` : ''}
 
 ${ADVANCED_COMPLIANCE_RULES}
 
 - final_article đủ độ dài theo yêu cầu.
 - variants.facebook: bài đăng fanpage; variants.website: bài blog/website; variants.ads: copy quảng cáo ngắn, súc tích.
 - analysis_16_steps: đúng 16 mục, mỗi mục tóm tắt nội dung bước đó đã cover trong bài.
+- hashtags phải đúng ngành "${industry}"${isSpa ? '' : ' — không dùng #spa #lamdep #chamsocda'}.
 ${params.rewriteNote ? `\n${params.rewriteNote}` : ''}
 
 ${ADVANCED_JSON_OUTPUT_SCHEMA}`;

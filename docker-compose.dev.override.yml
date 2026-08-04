@@ -1,0 +1,6 @@
+services:
+  postgres:
+    environment:
+      POSTGRES_USER: marketingspa
+      POSTGRES_PASSWORD: 9c43c5fc29ffa141f75d8ed6
+      POSTGRES_DB: marketingspa

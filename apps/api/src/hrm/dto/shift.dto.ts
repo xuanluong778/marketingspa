@@ -1,11 +1,16 @@
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsBoolean,
   IsDateString,
   IsInt,
+  IsNumber,
   IsObject,
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   Min,
 } from 'class-validator';
 import { ShiftAssignmentSource } from '@marketingspa/database';
@@ -33,6 +38,37 @@ export class CreateWorkShiftPolicyDto {
   /** e.g. { startTime: "08:00", endTime: "17:00", graceMinutes: 5, breakMinutes: 60 } */
   @IsObject()
   payload!: Record<string, unknown>;
+
+  @IsString()
+  startTime!: string;
+
+  @IsString()
+  endTime!: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  breakMinutes?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  earlyLeaveGraceMinutes?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  lateGraceMinutes?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  otAfterMinutes?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  otBeforeMinutes?: number;
 }
 
 export class CreateWorkShiftPolicyVersionDto {
@@ -52,6 +88,47 @@ export class UpdateWorkShiftPolicyDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsString()
+  branchId?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  breakMinutes?: number;
+
+  @IsOptional()
+  @IsBoolean()
+  crossesMidnight?: boolean;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  earlyLeaveGraceMinutes?: number;
+
+  @IsOptional()
+  @IsString()
+  endTime?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  lateGraceMinutes?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  otAfterMinutes?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  otBeforeMinutes?: number;
+
+  @IsOptional()
+  @IsString()
+  startTime?: string;
 }
 
 export class ShiftAssignmentQueryDto {
@@ -82,27 +159,37 @@ export class ShiftAssignmentQueryDto {
   @IsInt()
   @Min(1)
   pageSize?: number;
+
+  @IsOptional()
+  @IsString()
+  departmentId?: string;
+
+  @IsOptional()
+  @IsString()
+  policyId?: string;
 }
 
 export class CreateShiftAssignmentDto {
+  @IsOptional()
   @IsUUID()
-  branchId!: string;
+  branchId?: string;
 
   @IsUUID()
   employeeId!: string;
 
-  @IsOptional()
   @IsUUID()
-  policyId?: string;
+  policyId!: string;
 
   @IsDateString()
   workDate!: string;
 
+  @IsOptional()
   @IsDateString()
-  startAt!: string;
+  startAt?: string;
 
+  @IsOptional()
   @IsDateString()
-  endAt!: string;
+  endAt?: string;
 
   @IsOptional()
   source?: ShiftAssignmentSource;
@@ -110,6 +197,10 @@ export class CreateShiftAssignmentDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  forceOverwrite?: boolean;
 }
 
 export class UpdateShiftAssignmentDto {
@@ -128,4 +219,66 @@ export class UpdateShiftAssignmentDto {
   @IsOptional()
   @IsString()
   note?: string;
+}
+
+export class BulkShiftAssignmentDto {
+  @IsOptional()
+  @IsBoolean()
+  forceOverwrite?: boolean;
+
+  @IsOptional()
+  @IsUUID()
+  branchId?: string;
+
+  @IsOptional()
+  @IsString()
+  departmentId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsUUID('4', { each: true })
+  employeeIds?: string[];
+
+  @IsDateString()
+  fromDate!: string;
+
+  @IsOptional()
+  @IsString()
+  note?: string;
+
+  @IsUUID()
+  policyId!: string;
+
+  @IsDateString()
+  toDate!: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(7)
+  @IsInt({ each: true })
+  @Min(1, { each: true })
+  @Max(7, { each: true })
+  @Type(() => Number)
+  weekdays?: number[];
+}
+
+export class ShiftCalendarQueryDto {
+  @IsDateString()
+  from!: string;
+
+  @IsDateString()
+  to!: string;
+
+  @IsOptional()
+  @IsUUID()
+  branchId?: string;
+
+  @IsOptional()
+  @IsString()
+  departmentId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  employeeId?: string;
 }

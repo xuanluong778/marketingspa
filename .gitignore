@@ -7,12 +7,19 @@ dist/
 .next/
 out/
 build/
+.build/
 *.tsbuildinfo
 
 # Environment
 .env
+.env.*
+!.env.example
+!**/.env.example
 .env.local
 .env.*.local
+.env.production
+.env.development
+
 
 # IDE
 .idea/
@@ -56,3 +63,6 @@ tmp/
 
 # Local file uploads (HRM documents, etc.)
 apps/api/uploads/
+
+# Local uploads (root)
+uploads/

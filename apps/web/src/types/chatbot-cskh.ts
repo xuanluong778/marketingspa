@@ -60,11 +60,19 @@ export interface ChatbotConversation {
   sessionId: string;
   channel: string;
   status: string;
+  humanTakeover?: boolean;
   visitorName?: string | null;
   visitorPhone?: string | null;
   updatedAt: string;
   bot?: { id: string; botName: string };
-  messages?: Array<{ id: string; role: string; message: string; createdAt: string }>;
+  messages?: Array<{
+    id: string;
+    role: string;
+    message: string;
+    status?: string | null;
+    errorCode?: string | null;
+    createdAt: string;
+  }>;
   _count?: { messages: number };
 }
 
@@ -114,16 +122,16 @@ export interface ChatbotFacebookPage {
 }
 
 export const CHANNEL_LABELS: Record<ChatbotChannelType, string> = {
-  WEBSITE_WIDGET: 'Website Widget',
-  FACEBOOK: 'Facebook Fanpage',
+  WEBSITE_WIDGET: 'Chat trên website',
+  FACEBOOK: 'Tin nhắn Facebook',
   ZALO: 'Zalo OA',
   TELEGRAM: 'Telegram',
-  API: 'API tích hợp',
+  API: 'Kết nối hệ thống khác',
 };
 
 export const SOURCE_TYPE_LABELS: Record<ChatbotSourceType, string> = {
-  FAQ: 'FAQ / Câu hỏi thường gặp',
-  URL: 'Trang web',
+  FAQ: 'Câu hỏi thường gặp',
+  URL: 'Từ trang web',
   FILE: 'Tài liệu',
   MANUAL: 'Nhập tay',
 };

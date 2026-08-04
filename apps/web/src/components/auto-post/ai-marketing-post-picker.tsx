@@ -90,7 +90,7 @@ export function AiMarketingPostPicker({
             </div>
             <p className="font-medium text-slate-900 line-clamp-1">{title}</p>
             {preview && (
-              <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{preview}…</p>
+              <p className="mt-1 line-clamp-2 text-xs text-black">{preview}…</p>
             )}
           </button>
         );

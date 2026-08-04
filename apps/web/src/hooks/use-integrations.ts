@@ -49,27 +49,22 @@ export const INTEGRATION_FIELDS: Record<
   IntegrationProvider,
   { key: string; label: string; type?: string }[]
 > = {
-  META_ADS: [
-    { key: 'appId', label: 'App ID' },
-    { key: 'appSecret', label: 'App Secret', type: 'password' },
-    { key: 'accessToken', label: 'Access Token', type: 'password' },
-  ],
-  GOOGLE_ADS: [
-    { key: 'clientId', label: 'Client ID' },
-    { key: 'clientSecret', label: 'Client Secret', type: 'password' },
-    { key: 'developerToken', label: 'Developer Token', type: 'password' },
-  ],
+  META_ADS: [],
+  GOOGLE_ADS: [],
   ZALO_OA: [
-    { key: 'oaId', label: 'OA ID' },
-    { key: 'secretKey', label: 'Secret Key', type: 'password' },
+    { key: 'oaId', label: 'Mã Zalo OA' },
+    { key: 'secretKey', label: 'Mã bảo mật', type: 'password' },
   ],
   SMS: [
-    { key: 'apiKey', label: 'API Key', type: 'password' },
-    { key: 'brandName', label: 'Brand name' },
+    { key: 'apiKey', label: 'Mã kết nối SMS', type: 'password' },
+    { key: 'brandName', label: 'Tên thương hiệu gửi SMS' },
   ],
   EMAIL: [
-    { key: 'smtpHost', label: 'SMTP Host' },
-    { key: 'smtpUser', label: 'SMTP User' },
-    { key: 'smtpPassword', label: 'SMTP Password', type: 'password' },
+    { key: 'smtpHost', label: 'Máy chủ email' },
+    { key: 'smtpUser', label: 'Tài khoản email' },
+    { key: 'smtpPassword', label: 'Mật khẩu email', type: 'password' },
   ],
 };
+
+/** Ads credentials sống ở AdConnection (/ads) — không cấu hình tại Integrations */
+export const ADS_INTEGRATION_PROVIDERS: IntegrationProvider[] = ['META_ADS', 'GOOGLE_ADS'];

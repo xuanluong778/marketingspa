@@ -1,7 +1,7 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
-import { Menu, ChevronRight, LogOut, User } from 'lucide-react';
+import { Menu, ChevronRight, LogOut, User, Handshake, Shield } from 'lucide-react';
 import { getPageTitle } from '@/config/navigation';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -23,6 +23,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
   const router = useRouter();
   const { data: user } = useCurrentUser();
   const logout = useLogout();
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
 
   const initials = user?.name
     ?.split(' ')
@@ -65,6 +66,16 @@ export function Topbar({ onMenuClick }: TopbarProps) {
               <p className="text-xs text-muted-foreground">{user?.email}</p>
             </div>
             <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => router.push('/affiliate')}>
+              <Handshake className="mr-2 h-4 w-4" />
+              Affiliate
+            </DropdownMenuItem>
+            {isSuperAdmin && (
+              <DropdownMenuItem onClick={() => router.push('/admin')}>
+                <Shield className="mr-2 h-4 w-4" />
+                Quản trị viên
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onClick={() => router.push('/settings')}>
               <User className="mr-2 h-4 w-4" />
               Cài đặt

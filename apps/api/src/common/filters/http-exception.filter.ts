@@ -40,6 +40,9 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message = 'Internal server error';
     let errors: string[] | undefined;
+    let code: string | undefined;
+    let redirectTo: string | undefined;
+    let extra: Record<string, unknown> = {};
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
@@ -48,10 +51,21 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         message = body;
       } else if (typeof body === 'object' && body !== null) {
         const obj = body as Record<string, unknown>;
-        message = (obj.message as string) ?? message;
         if (Array.isArray(obj.message)) {
           errors = obj.message as string[];
           message = 'Validation failed';
+        } else if (typeof obj.message === 'string') {
+          message = obj.message;
+        } else if (obj.message != null) {
+          message = String(obj.message);
+        }
+        if (typeof obj.code === 'string') code = obj.code;
+        if (typeof obj.redirectTo === 'string') redirectTo = obj.redirectTo;
+        // Giữ field nghiệp vụ (subscriptionStatus, …) — không lộ stack/secret
+        for (const key of ['subscriptionStatus', 'redirectTo', 'code'] as const) {
+          if (obj[key] !== undefined && extra[key] === undefined) {
+            extra[key] = obj[key];
+          }
         }
       }
     } else if (isInfrastructureError(exception)) {
@@ -76,6 +90,11 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       statusCode: status,
       message,
       errors,
+      ...(code ? { code } : {}),
+      ...(redirectTo ? { redirectTo } : {}),
+      ...(typeof extra.subscriptionStatus === 'string'
+        ? { subscriptionStatus: extra.subscriptionStatus }
+        : {}),
       timestamp: new Date().toISOString(),
     });
   }

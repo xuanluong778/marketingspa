@@ -183,17 +183,17 @@ export async function processAutomationMessage(job: Job) {
 
   let context: Record<string, string> = {};
   if (customerId) {
-    const c = await prisma.customer.findUnique({
-      where: { id: customerId },
+    const c = await prisma.customer.findFirst({
+      where: { id: customerId, organizationId },
       include: { branch: true },
     });
-    if (c) {
-      context = { customer_name: c.name, branch_name: c.branch?.name ?? '' };
-    }
+    if (!c) throw new Error(`Customer ${customerId} not in org ${organizationId}`);
+    context = { customer_name: c.name, branch_name: c.branch?.name ?? '' };
   }
   if (leadId) {
-    const l = await prisma.lead.findUnique({ where: { id: leadId } });
-    if (l) context = { ...context, customer_name: l.name };
+    const l = await prisma.lead.findFirst({ where: { id: leadId, organizationId } });
+    if (!l) throw new Error(`Lead ${leadId} not in org ${organizationId}`);
+    context = { ...context, customer_name: l.name };
   }
 
   const body = flow.messageTemplate?.body ?? 'Tin nhắn automation giả lập';

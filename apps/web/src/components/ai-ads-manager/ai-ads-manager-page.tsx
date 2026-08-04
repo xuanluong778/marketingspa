@@ -109,7 +109,10 @@ export function AiAdsManagerPage() {
 
   const dashboard = useAiAdsDashboard(range.dateFrom, range.dateTo);
   const connections = useAiAdsConnections();
-  const campaigns = useAiAdsCampaigns(range.dateFrom, range.dateTo);
+  const campaigns = useAiAdsCampaigns({
+    dateFrom: range.dateFrom,
+    dateTo: range.dateTo,
+  });
   const settings = useAiAdsSettings();
   const rules = useAiAdsRules();
   const logs = useAiAdsLogs();
@@ -177,7 +180,7 @@ export function AiAdsManagerPage() {
         <KpiCard title="Tổng chi tiêu" value={formatMoney(d.totalSpend)} />
         <KpiCard title="Doanh thu" value={formatMoney(d.totalRevenue)} />
         <KpiCard title="ROAS" value={d.roas != null ? formatNum(d.roas) : '—'} />
-        <KpiCard title="CPA/CPL" value={d.cpa > 0 ? formatMoney(d.cpa) : '—'} />
+        <KpiCard title="CPA/CPL" value={d.cpa != null && d.cpa > 0 ? formatMoney(d.cpa) : '—'} />
         <KpiCard title="Chuyển đổi" value={String(d.totalConversions)} />
         <KpiCard title="Đang chạy" value={String(d.activeCampaigns)} />
         <KpiCard title="Kém hiệu quả" value={String(d.poorCampaigns)} />
@@ -319,9 +322,9 @@ export function AiAdsManagerPage() {
                           <Badge variant="outline">{c.status}</Badge>
                         </TableCell>
                         <TableCell className="text-right">{formatMoney(c.spend)}</TableCell>
-                        <TableCell className="text-right">{formatNum(c.ctr)}%</TableCell>
+                        <TableCell className="text-right">{formatNum(c.ctr ?? 0)}%</TableCell>
                         <TableCell className="text-right">
-                          {c.cpa > 0 ? formatMoney(c.cpa) : '—'}
+                          {c.cpa != null && c.cpa > 0 ? formatMoney(c.cpa) : '—'}
                         </TableCell>
                         <TableCell className="text-right">
                           {c.roas != null ? formatNum(c.roas) : '—'}
@@ -651,9 +654,12 @@ export function AiAdsManagerPage() {
             <div className="grid grid-cols-2 gap-2 text-sm">
               <div>Impression: {formatNum(detailCampaign.impressions, 0)}</div>
               <div>Click: {formatNum(detailCampaign.clicks, 0)}</div>
-              <div>CPC: {formatMoney(detailCampaign.cpc)}</div>
-              <div>CPM: {formatMoney(detailCampaign.cpm)}</div>
-              <div>Lead/Conv: {formatNum(detailCampaign.leads + detailCampaign.conversions, 0)}</div>
+              <div>CPC: {formatMoney(detailCampaign.cpc ?? 0)}</div>
+              <div>CPM: {formatMoney(detailCampaign.cpm ?? 0)}</div>
+              <div>
+                Lead/Conv:{' '}
+                {formatNum((detailCampaign.leads ?? 0) + (detailCampaign.conversions ?? 0), 0)}
+              </div>
               <div className="col-span-2">
                 <Label>Gợi ý AI</Label>
                 <Textarea readOnly value={detailCampaign.aiSuggestion ?? ''} />

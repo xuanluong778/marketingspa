@@ -1,0 +1,40 @@
+{
+  "finishedAt": "2026-08-03T08:22:08.757Z",
+  "api": "https://marketingautoaz.com",
+  "vus": 100,
+  "durationSec": 900,
+  "requests": {
+    "total": 248169,
+    "ok": 247893,
+    "fail": 276,
+    "errorRate": 0.001112
+  },
+  "latencyMs": {
+    "p50": 357.81,
+    "p95": 471.3,
+    "p99": 519.62,
+    "max": 4309.78
+  },
+  "host": {
+    "loadavgStart": [
+      4.2,
+      2.68,
+      1.62
+    ],
+    "loadavgEnd": [
+      4.93,
+      5.53,
+      4.11
+    ],
+    "freememMb": 6668,
+    "totalmemMb": 11960,
+    "clientRssMb": 166,
+    "clientCpuUserMs": 221794,
+    "clientCpuSystemMs": 23197
+  },
+  "gates": {
+    "errorRateUnder0_5pct": true,
+    "pass": true
+  },
+  "notes": "Read-only endpoints only. DB connection count / queue lag require server-side sampling during canary."
+}

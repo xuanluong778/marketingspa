@@ -219,28 +219,32 @@ Mỗi đoạn thân bài nên có ít nhất 1 câu mạnh giữ cảm xúc. Xen
 `.trim();
 
 export const BRAND_ARTICLE_STRUCTURE = `
-CẤU TRÚC BÀI (BẮT BUỘC):
+CẤU TRÚC BÀI (BẮT BUỘC) — ưu tiên công thức:
 
-1. HOOK (1–3 câu đầu):
-   - Phải chạm ngay — câu hỏi xoáy, cú đấm nỗi đau, cảnh cụ thể, nghịch lý, hoặc thoại thật.
-   - Người đọc dừng cuộn trong 3 giây đầu.
+1. CÂU CHUYỆN THẬT (mở đầu):
+   - Cảnh / moment cụ thể, có chi tiết đời thường.
+   - CHỈ dùng trải nghiệm người dùng đã cung cấp trong "Ý tưởng/câu chuyện thô".
+   - Nếu user chưa cung cấp câu chuyện: viết góc nhìn / quan sát đời thường trung thực — KHÔNG bịa thành tích, số liệu, khách hàng giả, hay trải nghiệm cá nhân không có căn cứ.
 
-2. THÂN BÀI (có chiều sâu, không lan man):
-   - Câu chuyện cụ thể (có thể từ ý tưởng người dùng hoặc hợp lý với ngữ cảnh spa).
-   - Mâu thuẫn / nỗi đau thật — không kể chuyện phi lý, không drama giả.
-   - Cú ngã hoặc khoảnh khắc tỉnh ngộ.
-   - Bài học rút ra — không giáo điều sáo rỗng.
-   - Sự thức tỉnh — cảm giác "bị nói trúng".
-   - 5–8 câu đinh rải đều trong bài, mỗi đoạn có 1 câu giữ lửa cảm xúc.
+2. KHÓ KHĂN:
+   - Nỗi đau / mâu thuẫn / áp lực thật liên quan chủ đề.
+   - Không drama giả, không miệt thị.
 
-3. LIÊN HỆ SPA (tự nhiên, 1 đoạn ngắn):
-   - Làm đẹp = tự trọng; chăm sóc bản thân = phụ nữ lấy lại khí chất.
-   - Spa không chỉ bán dịch vụ — bán sự tự tin, sự thấu hiểu, kết quả thật.
-   - KHÔNG quảng cáo lộ liễu, KHÔNG inbox/ưu đãi/giá.
+3. CÁCH XỬ LÝ:
+   - Người viết (hoặc nhân vật) đã làm gì, quyết định thế nào, bước đi nào.
+   - Cụ thể, có hành động — không khẩu hiệu.
 
-4. KẾT BÀI (truyền động lực mạnh):
-   - Khiến người đọc muốn đứng dậy hành động — không phải "cố gắng lên" sáo rỗng.
-   - CTA tương tác chân thành (hỏi ý kiến, mời chia sẻ, tag người cần nghe) — không CTA rẻ tiền.
+4. BÀI HỌC:
+   - Rút ra 1–2 bài học sâu, không giáo điều sáo rỗng.
+   - Có ít nhất vài câu đinh giữ cảm xúc.
+
+5. THÔNG ĐIỆP TRUYỀN ĐỘNG LỰC:
+   - Khiến người đọc muốn đứng dậy hành động — không "cố gắng lên" rỗng.
+   - Góc nhìn cá nhân, chân thật.
+
+6. CTA TƯƠNG TÁC NHẸ (kết):
+   - Hỏi ý kiến, mời chia sẻ trải nghiệm, tag người cần nghe.
+   - KHÔNG inbox, KHÔNG đặt lịch, KHÔNG ưu đãi, KHÔNG chốt sale.
 `.trim();
 
 export const SPA_BRAND_BRIDGE_BLOCK = `
@@ -251,6 +255,25 @@ GẮN THƯƠNG HIỆU SPA (khéo léo, không bán hàng):
 - 1 đoạn ngắn (2–4 câu) xen giữa hoặc trước kết — đủ để reader cảm nhận thương hiệu, không ép.
 - KHÔNG chốt sale, KHÔNG inbox, KHÔNG ưu đãi, KHÔNG kêu gọi đặt lịch.
 `.trim();
+
+export const BRAND_PERSONAL_BRIDGE_BLOCK = `
+THƯƠNG HIỆU CÁ NHÂN (không bán hàng):
+- Hiện diện qua góc nhìn, giá trị và câu chuyện — không poster quảng cáo.
+- Không bịa case study, không bịa chứng nhận, không bịa số liệu.
+- Không ép gắn ngành nghề / spa / sản phẩm trừ khi user nêu rõ trong chủ đề hoặc câu chuyện.
+`.trim();
+
+export function brandBridgeBlock(industryLabel: string, isSpaBeauty: boolean): string {
+  // Giữ hàm cho tương thích call site cũ; tab personal dùng BRAND_PERSONAL_BRIDGE_BLOCK
+  if (!industryLabel?.trim()) return BRAND_PERSONAL_BRIDGE_BLOCK;
+  if (isSpaBeauty) return SPA_BRAND_BRIDGE_BLOCK;
+  return `
+GẮN THƯƠNG HIỆU NGÀNH "${industryLabel}" (khéo léo, không bán hàng):
+- Hiện diện qua giá trị thật, chuyên môn và câu chuyện — không mượn ngữ cảnh spa/làm đẹp nếu không đúng.
+- Viết như người từng trải đang chia sẻ thật — không như poster quảng cáo.
+- KHÔNG chốt sale, KHÔNG inbox, KHÔNG ưu đãi, KHÔNG kêu gọi đặt lịch lộ liễu.
+`.trim();
+}
 
 export const BRAND_WRITING_RULES = `
 VĂN PHONG (BẮT BUỘC):
@@ -267,22 +290,19 @@ export const BRAND_AVOID_RULES = `
 TUYỆT ĐỐI TRÁNH:
 - Mở đầu bài nào cũng "Mày à," hoặc cùng một kiểu hook.
 - Viết nhạt, kể chuyện lan man, không có mâu thuẫn.
-- Đưa spa vào quá lộ liễu như quảng cáo.
-- CTA rẻ tiền: "inbox ngay", "đặt lịch", "giảm giá".
+- Quảng cáo bán hàng, inbox, ưu đãi, đặt lịch, giá.
+- Bịa thành tích, bịa trải nghiệm, bịa khách hàng / số liệu khi user chưa cung cấp.
 - Câu sáo rỗng: "hãy cố gắng lên", "thành công sẽ đến", "mọi thứ rồi sẽ ổn", "tin vào bản thân".
-- Bịa câu chuyện phi lý, drama giả, số liệu không có căn cứ.
 - Bullet máy móc, emoji tràn lan, format list thay vì văn xuôi có cảm xúc.
 `.trim();
 
 export const BRAND_SELF_CHECK = `
 TRƯỚC KHI TRẢ JSON — TỰ KIỂM TRA (phải đạt hết):
-☑ Hook 3 câu đầu đủ mạnh, không sáo?
-☑ Có câu chuyện + mâu thuẫn + cú ngã/bài học + thức tỉnh?
-☑ Có ít nhất 5 câu đinh trong content (liệt kê lại vào punchlines)?
-☑ Mỗi đoạn có câu giữ cảm xúc?
-☑ Kết bài truyền động lực — reader muốn hành động?
-☑ Liên hệ spa tự nhiên, không quảng cáo?
-☑ Không văn mẫu, không câu sáo rỗng?
+☑ Có đủ mạch: Câu chuyện thật → Khó khăn → Cách xử lý → Bài học → Thông điệp động lực → CTA nhẹ?
+☑ Không bịa trải nghiệm / thành tích nếu user chưa cung cấp?
+☑ Không viết kiểu quảng cáo bán hàng?
+☑ Có câu đinh cảm xúc, không sáo?
+☑ Kết bài có CTA tương tác nhẹ (hỏi/chia sẻ), không inbox/đặt lịch?
 ☑ Cảm giác người từng trải nói thật?
 
 Nếu chưa đạt — viết lại trước khi trả kết quả.
@@ -301,16 +321,29 @@ export function buildBrandPostPrompt(params: {
   transcript?: string;
   openingStyle: (typeof BRAND_OPENING_STYLES)[number];
   legacyTone?: string;
+  topicGroupLabel?: string;
+  /** @deprecated personal tab không dùng ngành — giữ optional cho call site cũ */
+  industryLabel?: string;
+  isSpaBeauty?: boolean;
+  isRegulated?: boolean;
+  regulatedBlock?: string;
 }): string {
-  return `Bạn là người viết bài Facebook/TikTok xây dựng thương hiệu spa/wellness tại Việt Nam.
+  const groupLabel = params.topicGroupLabel?.trim() || '';
+  const hasUserStory = Boolean(params.storyIdea?.trim());
+  return `Bạn là người viết bài Facebook/TikTok xây dựng thương hiệu cá nhân tại Việt Nam.
 Giọng viết: người TỪNG TRẢI đang nói THẬT với người đọc — không phải copywriter bán hàng, không phải coach sáo rỗng.
 
-Chủ đề: ${params.topic}
-Đối tượng đọc: ${params.audience || 'người theo dõi fanpage spa'}
+Nhóm chủ đề: ${groupLabel || '(không chọn)'}
+Chủ đề bài viết: ${params.topic}
+Đối tượng đọc: ${params.audience || 'người theo dõi muốn câu chuyện chân thật'}
 Mục tiêu bài: ${params.goal}
 Độ dài: ${params.lengthHint}
 Góc nhìn: ${params.angle || '(AI phát triển từ chủ đề — phải sắc, không chung chung)'}
-Ý tưởng/câu chuyện thô: ${params.storyIdea || '(AI sáng tạo hợp lý với ngữ cảnh spa — không bịa phi lý)'}
+Ý tưởng / câu chuyện thật từ người dùng: ${
+    hasUserStory
+      ? params.storyIdea
+      : '(User chưa cung cấp câu chuyện — VIẾT góc nhìn/quan sát đời thường trung thực; CẤM bịa thành tích, trải nghiệm cá nhân giả, khách hàng giả, số liệu)'
+  }
 ${params.transcript ? `Tham khảo transcript: ${params.transcript.slice(0, 2000)}` : ''}
 ${params.legacyTone ? `Giọng bổ sung: ${params.legacyTone}` : ''}
 
@@ -328,13 +361,13 @@ ${BRAND_ARTICLE_STRUCTURE}
 
 ${BRAND_PUNCHLINE_EXAMPLES}
 
-${SPA_BRAND_BRIDGE_BLOCK}
+${BRAND_PERSONAL_BRIDGE_BLOCK}
 
 ${BRAND_AVOID_RULES}
 
 ${BRAND_SELF_CHECK}
 
-ĐẦU RA: Bài văn xuôi (xuống dòng \\n\\n giữa đoạn), vừa có câu chuyện, vừa cảm xúc, vừa thông điệp thương hiệu spa, vừa có câu đinh đủ cắt caption.
+ĐẦU RA: Bài văn xuôi (xuống dòng \\n\\n giữa đoạn), cảm xúc thật, góc nhìn cá nhân, công thức Câu chuyện → Khó khăn → Cách xử lý → Bài học → Động lực → CTA nhẹ.
 
 Trả JSON (không markdown):
 {"content":"...full bài...","hooks":["5 hook thay thế — mạnh, không trùng mở bài"],"openers":["5 góc mở bài khác"],"punchlines":["5-8 câu đinh hay nhất TRÍCH từ bài — dùng làm caption ngắn"]}

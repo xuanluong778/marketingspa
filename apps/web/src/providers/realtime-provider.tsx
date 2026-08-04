@@ -7,25 +7,59 @@ import { WS_EVENTS } from '@marketingspa/shared';
 import { authStorage } from '@/lib/auth-storage';
 import { useCurrentUser } from '@/hooks/use-auth';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+function resolveApiUrl(): string {
+  const fromEnv = process.env.NEXT_PUBLIC_API_URL?.trim();
+  if (fromEnv && !fromEnv.includes('localhost') && !fromEnv.includes('127.0.0.1')) {
+    return fromEnv.replace(/\/$/, '');
+  }
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin;
+  }
+  return fromEnv?.replace(/\/$/, '') || 'http://localhost:4000';
+}
 
 export interface RealtimeNotification {
   id: string;
   type: 'info' | 'warning' | 'success';
   title: string;
   message?: string;
+  href?: string;
   createdAt: number;
 }
 
 interface RealtimeContextValue {
-  notifications: RealtimeNotification[];
-  dismiss: (id: string) => void;
+  messageNotifications: RealtimeNotification[];
+  unreadCount: number;
+  dismissMessage: (id: string) => void;
+  clearUnread: () => void;
   connected: boolean;
 }
 
 const RealtimeContext = createContext<RealtimeContextValue | null>(null);
 
-function pushNotification(
+const UNREAD_STORAGE_KEY = 'marketingspa:chatbot-unread';
+
+function readStoredUnread(organizationId?: string): number {
+  if (typeof window === 'undefined' || !organizationId) return 0;
+  try {
+    const raw = sessionStorage.getItem(`${UNREAD_STORAGE_KEY}:${organizationId}`);
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeStoredUnread(organizationId: string | undefined, count: number) {
+  if (typeof window === 'undefined' || !organizationId) return;
+  try {
+    sessionStorage.setItem(`${UNREAD_STORAGE_KEY}:${organizationId}`, String(Math.max(0, count)));
+  } catch {
+    /* ignore */
+  }
+}
+
+function pushMessage(
   set: React.Dispatch<React.SetStateAction<RealtimeNotification[]>>,
   n: Omit<RealtimeNotification, 'id' | 'createdAt'>,
 ) {
@@ -34,88 +68,133 @@ function pushNotification(
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     createdAt: Date.now(),
   };
-  set((prev) => [item, ...prev].slice(0, 8));
+  set((prev) => [item, ...prev].slice(0, 20));
 }
 
 export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const { data: user } = useCurrentUser();
   const queryClient = useQueryClient();
-  const [notifications, setNotifications] = useState<RealtimeNotification[]>([]);
+  const [messageNotifications, setMessageNotifications] = useState<RealtimeNotification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [connected, setConnected] = useState(false);
 
-  const dismiss = useCallback((id: string) => {
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  useEffect(() => {
+    setUnreadCount(readStoredUnread(user?.organizationId));
+  }, [user?.organizationId]);
+
+  const dismissMessage = useCallback((id: string) => {
+    setMessageNotifications((prev) => prev.filter((n) => n.id !== id));
   }, []);
+
+  const clearUnread = useCallback(() => {
+    setUnreadCount(0);
+    writeStoredUnread(user?.organizationId, 0);
+  }, [user?.organizationId]);
+
+  const bumpUnread = useCallback(() => {
+    setUnreadCount((prev) => {
+      const next = prev + 1;
+      writeStoredUnread(user?.organizationId, next);
+      return next;
+    });
+  }, [user?.organizationId]);
 
   useEffect(() => {
     if (!user?.organizationId || !authStorage.isAuthenticated()) return;
 
-    const socket: Socket = io(`${API_URL}/events`, {
+    const socket: Socket = io(`${resolveApiUrl()}/events`, {
       transports: ['websocket', 'polling'],
-      query: { organizationId: user.organizationId },
+      auth: { token: authStorage.getAccessToken() ?? '' },
+      withCredentials: true,
     });
 
     socket.on('connect', () => setConnected(true));
     socket.on('disconnect', () => setConnected(false));
 
-    socket.on(WS_EVENTS.LEAD_NEW, (payload: { name?: string }) => {
-      pushNotification(setNotifications, {
-        type: 'success',
-        title: 'Lead mới',
-        message: payload.name ? `${payload.name} vừa được tạo` : undefined,
-      });
+    socket.on(WS_EVENTS.LEAD_NEW, () => {
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['leads'] });
     });
 
-    socket.on(WS_EVENTS.LEAD_STALE_ALERT, (payload: { count?: number }) => {
-      pushNotification(setNotifications, {
-        type: 'warning',
-        title: 'Cảnh báo lead',
-        message: `${payload.count ?? 0} lead chưa xử lý > 10 phút`,
-      });
+    socket.on(WS_EVENTS.LEAD_STALE_ALERT, () => {
       queryClient.invalidateQueries({ queryKey: ['dashboard', 'stale-leads'] });
     });
 
-    socket.on(WS_EVENTS.APPOINTMENT_NEW, (payload: { customerName?: string }) => {
-      pushNotification(setNotifications, {
-        type: 'info',
-        title: 'Lịch hẹn mới',
-        message: payload.customerName,
-      });
+    socket.on(WS_EVENTS.APPOINTMENT_NEW, () => {
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['appointments'] });
     });
 
+    socket.on(WS_EVENTS.APPOINTMENT_REMINDER, () => {
+      queryClient.invalidateQueries({ queryKey: ['automation', 'logs'] });
+    });
+
     socket.on(
-      WS_EVENTS.APPOINTMENT_REMINDER,
-      (payload: { customerName?: string; hoursBefore?: number }) => {
-        pushNotification(setNotifications, {
+      WS_EVENTS.CHATBOT_MESSAGE_NEW,
+      (payload: {
+        conversationId?: string;
+        channel?: string;
+        preview?: string;
+        visitorName?: string;
+        pageName?: string;
+      }) => {
+        const channelLabel =
+          payload.channel === 'facebook'
+            ? 'Messenger'
+            : payload.channel === 'website'
+              ? 'Website'
+              : payload.channel || 'Chatbot';
+        const from =
+          payload.visitorName ||
+          payload.pageName ||
+          (payload.channel === 'facebook' ? 'Khách Messenger' : 'Khách chatbot');
+        pushMessage(setMessageNotifications, {
           type: 'info',
-          title: 'Nhắc lịch (giả lập)',
-          message: payload.customerName
-            ? `${payload.customerName} — trước ${payload.hoursBefore}h`
-            : undefined,
+          title: `Tin nhắn mới · ${channelLabel}`,
+          message: `${from}: ${payload.preview || '...'}`,
+          href: '/chatbot-cskh?tab=inbox',
         });
-        queryClient.invalidateQueries({ queryKey: ['automation', 'logs'] });
+        bumpUnread();
+        queryClient.invalidateQueries({ queryKey: ['chatbot-cskh'] });
       },
     );
 
-    socket.on(WS_EVENTS.DAILY_REPORT, (payload: { title?: string }) => {
-      pushNotification(setNotifications, {
-        type: 'success',
-        title: 'Báo cáo ngày',
-        message: payload.title,
-      });
+    socket.on(WS_EVENTS.MESSAGING_CAMPAIGN_UPDATE, () => {
+      queryClient.invalidateQueries({ queryKey: ['automation'] });
+    });
+
+    socket.on(WS_EVENTS.MESSAGING_CAMPAIGN_RECIPIENT, () => {
+      queryClient.invalidateQueries({ queryKey: ['automation'] });
+    });
+
+    socket.on(WS_EVENTS.ADS_SYNC_PROGRESS, (payload: unknown) => {
+      void queryClient.invalidateQueries({ queryKey: ['ai-ads-manager', 'sync-jobs'] });
+      const status =
+        payload && typeof payload === 'object' && 'status' in payload
+          ? String((payload as { status?: string }).status)
+          : '';
+      if (status === 'SUCCEEDED' || status === 'FAILED') {
+        void queryClient.invalidateQueries({ queryKey: ['ai-ads-manager', 'dashboard'] });
+        void queryClient.invalidateQueries({ queryKey: ['ai-ads-manager', 'campaigns'] });
+        void queryClient.invalidateQueries({ queryKey: ['ai-ads-manager', 'connections'] });
+      }
     });
 
     return () => {
       socket.disconnect();
     };
-  }, [user?.organizationId, queryClient]);
+  }, [user?.organizationId, queryClient, bumpUnread]);
 
   return (
-    <RealtimeContext.Provider value={{ notifications, dismiss, connected }}>
+    <RealtimeContext.Provider
+      value={{
+        messageNotifications,
+        unreadCount,
+        dismissMessage,
+        clearUnread,
+        connected,
+      }}
+    >
       {children}
     </RealtimeContext.Provider>
   );

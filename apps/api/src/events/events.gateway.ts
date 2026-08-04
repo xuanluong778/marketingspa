@@ -4,6 +4,9 @@ import {
   OnGatewayConnection,
   OnGatewayDisconnect,
 } from '@nestjs/websockets';
+import { Logger } from '@nestjs/common';
+import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import { Server, Socket } from 'socket.io';
 import type { WsCampaignUpdate } from '@marketingspa/shared';
 
@@ -31,22 +34,70 @@ export interface WsLeadStatusChangedPayload {
   pipelineStatus: string;
 }
 
-/** Socket.IO gateway — realtime theo organization room */
+export interface WsChatbotMessageNewPayload {
+  conversationId: string;
+  channel: string;
+  preview: string;
+  visitorName?: string;
+  pageName?: string;
+  botId?: string;
+}
+
+/** Socket.IO gateway — realtime theo organization room (JWT bắt buộc) */
 @WebSocketGateway({
   cors: {
-    origin: process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000',
+    origin: [
+      process.env.NEXT_PUBLIC_APP_URL,
+      process.env.APP_URL,
+      'https://marketingautoaz.com',
+      'https://www.marketingautoaz.com',
+      'http://localhost:3000',
+      'http://127.0.0.1:3002',
+    ].filter(Boolean) as string[],
     credentials: true,
   },
   namespace: '/events',
 })
 export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
+  private readonly logger = new Logger(EventsGateway.name);
+
   @WebSocketServer()
   server!: Server;
 
-  handleConnection(client: Socket) {
-    const orgId = client.handshake.query.organizationId as string | undefined;
-    if (orgId) {
-      client.join(`org:${orgId}`);
+  constructor(
+    private readonly jwt: JwtService,
+    private readonly config: ConfigService,
+  ) {}
+
+  async handleConnection(client: Socket) {
+    const token =
+      (client.handshake.auth?.token as string | undefined) ??
+      (client.handshake.query?.token as string | undefined);
+
+    if (!token) {
+      client.disconnect(true);
+      return;
+    }
+
+    try {
+      const payload = await this.jwt.verifyAsync<{
+        sub: string;
+        organizationId: string;
+      }>(token, {
+        secret: this.config.get<string>('JWT_SECRET'),
+      });
+
+      if (!payload.organizationId) {
+        client.disconnect(true);
+        return;
+      }
+
+      client.data.userId = payload.sub;
+      client.data.organizationId = payload.organizationId;
+      client.join(`org:${payload.organizationId}`);
+    } catch (err) {
+      this.logger.debug(`Socket auth failed: ${err instanceof Error ? err.message : err}`);
+      client.disconnect(true);
     }
   }
 
@@ -54,7 +105,6 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     // Room cleanup tự động bởi Socket.IO
   }
 
-  /** Public for RealtimeBridgeService */
   emitToOrg(organizationId: string, event: string, payload: unknown) {
     this.server.to(`org:${organizationId}`).emit(event, payload);
   }
@@ -81,5 +131,9 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   broadcastLeadStatusChanged(organizationId: string, payload: WsLeadStatusChangedPayload) {
     this.broadcastToOrg(organizationId, 'lead:status-changed', payload);
+  }
+
+  broadcastChatbotMessageNew(organizationId: string, payload: WsChatbotMessageNewPayload) {
+    this.broadcastToOrg(organizationId, 'chatbot:message-new', payload);
   }
 }

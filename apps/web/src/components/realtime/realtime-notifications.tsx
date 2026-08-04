@@ -5,13 +5,13 @@ import { useRealtime } from '@/providers/realtime-provider';
 import { cn } from '@/lib/utils';
 
 export function RealtimeNotifications() {
-  const { notifications, dismiss } = useRealtime();
+  const { messageNotifications, dismissMessage } = useRealtime();
 
-  if (notifications.length === 0) return null;
+  if (messageNotifications.length === 0) return null;
 
   return (
     <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none">
-      {notifications.map((n) => (
+      {messageNotifications.map((n) => (
         <div
           key={n.id}
           className={cn(
@@ -29,7 +29,7 @@ export function RealtimeNotifications() {
             <button
               type="button"
               className="shrink-0 text-muted-foreground hover:text-foreground"
-              onClick={() => dismiss(n.id)}
+              onClick={() => dismissMessage(n.id)}
               aria-label="Đóng"
             >
               <X className="h-4 w-4" />

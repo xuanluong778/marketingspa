@@ -96,8 +96,7 @@ export function ContentPreviewDialog({
             <Button
               type="button"
               size="sm"
-              variant="outline"
-              className="rounded-lg border-emerald-300 text-emerald-800 hover:bg-emerald-100"
+              className="rounded-lg border-[#0A3D30] bg-[#0A3D30] text-white hover:bg-[#083028] hover:text-white [&_svg]:text-white"
               onClick={() => setEditing((v) => !v)}
             >
               <Pencil className="mr-1.5 h-4 w-4" />

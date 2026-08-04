@@ -6,6 +6,7 @@ import { Topbar } from './topbar';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { RealtimeProvider } from '@/providers/realtime-provider';
 import { RealtimeNotifications } from '@/components/realtime/realtime-notifications';
+import { TrialBanner } from '@/components/billing/trial-banner';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -31,6 +32,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <div className="flex flex-1 flex-col min-w-0 lg:pl-64 h-screen overflow-hidden">
           <Topbar onMenuClick={() => setMobileOpen(true)} />
+          <TrialBanner />
           <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
         </div>
       </div>

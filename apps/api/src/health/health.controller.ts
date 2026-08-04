@@ -1,8 +1,9 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Inject } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Inject } from '@nestjs/common';
 import { REDIS_CLIENT } from '../redis/redis.constants';
 import type Redis from 'ioredis';
+
+const WORKER_HEARTBEAT_KEY = 'marketingspa:worker:heartbeat';
 
 async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([
@@ -24,6 +25,7 @@ export class HealthController {
   async check() {
     let dbOk = false;
     let redisOk = false;
+    let workerOk = false;
 
     try {
       await withTimeout(this.prisma.$queryRaw`SELECT 1`, 2_000);
@@ -39,10 +41,27 @@ export class HealthController {
       redisOk = false;
     }
 
+    if (redisOk) {
+      try {
+        const heartbeat = await this.redis.get(WORKER_HEARTBEAT_KEY);
+        if (heartbeat) {
+          const ageMs = Date.now() - parseInt(heartbeat, 10);
+          workerOk = !Number.isNaN(ageMs) && ageMs < 120_000;
+        }
+      } catch {
+        workerOk = false;
+      }
+    }
+
+    const coreOk = dbOk && redisOk;
     return {
-      status: dbOk && redisOk ? 'ok' : 'degraded',
+      status: coreOk && workerOk ? 'ok' : coreOk ? 'degraded' : 'degraded',
       timestamp: new Date().toISOString(),
-      services: { database: dbOk, redis: redisOk },
+      services: {
+        database: dbOk,
+        redis: redisOk,
+        worker: workerOk,
+      },
     };
   }
 }

@@ -121,15 +121,11 @@ export interface HrmEmployeeFilters {
   pageSize?: number;
 }
 
-export type AttendanceDayStatus =
-  | 'PRESENT'
-  | 'ABSENT'
-  | 'LEAVE'
-  | 'HOLIDAY'
-  | 'INCOMPLETE';
+export type AttendanceDayStatus = 'PRESENT' | 'ABSENT' | 'LEAVE' | 'HOLIDAY' | 'INCOMPLETE';
 export type TimesheetStatus = 'OPEN' | 'LOCKED' | 'ARCHIVED';
 export type LeaveRequestStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
 export type LeaveType = 'ANNUAL' | 'SICK' | 'UNPAID' | 'MATERNITY' | 'OTHER';
+export type LeaveDayPart = 'FULL' | 'HALF_AM' | 'HALF_PM';
 export type AttendanceMethod = 'QR' | 'GPS' | 'KIOSK' | 'MANUAL';
 export type AttendancePunchType = 'CHECK_IN' | 'CHECK_OUT' | 'BREAK_START' | 'BREAK_END';
 
@@ -149,6 +145,12 @@ export const LEAVE_TYPE_OPTIONS = [
   { value: 'OTHER', label: 'Khác' },
 ] as const;
 
+export const LEAVE_DAY_PART_OPTIONS = [
+  { value: 'FULL', label: 'Cả ngày' },
+  { value: 'HALF_AM', label: 'Nửa ngày (sáng)' },
+  { value: 'HALF_PM', label: 'Nửa ngày (chiều)' },
+] as const;
+
 export const LEAVE_STATUS_OPTIONS = [
   { value: 'PENDING', label: 'Chờ duyệt' },
   { value: 'APPROVED', label: 'Đã duyệt' },
@@ -166,7 +168,15 @@ export interface HrmAttendanceDay {
   earlyLeaveMinutes: number;
   otMinutes: number;
   status: AttendanceDayStatus;
-  employee?: { id: string; name: string; code?: string | null; position?: string | null };
+  source?: string;
+  employee?: {
+    id: string;
+    name: string;
+    code?: string | null;
+    position?: string | null;
+    departmentId?: string | null;
+    department?: { id: string; name: string } | null;
+  };
   branch?: { id: string; name: string };
   timesheetPeriod?: { id: string; year: number; month: number; status: TimesheetStatus };
 }
@@ -185,12 +195,16 @@ export interface HrmTimesheetPeriod {
 export interface HrmLeaveRequest {
   id: string;
   leaveType: LeaveType;
+  dayPart?: LeaveDayPart;
   fromDate: string;
   toDate: string;
   days: string | number;
   status: LeaveRequestStatus;
   reason?: string | null;
   decisionNote?: string | null;
+  cancelReason?: string | null;
+  attachmentUrl?: string | null;
+  attachmentName?: string | null;
   employee?: { id: string; name: string; code?: string | null };
   branch?: { id: string; name: string } | null;
   approver?: { id: string; name: string; email: string } | null;
@@ -200,20 +214,66 @@ export interface HrmLeaveRequest {
 export interface HrmOvertimeRequest {
   id: string;
   workDate: string;
+  startAt?: string | null;
+  endAt?: string | null;
+  breakMinutes?: number;
   minutes: number;
   status: LeaveRequestStatus;
   reason?: string | null;
+  decisionNote?: string | null;
+  cancelReason?: string | null;
   employee?: { id: string; name: string; code?: string | null };
   branch?: { id: string; name: string };
 }
 
+export interface HrmLeaveBalanceItem {
+  leaveType: LeaveType;
+  year: number;
+  quota: number | null;
+  used: number;
+  remaining: number | null;
+}
+
+export interface HrmLeaveBalance {
+  employeeId: string;
+  year: number;
+  balances: HrmLeaveBalanceItem[];
+}
+
 export interface HrmAttendanceFilters {
   branchId?: string;
+  departmentId?: string;
   employeeId?: string;
+  status?: AttendanceDayStatus | '';
   year?: number;
   month?: number;
   page?: number;
   pageSize?: number;
+}
+
+export interface HrmTodayPunchState {
+  employeeId: string | null;
+  workDate: string | null;
+  canCheckIn: boolean;
+  canCheckOut: boolean;
+  day: HrmAttendanceDay | null;
+  punches?: Array<{
+    id: string;
+    type: AttendancePunchType;
+    punchedAt: string;
+    method: AttendanceMethod;
+  }>;
+}
+
+export interface CorrectAttendanceDayInput {
+  checkInAt?: string | null;
+  checkOutAt?: string | null;
+  workedMinutes?: number;
+  lateMinutes?: number;
+  earlyLeaveMinutes?: number;
+  otMinutes?: number;
+  status?: AttendanceDayStatus;
+  reason: string;
 }
 
 export interface HrmLeaveFilters {
@@ -222,4 +282,68 @@ export interface HrmLeaveFilters {
   status?: LeaveRequestStatus | '';
   page?: number;
   pageSize?: number;
+}
+
+export interface HrmShiftPolicy {
+  id: string;
+  name: string;
+  code?: string | null;
+  branchId?: string | null;
+  startTime: string;
+  endTime: string;
+  breakMinutes: number;
+  lateGraceMinutes: number;
+  earlyLeaveGraceMinutes: number;
+  otBeforeMinutes: number;
+  otAfterMinutes: number;
+  crossesMidnight: boolean;
+  isActive: boolean;
+  effectiveFrom?: string;
+  effectiveTo?: string | null;
+  branch?: { id: string; name: string } | null;
+  _count?: { assignments: number };
+}
+
+export interface HrmShiftPolicyInput {
+  name: string;
+  code: string;
+  branchId?: string;
+  startTime: string;
+  endTime: string;
+  breakMinutes?: number;
+  lateGraceMinutes?: number;
+  earlyLeaveGraceMinutes?: number;
+  otBeforeMinutes?: number;
+  otAfterMinutes?: number;
+  crossesMidnight?: boolean;
+  effectiveFrom?: string;
+  effectiveTo?: string;
+  isActive?: boolean;
+}
+
+export interface HrmShiftAssignment {
+  id: string;
+  workDate: string;
+  startAt: string;
+  endAt: string;
+  locked?: boolean;
+  note?: string | null;
+  employeeId: string;
+  branchId: string;
+  policyId?: string | null;
+  employee?: {
+    id: string;
+    name: string;
+    code?: string | null;
+    department?: { id: string; name: string } | null;
+  };
+  branch?: { id: string; name: string };
+  policy?: {
+    id: string;
+    name: string;
+    code?: string | null;
+    startTime?: string;
+    endTime?: string;
+    crossesMidnight?: boolean;
+  } | null;
 }

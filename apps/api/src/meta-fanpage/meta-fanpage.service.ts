@@ -17,6 +17,7 @@ import {
   META_FANPAGE_PUBLISH_JOB,
   type MetaFanpagePublishJobData,
 } from './meta-fanpage.queue';
+import { assertCanUseServerEnvFanpage } from './meta-fanpage-access';
 
 type MetaErrorBody = {
   error?: {
@@ -114,6 +115,7 @@ export class MetaFanpageService {
   }
 
   async publishNow(user: AuthUser, dto: CreateMetaFanpagePostDto) {
+    assertCanUseServerEnvFanpage(user, (k) => this.config.get<string>(k) ?? process.env[k]);
     this.ensureConfigured();
     const message = dto.message.trim();
     const link = dto.link?.trim() || undefined;

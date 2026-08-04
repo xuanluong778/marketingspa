@@ -1,4 +1,5 @@
-import { IsArray, IsIn, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, MinLength, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
 import {
   ADVANCED_ARTICLE_GOALS,
   ADVANCED_CTA_TYPES,
@@ -11,6 +12,110 @@ import {
   BRAND_PRONOUNS,
   BRAND_VOICE_INTENSITIES,
 } from '../brand-post-config';
+
+export class AdProductPayloadDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  category?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  features?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  benefits?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  differentiators?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  price?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  warranty?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  proof?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  offer?: string;
+}
+
+export class AdServicePayloadDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  suitableCustomers?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  problems?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  process?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  highlights?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  expectedBenefits?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  duration?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  location?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  experts?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  proof?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  offer?: string;
+}
 
 export const CONTENT_TONES = [
   'bold',
@@ -95,6 +200,45 @@ export const PERSONAL_POST_GOALS = [
 
 export const POST_LENGTHS = ['short', 'medium', 'long'] as const;
 
+export const PERSONAL_CREATION_MODES = ['topic', 'opinion'] as const;
+
+export const OPINION_STANCES = [
+  'agree',
+  'disagree',
+  'neutral',
+  'multi',
+  'custom',
+] as const;
+
+export const OPINION_ANGLES = [
+  'life',
+  'ethics',
+  'community',
+  'business',
+  'celebrity',
+  'personal_lesson',
+] as const;
+
+export const OPINION_PRONOUNS = [
+  'toi_cac_ban',
+  'minh_moi_nguoi',
+  'anh_em',
+  'co_chu_anh_chi',
+] as const;
+
+export const OPINION_INTENSITIES = [
+  'gentle',
+  'deep',
+  'frank',
+  'emotional',
+  'motivational',
+  'strong',
+] as const;
+
+export const OPINION_LENGTHS = ['1min', '3min', '5min', 'facebook'] as const;
+
+export const PERSONAL_TITLE_COUNTS = [5, 10, 20] as const;
+
 export const PERSONAL_REWRITE_MODES = [
   'funnier',
   'deeper',
@@ -118,6 +262,35 @@ export const REWRITE_MODES = [
   'ab_3',
 ] as const;
 
+export const OPINION_REWRITE_MODES = [
+  'more_casual',
+  'more_natural',
+  'more_spoken',
+  'less_preachy',
+  'more_frank',
+  'more_deep',
+  'shorten',
+  'shorten_1min',
+  'rewrite_all',
+] as const;
+
+export type OpinionRewriteMode = (typeof OPINION_REWRITE_MODES)[number];
+
+export const TELEPROMPTER_SCRIPT_REWRITE_MODES = [
+  'to_spoken',
+  'more_natural',
+  'more_casual',
+  'less_written',
+  'less_preachy',
+  'more_frank',
+  'more_deep',
+  'shorten_1min',
+  'shorten_3min',
+  'shorten_5min',
+] as const;
+
+export type TeleprompterScriptRewriteMode = (typeof TELEPROMPTER_SCRIPT_REWRITE_MODES)[number];
+
 export class GenerateContentDto {
   @IsIn(['ad', 'personal'])
   mode!: 'ad' | 'personal';
@@ -126,6 +299,26 @@ export class GenerateContentDto {
   @MinLength(1)
   @MaxLength(500)
   productService!: string;
+
+  /** product | service — optional; default product when mode=ad */
+  @IsOptional()
+  @IsIn(['product', 'service'])
+  adPostKind?: 'product' | 'service';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  brandName?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AdProductPayloadDto)
+  product?: AdProductPayloadDto;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AdServicePayloadDto)
+  service?: AdServicePayloadDto;
 
   @IsOptional()
   @IsString()
@@ -220,6 +413,86 @@ export class GenerateContentDto {
   @IsOptional()
   @IsIn(BRAND_VOICE_INTENSITIES)
   brandVoiceIntensity?: (typeof BRAND_VOICE_INTENSITIES)[number];
+
+  /** topic = chủ đề thương hiệu; opinion = góc nhìn & chính kiến */
+  @IsOptional()
+  @IsIn(PERSONAL_CREATION_MODES)
+  creationMode?: (typeof PERSONAL_CREATION_MODES)[number];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  topicGroupId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  topicGroupLabel?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  industryId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  industryName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  customIndustry?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  opinionSourceUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(8000)
+  opinionSourceText?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(3000)
+  opinionSummary?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  opinionDebateIssue?: string;
+
+  @IsOptional()
+  @IsIn(OPINION_STANCES)
+  opinionStance?: (typeof OPINION_STANCES)[number];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  opinionStanceCustom?: string;
+
+  @IsOptional()
+  @IsIn(OPINION_ANGLES)
+  opinionAngle?: (typeof OPINION_ANGLES)[number];
+
+  @IsOptional()
+  @IsIn(OPINION_PRONOUNS)
+  opinionPronoun?: (typeof OPINION_PRONOUNS)[number];
+
+  @IsOptional()
+  @IsIn(OPINION_INTENSITIES)
+  opinionIntensity?: (typeof OPINION_INTENSITIES)[number];
+
+  @IsOptional()
+  @IsIn(OPINION_LENGTHS)
+  opinionLength?: (typeof OPINION_LENGTHS)[number];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  opinionThesis?: string;
 }
 
 export class AnalyzeVideoDto {
@@ -243,6 +516,21 @@ export class CheckPolicyDto {
   @IsOptional()
   @IsIn(PLATFORMS)
   platform?: (typeof PLATFORMS)[number];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  industryId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  industryName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  customIndustry?: string;
 }
 
 export class ScoreContentDto {
@@ -262,6 +550,16 @@ export class ScoreContentDto {
   @IsOptional()
   @IsIn(AD_OBJECTIVES)
   adObjective?: (typeof AD_OBJECTIVES)[number];
+
+  @IsOptional()
+  @IsString()
+  customIndustry?: string;
+  @IsOptional()
+  @IsString()
+  industryId?: string;
+  @IsOptional()
+  @IsString()
+  industryName?: string;
 }
 
 export class RewriteContentDto {
@@ -288,6 +586,21 @@ export class RewriteContentDto {
   @IsOptional()
   @IsIn(PERSONAL_TONES)
   personalTone?: (typeof PERSONAL_TONES)[number];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  industryId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  industryName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  customIndustry?: string;
 }
 
 export class GenerateAdvancedArticleDto {
@@ -360,6 +673,21 @@ export class GenerateAdvancedArticleDto {
 
   @IsIn(POST_LENGTHS)
   postLength!: (typeof POST_LENGTHS)[number];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  industryId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  industryName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  customIndustry?: string;
 }
 
 export class OptimizeAdvancedCtaDto {
@@ -379,6 +707,21 @@ export class OptimizeAdvancedCtaDto {
   @IsOptional()
   @IsIn(ADVANCED_ARTICLE_GOALS)
   articleGoal?: (typeof ADVANCED_ARTICLE_GOALS)[number];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  industryId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  industryName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  customIndustry?: string;
 }
 
 export class GenerateAdvancedTitlesDto {
@@ -395,6 +738,21 @@ export class GenerateAdvancedTitlesDto {
   @IsOptional()
   @IsIn(ADVANCED_DEMOGRAPHICS)
   demographic?: (typeof ADVANCED_DEMOGRAPHICS)[number];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  industryId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  industryName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  customIndustry?: string;
 }
 
 export class RewriteAdvancedArticleDto extends GenerateAdvancedArticleDto {
@@ -461,6 +819,16 @@ export class SuggestPersonalIdeasDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(120)
+  topicGroupId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  topicGroupLabel?: string;
+
+  @IsOptional()
+  @IsString()
   @MaxLength(500)
   targetAudience?: string;
 
@@ -475,6 +843,60 @@ export class SuggestPersonalIdeasDto {
   @IsOptional()
   @IsIn(PERSONAL_TONES)
   personalTone?: (typeof PERSONAL_TONES)[number];
+}
+
+export class SuggestPersonalTitlesDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  topicGroupId?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(300)
+  topicGroupLabel?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  subtopicId?: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(500)
+  subtopicLabel!: string;
+
+  @IsIn(PERSONAL_TITLE_COUNTS)
+  count!: (typeof PERSONAL_TITLE_COUNTS)[number];
+
+  @IsOptional()
+  @IsIn(PERSONAL_TONES)
+  tone?: (typeof PERSONAL_TONES)[number];
+
+  @IsOptional()
+  @IsIn(BRAND_PRONOUNS)
+  pronoun?: (typeof BRAND_PRONOUNS)[number];
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  audience?: string;
+
+  @IsOptional()
+  @IsIn(PERSONAL_POST_GOALS)
+  goal?: (typeof PERSONAL_POST_GOALS)[number];
+}
+
+export class AnalyzeOpinionStoryDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  sourceUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(8000)
+  sourceText?: string;
 }
 
 export class SuggestAdvancedFieldDto {
@@ -508,3 +930,281 @@ export class SuggestAdvancedFieldDto {
   @MaxLength(2000)
   currentValue?: string;
 }
+
+export class IndustrySuggestionsDto {
+  @IsOptional()
+  @IsString()
+  industryId?: string;
+  @IsOptional()
+  @IsString()
+  industryName?: string;
+  @IsOptional()
+  @IsString()
+  customIndustry?: string;
+  @IsOptional()
+  @IsString()
+  q?: string;
+}
+
+export class OpinionAnalyzeDto {
+  @IsOptional()
+  @IsString()
+  story?: string;
+  @IsOptional()
+  @IsString()
+  transcript?: string;
+  @IsOptional()
+  @IsString()
+  url?: string;
+
+  @IsOptional()
+  @IsString()
+  fanpageId?: string;
+  @IsOptional()
+  @IsString()
+  sourceText?: string;
+  @IsOptional()
+  @IsString()
+  sourceUrl?: string;
+  @IsOptional()
+  @IsString()
+  urlKind?: string;
+}
+
+export class OpinionGenerateDto {
+  @IsOptional()
+  @IsString()
+  topic?: string;
+  @IsOptional()
+  @IsString()
+  stance?: string;
+  @IsOptional()
+  @IsString()
+  angle?: string;
+  @IsOptional()
+  @IsString()
+  pronoun?: string;
+  @IsOptional()
+  @IsString()
+  intensity?: string;
+  @IsOptional()
+  @IsString()
+  length?: string;
+  @IsOptional()
+  @IsString()
+  story?: string;
+
+  @IsOptional()
+  @IsArray()
+  avoidWords?: any[];
+  @IsOptional()
+  @IsArray()
+  closingPhrases?: any[];
+  @IsOptional()
+  @IsArray()
+  commonPhrases?: any[];
+  @IsOptional()
+  @IsArray()
+  confirmedFacts?: any[];
+  @IsOptional()
+  @IsBoolean()
+  hideNames?: boolean;
+  @IsOptional()
+  @IsArray()
+  openingPhrases?: any[];
+  @IsOptional()
+  @IsArray()
+  preferredWords?: any[];
+  @IsOptional()
+  @IsString()
+  quickAngleLabel?: string;
+  @IsOptional()
+  @IsString()
+  sampleParagraph?: string;
+  @IsOptional()
+  @IsString()
+  selectedAngle?: string;
+  @IsOptional()
+  @IsString()
+  sourceSummary?: string;
+  @IsOptional()
+  @IsString()
+  subtopic?: string;
+  @IsOptional()
+  @IsString()
+  themeId?: string;
+  @IsOptional()
+  @IsArray()
+  unverifiedClaims?: any[];
+  @IsOptional()
+  @IsString()
+  userViewpoint?: string;
+}
+
+export class OpinionRewriteDto extends OpinionGenerateDto {
+  @IsOptional()
+  @IsString()
+  content?: string;
+  @IsOptional()
+  @IsString()
+  mode?: string;
+
+  @IsOptional()
+  @IsString()
+  facebookPost?: string;
+  @IsIn(OPINION_REWRITE_MODES)
+  rewriteMode!: OpinionRewriteMode;
+  @IsOptional()
+  @IsString()
+  videoHook?: string;
+  @IsOptional()
+  @IsString()
+  videoScript?: string;
+}
+
+export class OpinionScoreNaturalnessDto {
+  @IsOptional()
+  @IsString()
+  content?: string;
+
+  @IsOptional()
+  @IsString()
+  contentType?: string;
+}
+
+export class OpinionSuggestFieldDto {
+  @IsOptional()
+  @IsString()
+  field?: string;
+  @IsOptional()
+  @IsString()
+  context?: string;
+
+  @IsOptional()
+  @IsString()
+  currentDebateIssue?: string;
+  @IsOptional()
+  @IsString()
+  currentSummary?: string;
+  @IsOptional()
+  @IsString()
+  currentValue?: string;
+  @IsOptional()
+  @IsString()
+  sourceText?: string;
+  @IsOptional()
+  @IsString()
+  subtopic?: string;
+  @IsOptional()
+  @IsString()
+  themeLabel?: string;
+}
+
+export class TeleprompterScriptRewriteDto {
+  @IsString()
+  @MinLength(1)
+  script!: string;
+
+  @IsIn(TELEPROMPTER_SCRIPT_REWRITE_MODES)
+  mode!: TeleprompterScriptRewriteMode;
+
+  @IsOptional()
+  @IsString()
+  title?: string;
+}
+
+export class UpsertOpinionVoiceProfileDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+  @IsOptional()
+  @IsString()
+  style?: string;
+  @IsOptional()
+  @IsString()
+  notes?: string;
+
+  @IsOptional()
+  @IsArray()
+  avoidWords?: any[];
+  @IsOptional()
+  @IsArray()
+  closingPhrases?: any[];
+  @IsOptional()
+  @IsArray()
+  openingPhrases?: any[];
+  @IsOptional()
+  @IsArray()
+  preferredWords?: any[];
+  @IsOptional()
+  @IsString()
+  pronoun?: string;
+  @IsOptional()
+  @IsString()
+  sampleParagraph?: string;
+  @IsOptional()
+  @IsString()
+  scope?: string;
+}
+
+export class UpsertTeleprompterSourceDto {
+  @IsOptional()
+  @IsString()
+  title?: string;
+  @IsOptional()
+  @IsString()
+  content?: string;
+  @IsOptional()
+  @IsString()
+  sourceType?: string;
+  @IsOptional()
+  @IsString()
+  url?: string;
+
+  @IsOptional()
+  @IsString()
+  clientContentId?: string;
+  @IsOptional()
+  @IsString()
+  editedScript?: string;
+  @IsOptional()
+  @IsString()
+  estimatedDuration?: string;
+  @IsOptional()
+  @IsString()
+  facebookPost?: string;
+  @IsOptional()
+  @IsString()
+  id?: string;
+  @IsOptional()
+  @IsString()
+  originalScript?: string;
+  @IsOptional()
+  @IsString()
+  sourceContentId?: string;
+  @IsOptional()
+  @IsString()
+  sourceRoute?: string;
+  @IsOptional()
+  @IsString()
+  sourceTitle?: string;
+  @IsOptional()
+  @IsString()
+  videoHook?: string;
+}
+
+export class StartAdUrlAnalyzeDto {
+  @IsString()
+  @MinLength(8)
+  @MaxLength(2000)
+  sourceUrl!: string;
+
+  @IsIn(['product', 'service'])
+  adPostKind!: 'product' | 'service';
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  brandName?: string;
+}
+

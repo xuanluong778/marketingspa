@@ -78,6 +78,7 @@ const ROLE_PERMISSIONS = {
   TECHNICIAN: [
     'hrm.employee.read',
     'hrm.attendance.read',
+    'hrm.attendance.write',
     'hrm.leave.read',
     'hrm.leave.write',
     'lead.read',

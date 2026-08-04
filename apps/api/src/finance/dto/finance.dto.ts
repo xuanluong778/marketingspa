@@ -1,15 +1,4 @@
-import {
-  IsOptional,
-  IsString,
-  IsEnum,
-  IsUUID,
-  IsDateString,
-  IsArray,
-  ValidateNested,
-  IsInt,
-  IsNumber,
-  Min,
-} from 'class-validator';
+import { IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { OrderStatus, PaymentMethod, PaymentStatus, ExpenseCategory } from '@marketingspa/database';
 import { PaginationDto } from '../../common/dto/pagination.dto';
@@ -51,6 +40,10 @@ export class CreateOrderDto {
   @IsOptional()
   @IsString()
   note?: string;
+
+  @IsOptional()
+  @IsString()
+  leadId?: string;
 }
 
 export class CreatePaymentDto {
@@ -66,6 +59,10 @@ export class CreatePaymentDto {
   @IsOptional()
   @IsString()
   reference?: string;
+
+  @IsOptional()
+  @IsString()
+  idempotencyKey?: string;
 }
 
 export class CreateExpenseDto {

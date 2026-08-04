@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Ad tab UI compare</title>
+<style>
+  body{font-family:system-ui,sans-serif;background:#f1f5f9;margin:0;padding:24px;color:#0f172a}
+  h1{font-size:18px;margin:0 0 16px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media(max-width:800px){.grid{grid-template-columns:1fr}}
+  .card{background:#fff;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  .hd{background:#f8fafc;border-bottom:1px solid #e2e8f0;padding:12px 16px;font-weight:600}
+  .bd{padding:16px;display:flex;flex-direction:column;gap:10px}
+  label{font-size:12px;color:#475569;display:block;margin-bottom:4px}
+  .field{border:1px solid #e2e8f0;border-radius:8px;padding:8px 10px;background:#fff;font-size:13px;color:#64748b}
+  .block{border:1px solid #e2e8f0;border-radius:8px;padding:12px;background:#f8fafc}
+  .block h3{margin:0 0 8px;font-size:13px}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;background:#ecfdf5;color:#065f46;margin-bottom:8px}
+  .new{outline:2px solid #0d9488;outline-offset:2px}
+  .note{margin-top:16px;font-size:12px;color:#64748b}
+</style>
+</head>
+<body>
+  <h1>Quảng cáo bán hàng — UI trước / sau (additive, cùng chrome)</h1>
+  <div class="grid">
+    <div class="card">
+      <div class="hd">Trước</div>
+      <div class="bd">
+        <div><label>Sản phẩm / dịch vụ</label><div class="field">Một ô chung</div></div>
+        <div class="row">
+          <div><label>Khách hàng mục tiêu</label><div class="field">…</div></div>
+          <div><label>Nền tảng</label><div class="field">Facebook</div></div>
+        </div>
+        <div><label>Nỗi đau / Lợi ích</label><div class="field">…</div></div>
+        <div><label>Mục tiêu QC / Ưu đãi / CTA / Văn phong</label><div class="field">…</div></div>
+        <div><label>Video / transcript</label><div class="field">…</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="hd">Sau</div>
+      <div class="bd">
+        <span class="tag">Mới</span>
+        <div class="row new">
+          <div><label>Loại bài quảng cáo</label><div class="field">Bài viết sản phẩm ▾</div></div>
+          <div><label>Tên thương hiệu / cơ sở</label><div class="field">autofill org.name</div></div>
+        </div>
+        <div class="block new">
+          <h3>Chi tiết sản phẩm (hoặc dịch vụ)</h3>
+          <div class="field" style="margin-bottom:6px">Tên · danh mục · tính năng · lợi ích · khác biệt · giá · BH · bằng chứng · ưu đãi</div>
+          <div class="field">Service: khách phù hợp · vấn đề · quy trình · nổi bật · lợi ích · thời gian · địa điểm · chuyên gia · proof · ưu đãi</div>
+        </div>
+        <div class="row">
+          <div><label>Khách hàng mục tiêu</label><div class="field">… (giữ)</div></div>
+          <div><label>Nền tảng</label><div class="field">Facebook (giữ)</div></div>
+        </div>
+        <div><label>Mục tiêu / CTA / tone / video</label><div class="field">Giữ nguyên</div></div>
+        <div class="block new">
+          <h3>Kết quả bổ sung</h3>
+          <div class="field">Headline · Mô tả ngắn · Gợi ý hình ảnh/video (+ hooks/CTA/score/policy cũ)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="note">Desktop 2 cột · Mobile stack (grid 1 cột). Không đổi Advanced / Personal / Auto Post / facebook-policy.</p>
+</body>
+</html>

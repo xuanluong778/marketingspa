@@ -1,16 +1,18 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient } from '@/lib/api-client';
+import { apiClient, apiDownload, apiUpload } from '@/lib/api-client';
 import type { PaginatedResult } from '@/types/api';
 import type {
   AttendanceMethod,
   AttendancePunchType,
+  CorrectAttendanceDayInput,
   HrmAttendanceDay,
   HrmAttendanceFilters,
+  HrmLeaveBalance,
   HrmLeaveFilters,
   HrmLeaveRequest,
   HrmOvertimeRequest,
   HrmTimesheetPeriod,
-  LeaveType,
+  HrmTodayPunchState,
 } from '@/types/hrm';
 
 function toQuery(filters: Record<string, string | number | undefined> = {}) {
@@ -29,6 +31,15 @@ export function useHrmAttendanceDays(filters: HrmAttendanceFilters = {}) {
       apiClient<PaginatedResult<HrmAttendanceDay>>(
         `/hrm/attendance/days${toQuery(filters as Record<string, string | number | undefined>)}`,
       ),
+  });
+}
+
+export function useHrmTodayPunch(enabled = true) {
+  return useQuery({
+    queryKey: ['hrm', 'attendance', 'today'],
+    queryFn: () => apiClient<HrmTodayPunchState>('/hrm/attendance/today'),
+    enabled,
+    refetchInterval: 60_000,
   });
 }
 
@@ -76,10 +87,10 @@ export function useHrmAttendanceMutations() {
   return {
     punch: useMutation({
       mutationFn: (body: {
-        employeeId: string;
-        branchId: string;
+        employeeId?: string;
+        branchId?: string;
         type: AttendancePunchType;
-        method: AttendanceMethod;
+        method?: AttendanceMethod;
         punchedAt?: string;
       }) =>
         apiClient('/hrm/attendance/punch', {
@@ -87,6 +98,27 @@ export function useHrmAttendanceMutations() {
           body: JSON.stringify(body),
         }),
       onSuccess: invalidate,
+    }),
+    correctDay: useMutation({
+      mutationFn: ({ id, ...body }: CorrectAttendanceDayInput & { id: string }) =>
+        apiClient<HrmAttendanceDay>(`/hrm/attendance/days/${id}/correct`, {
+          method: 'POST',
+          body: JSON.stringify(body),
+        }),
+      onSuccess: invalidate,
+    }),
+    exportDays: useMutation({
+      mutationFn: async (filters: HrmAttendanceFilters & { format?: 'csv' | 'xlsx' }) => {
+        const { blob, filename } = await apiDownload(
+          `/hrm/attendance/days/export${toQuery(filters as Record<string, string | number | undefined>)}`,
+        );
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      },
     }),
     lockPeriod: useMutation({
       mutationFn: (id: string) =>
@@ -117,24 +149,14 @@ export function useHrmLeaveMutations() {
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['hrm', 'leave-requests'] });
     qc.invalidateQueries({ queryKey: ['hrm', 'overtime-requests'] });
+    qc.invalidateQueries({ queryKey: ['hrm', 'leave-balance'] });
     qc.invalidateQueries({ queryKey: ['hrm', 'attendance'] });
   };
 
   return {
     createLeave: useMutation({
-      mutationFn: (body: {
-        employeeId: string;
-        branchId?: string;
-        leaveType: LeaveType;
-        fromDate: string;
-        toDate: string;
-        days: number;
-        reason?: string;
-      }) =>
-        apiClient('/hrm/leave-requests', {
-          method: 'POST',
-          body: JSON.stringify(body),
-        }),
+      mutationFn: (body: FormData) =>
+        apiUpload<HrmLeaveRequest>('/hrm/leave-requests', body),
       onSuccess: invalidate,
     }),
     approveLeave: useMutation({
@@ -146,22 +168,32 @@ export function useHrmLeaveMutations() {
       onSuccess: invalidate,
     }),
     rejectLeave: useMutation({
-      mutationFn: ({ id, decisionNote }: { id: string; decisionNote?: string }) =>
+      mutationFn: ({ id, decisionNote }: { id: string; decisionNote: string }) =>
         apiClient(`/hrm/leave-requests/${id}/reject`, {
           method: 'POST',
           body: JSON.stringify({ decisionNote }),
         }),
       onSuccess: invalidate,
     }),
+    cancelLeave: useMutation({
+      mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+        apiClient(`/hrm/leave-requests/${id}/cancel`, {
+          method: 'POST',
+          body: JSON.stringify({ reason }),
+        }),
+      onSuccess: invalidate,
+    }),
     createOvertime: useMutation({
       mutationFn: (body: {
-        employeeId: string;
-        branchId: string;
+        employeeId?: string;
+        branchId?: string;
         workDate: string;
-        minutes: number;
+        startAt: string;
+        endAt: string;
+        breakMinutes?: number;
         reason?: string;
       }) =>
-        apiClient('/hrm/overtime-requests', {
+        apiClient<HrmOvertimeRequest>('/hrm/overtime-requests', {
           method: 'POST',
           body: JSON.stringify(body),
         }),
@@ -176,12 +208,34 @@ export function useHrmLeaveMutations() {
       onSuccess: invalidate,
     }),
     rejectOvertime: useMutation({
-      mutationFn: ({ id, decisionNote }: { id: string; decisionNote?: string }) =>
+      mutationFn: ({ id, decisionNote }: { id: string; decisionNote: string }) =>
         apiClient(`/hrm/overtime-requests/${id}/reject`, {
           method: 'POST',
           body: JSON.stringify({ decisionNote }),
         }),
       onSuccess: invalidate,
     }),
+    cancelOvertime: useMutation({
+      mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+        apiClient(`/hrm/overtime-requests/${id}/cancel`, {
+          method: 'POST',
+          body: JSON.stringify({ reason }),
+        }),
+      onSuccess: invalidate,
+    }),
   };
+}
+
+export function useHrmLeaveBalance(employeeId?: string, year?: number) {
+  return useQuery({
+    queryKey: ['hrm', 'leave-balance', employeeId, year],
+    queryFn: () =>
+      apiClient<HrmLeaveBalance>(
+        `/hrm/leave-requests/balance${toQuery({
+          employeeId,
+          year,
+        } as Record<string, string | number | undefined>)}`,
+      ),
+    enabled: !!employeeId,
+  });
 }

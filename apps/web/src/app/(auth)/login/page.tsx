@@ -3,17 +3,19 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useLogin } from '@/hooks/use-auth';
+import { useGoogleLogin, useLogin } from '@/hooks/use-auth';
+import { GoogleSignInButton } from '@/components/auth/google-sign-in-button';
+import { BrandLogo } from '@/components/brand/brand-logo';
 
 export default function LoginPage() {
   const router = useRouter();
   const login = useLogin();
-  const [email, setEmail] = useState('admin@demo-spa.com');
+  const googleLogin = useGoogleLogin();
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('password123');
 
   async function handleSubmit(e: React.FormEvent) {
@@ -21,16 +23,36 @@ export default function LoginPage() {
     login.mutate({ email, password }, { onSuccess: () => router.replace('/overview') });
   }
 
+  const pending = login.isPending || googleLogin.isPending;
+  const errorMsg =
+    (login.isError && (login.error as Error).message) ||
+    (googleLogin.isError && (googleLogin.error as Error).message) ||
+    null;
+
   return (
     <Card className="w-full max-w-md">
       <CardHeader className="text-center">
         <div className="flex justify-center mb-2">
-          <Sparkles className="h-8 w-8 text-primary" />
+          <BrandLogo href={null} size={56} showWordmark={false} priority />
         </div>
         <CardTitle>Đăng nhập</CardTitle>
-        <CardDescription>MarketingSpa — quản lý marketing spa</CardDescription>
+        <CardDescription>Marketing Auto AZ — quản lý marketing spa</CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-4">
+        <GoogleSignInButton
+          disabled={pending}
+          onCredential={(idToken) => {
+            googleLogin.mutate({ idToken }, { onSuccess: () => router.replace('/overview') });
+          }}
+        />
+        <div className="relative py-1">
+          <div className="absolute inset-0 flex items-center">
+            <span className="w-full border-t border-border" />
+          </div>
+          <div className="relative flex justify-center text-xs uppercase">
+            <span className="bg-card px-2 text-muted-foreground">hoặc email</span>
+          </div>
+        </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="email">Email</Label>
@@ -54,12 +76,8 @@ export default function LoginPage() {
               autoComplete="current-password"
             />
           </div>
-          {login.isError && (
-            <p className="text-sm text-destructive">
-              {(login.error as Error).message || 'Đăng nhập thất bại'}
-            </p>
-          )}
-          <Button type="submit" className="w-full" disabled={login.isPending}>
+          {errorMsg && <p className="text-sm text-destructive">{errorMsg}</p>}
+          <Button type="submit" className="w-full" disabled={pending}>
             {login.isPending ? 'Đang đăng nhập...' : 'Đăng nhập'}
           </Button>
         </form>

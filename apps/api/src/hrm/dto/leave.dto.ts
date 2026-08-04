@@ -7,8 +7,9 @@ import {
   IsString,
   IsUUID,
   Min,
+  MinLength,
 } from 'class-validator';
-import { LeaveRequestStatus, LeaveType } from '@marketingspa/database';
+import { LeaveDayPart, LeaveRequestStatus, LeaveType } from '@marketingspa/database';
 import { Type } from 'class-transformer';
 
 export class LeaveRequestQueryDto {
@@ -38,8 +39,9 @@ export class LeaveRequestQueryDto {
 }
 
 export class CreateLeaveRequestDto {
+  @IsOptional()
   @IsUUID()
-  employeeId!: string;
+  employeeId?: string;
 
   @IsOptional()
   @IsUUID()
@@ -60,6 +62,10 @@ export class CreateLeaveRequestDto {
   @IsOptional()
   @IsString()
   reason?: string;
+
+  @IsOptional()
+  @IsEnum(LeaveDayPart)
+  dayPart?: LeaveDayPart;
 }
 
 export class LeaveDecisionDto {
@@ -95,11 +101,13 @@ export class OvertimeRequestQueryDto {
 }
 
 export class CreateOvertimeRequestDto {
+  @IsOptional()
   @IsUUID()
-  employeeId!: string;
+  employeeId?: string;
 
+  @IsOptional()
   @IsUUID()
-  branchId!: string;
+  branchId?: string;
 
   @IsDateString()
   workDate!: string;
@@ -111,4 +119,42 @@ export class CreateOvertimeRequestDto {
   @IsOptional()
   @IsString()
   reason?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  breakMinutes?: number;
+
+  @IsDateString()
+  startAt!: string;
+
+  @IsDateString()
+  endAt!: string;
+}
+
+export class LeaveBalanceQueryDto {
+  @IsOptional()
+  @IsUUID()
+  employeeId?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  year?: number;
+}
+
+export class LeaveCancelDto {
+  @IsString()
+  @MinLength(3)
+  reason!: string;
+}
+
+export class LeaveRejectDto {
+  @IsOptional()
+  @IsString()
+  reason?: string;
+
+  @IsOptional()
+  @IsString()
+  decisionNote?: string;
 }

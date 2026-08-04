@@ -9,7 +9,8 @@ export interface CampaignMetrics {
   conversions: number;
   leads: number;
   cpa: number;
-  cpl: number;
+  /** null khi không có lead / không chia được */
+  cpl: number | null;
   roas: number | null;
 }
 

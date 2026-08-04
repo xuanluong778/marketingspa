@@ -1,15 +1,4 @@
-import {
-  IsOptional,
-  IsString,
-  IsEmail,
-  IsEnum,
-  IsUUID,
-  IsDateString,
-  MinLength,
-  IsNumber,
-  IsInt,
-  Min,
-} from 'class-validator';
+import { IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min, MinLength } from 'class-validator';
 import { LeadPipelineStatus } from '@marketingspa/database';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { Type } from 'class-transformer';
@@ -51,6 +40,22 @@ export class CreateLeadDto {
   @Type(() => Number)
   @IsNumber()
   estimatedValue?: number;
+
+  @IsOptional()
+  attribution?: Record<string, unknown>;
+  @IsOptional()
+  @IsBoolean()
+  autoAssign?: boolean;
+  @IsOptional()
+  @IsString()
+  reminderAt?: string;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  score?: number;
+  @IsOptional()
+  @IsArray()
+  tags?: any[];
 }
 
 export class UpdateLeadDto {
@@ -142,4 +147,105 @@ export class StaleLeadQueryDto {
   @IsInt()
   @Min(1)
   minutes?: number;
+}
+
+export class BulkLeadActionDto {
+  @IsArray()
+  @IsUUID('4', { each: true })
+  leadIds!: string[];
+
+  @IsIn(['status', 'assign', 'tag'])
+  action!: 'status' | 'assign' | 'tag';
+
+  @IsOptional()
+  @IsEnum(LeadPipelineStatus)
+  pipelineStatus?: LeadPipelineStatus;
+
+  @IsOptional()
+  @IsUUID()
+  assignedToId?: string;
+
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  tags?: string[];
+}
+
+export class CreateLeadSavedViewDto {
+  @IsString()
+  @MinLength(1)
+  name!: string;
+  @IsOptional()
+  @IsString()
+  filters?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isDefault?: boolean;
+  @IsOptional()
+  @IsString()
+  tableColumns?: string;
+  @IsOptional()
+  @IsString()
+  viewMode?: string;
+}
+
+export class LeadKanbanColumnQueryDto {
+  @IsOptional()
+  @IsEnum(LeadPipelineStatus)
+  pipelineStatus?: LeadPipelineStatus;
+  @IsOptional()
+  @IsString()
+  cursor?: string;
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  limit?: number;
+  @IsOptional()
+  @IsString()
+  search?: string;
+}
+
+export class LeadKanbanQueryDto {
+  @IsOptional()
+  @IsString()
+  search?: string;
+  @IsOptional()
+  @IsString()
+  leadSourceId?: string;
+  @IsOptional()
+  @IsString()
+  assignedToId?: string;
+  @IsOptional()
+  @IsString()
+  branchId?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  limit?: number;
+  @IsOptional()
+  @IsEnum(LeadPipelineStatus)
+  pipelineStatus?: LeadPipelineStatus;
+}
+
+export class UpdateLeadSavedViewDto {
+  @IsOptional()
+  @IsString()
+  name?: string;
+  @IsOptional()
+  @IsString()
+  filters?: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isDefault?: boolean;
+  @IsOptional()
+  @IsString()
+  tableColumns?: string;
+  @IsOptional()
+  @IsString()
+  viewMode?: string;
 }

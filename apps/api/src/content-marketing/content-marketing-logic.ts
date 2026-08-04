@@ -16,6 +16,12 @@ import {
   pickOpeningStyle,
 } from './brand-post-config';
 import { templateGenerateBrandPost } from './brand-post-template';
+import {
+  buildFullIndustryPromptContext,
+  industryExpertIntro,
+  resolveIndustryContext,
+  regulatedComplianceBlock,
+} from './industry-context.util';
 import type {
   GenerateContentDto,
   AnalyzeVideoDto,
@@ -23,6 +29,7 @@ import type {
   ScoreContentDto,
   RewriteContentDto,
 } from './dto/content-marketing.dto';
+import { generateProductOrServiceAdContent } from './ad-product-service.logic';
 
 export interface PolicyFlag {
   phrase: string;
@@ -36,6 +43,10 @@ export interface PolicyCheckResult {
   flaggedPhrases: PolicyFlag[];
   saferVersion: string;
   disclaimer: string;
+  /** Ngành nhạy cảm — FE hiện cảnh báo trước khi đăng */
+  isRegulatedIndustry?: boolean;
+  regulatedWarning?: string | null;
+  requiresModerationAck?: boolean;
 }
 
 export interface ContentScoreCriteria {
@@ -98,6 +109,10 @@ export interface GenerateContentResult {
   hooks: string[];
   ctas: string[];
   source: 'ai' | 'template';
+  headline?: string | null;
+  shortDescription?: string | null;
+  mediaSuggestions?: string[];
+  adPostKind?: 'product' | 'service';
 }
 
 const SOFT_INTERACTION_CTAS = [
@@ -181,13 +196,42 @@ function extractMatchPhrase(content: string, pattern: RegExp): string {
   return m?.[0]?.trim() ?? pattern.source.slice(0, 30);
 }
 
+const REGULATED_EXTRA_RULES: Array<{
+  pattern: RegExp;
+  reason: string;
+  suggestion: string;
+  penalty: number;
+}> = [
+  {
+    pattern: /chữa khỏi|khỏi bệnh|hết bệnh|điều trị dứt điểm|triệt để khỏi/giu,
+    reason: 'Cam kết chữa khỏi (ngành nhạy cảm)',
+    suggestion: 'Đổi thành "hỗ trợ", "tham khảo chuyên gia", tránh cam kết chữa khỏi',
+    penalty: 30,
+  },
+  {
+    pattern: /kết quả chắc chắn|đảm bảo hiệu quả|chắc chắn giảm|giảm \d+\s*kg trong|100%\s*hiệu quả/giu,
+    reason: 'Cam kết kết quả chắc chắn',
+    suggestion: 'Dùng "có thể hỗ trợ", "tùy cơ địa", không hứa kết quả chắc chắn',
+    penalty: 28,
+  },
+  {
+    pattern: /thay thế bác sĩ|không cần khám|bỏ thuốc|chẩn đoán bệnh/giu,
+    reason: 'Nội dung gây hiểu nhầm y tế/bảo hiểm',
+    suggestion: 'Nhắc tham khảo chuyên gia; không thay thế tư vấn chuyên môn',
+    penalty: 30,
+  },
+];
+
 export function checkAdPolicyRisk(input: CheckPolicyDto): PolicyCheckResult {
   const content = input.content.trim();
   let safetyScore = 100;
   const flaggedPhrases: PolicyFlag[] = [];
   const seen = new Set<string>();
+  const industry = resolveIndustryContext(input);
 
-  for (const rule of RISK_RULES) {
+  const rules = industry.isRegulated ? [...RISK_RULES, ...REGULATED_EXTRA_RULES] : RISK_RULES;
+
+  for (const rule of rules) {
     if (rule.pattern.test(content)) {
       const phrase = extractMatchPhrase(content, rule.pattern);
       const key = `${rule.reason}:${phrase}`;
@@ -209,6 +253,13 @@ export function checkAdPolicyRisk(input: CheckPolicyDto): PolicyCheckResult {
   if (safetyScore < 50) riskLevel = 'high';
   else if (safetyScore < 75) riskLevel = 'medium';
 
+  if (industry.isRegulated && riskLevel === 'low' && flaggedPhrases.length > 0) {
+    riskLevel = 'medium';
+  }
+  if (industry.isRegulated && safetyScore > 85) {
+    safetyScore = Math.min(safetyScore, 85);
+  }
+
   let saferVersion = content;
   for (const flag of flaggedPhrases) {
     if (flag.phrase && saferVersion.includes(flag.phrase)) {
@@ -219,12 +270,19 @@ export function checkAdPolicyRisk(input: CheckPolicyDto): PolicyCheckResult {
     saferVersion = `${content}\n\n(Gợi ý: ${flaggedPhrases[0]?.suggestion ?? 'Viết lại an toàn hơn'})`;
   }
 
+  const regulatedWarning = industry.isRegulated
+    ? `Ngành "${industry.label}" cần kiểm duyệt trước khi đăng: không cam kết chữa khỏi, kết quả chắc chắn hoặc nội dung gây hiểu nhầm.`
+    : null;
+
   return {
     safetyScore,
-    riskLevel,
+    riskLevel: industry.isRegulated && riskLevel === 'low' ? 'medium' : riskLevel,
     flaggedPhrases: flaggedPhrases.slice(0, 8),
     saferVersion,
     disclaimer: POLICY_DISCLAIMER,
+    isRegulatedIndustry: industry.isRegulated,
+    regulatedWarning,
+    requiresModerationAck: industry.isRegulated,
   };
 }
 
@@ -240,7 +298,13 @@ export function scoreAdContent(
     getAdObjectiveConfig(input.adObjective) ??
     getAdObjectiveConfig(normalizeAdObjective(input.adObjective));
 
-  const policyResult = policy ?? checkAdPolicyRisk({ content, platform: input.platform });
+  const policyResult = policy ?? checkAdPolicyRisk({
+    content,
+    platform: input.platform,
+    industryId: input.industryId,
+    industryName: input.industryName,
+    customIndustry: input.customIndustry,
+  });
 
   let hook =
     (clampScore(
@@ -596,51 +660,8 @@ export async function generateMarketingContent(
   dto: GenerateContentDto,
   openai?: OpenAiService,
 ): Promise<GenerateContentResult> {
-  if (!openai?.isConfigured()) {
-    return templateGenerate(dto);
-  }
-
-  const tone = dto.tone ?? 'friendly';
-  const objective =
-    getAdObjectiveConfig(dto.adObjective) ??
-    getAdObjectiveConfig(normalizeAdObjective(dto.adObjective));
-  const type =
-    dto.mode === 'ad'
-      ? (dto.adContentType ?? objective?.defaultContentType ?? 'sales')
-      : (dto.personalPostType ?? 'personal_story');
-
-  const prompt = `Bạn là chuyên gia content marketing spa/wellness tại Việt Nam.
-Viết content tiếng Việt, mode=${dto.mode}, loại=${type}, giọng=${tone}, nền tảng=${dto.platform ?? 'facebook'}.
-Sản phẩm/dịch vụ: ${dto.productService}
-Khách mục tiêu: ${dto.targetAudience ?? ''}
-Nỗi đau: ${dto.painPoints ?? ''}
-Lợi ích: ${dto.benefits ?? ''}
-Ưu đãi: ${dto.offer ?? ''}
-Mục tiêu QC: ${objective ? `${objective.label} — ${objective.description}` : (dto.adObjective ?? '')}
-${objective ? `Hướng dẫn theo mục tiêu: ${objective.generateHint}` : ''}
-CTA: ${dto.cta ?? objective?.defaultCta ?? ''}
-${dto.transcript ? `Tham khảo transcript: ${dto.transcript.slice(0, 2000)}` : ''}
-
-Trả JSON (không markdown):
-{"content":"...","hooks":["h1","h2","h3","h4","h5"],"ctas":["c1","c2","c3","c4","c5"]}
-Tuân thủ chính sách Facebook, tránh cam kết tuyệt đối.`;
-
-  try {
-    const raw = await openai.chatCompletion({
-      messages: [{ role: 'user', content: prompt }],
-      maxTokens: 1200,
-      temperature: 0.7,
-    });
-    const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim()) as GenerateContentResult;
-    return {
-      content: parsed.content || templateGenerate(dto).content,
-      hooks: Array.isArray(parsed.hooks) ? parsed.hooks.slice(0, 5) : [],
-      ctas: Array.isArray(parsed.ctas) ? parsed.ctas.slice(0, 5) : [],
-      source: 'ai',
-    };
-  } catch {
-    return templateGenerate(dto);
-  }
+  // Product / service prompts (backward compatible when adPostKind omitted → product)
+  return generateProductOrServiceAdContent(dto, openai);
 }
 
 const PERSONAL_LENGTH_HINT: Record<string, string> = {
@@ -682,6 +703,7 @@ export async function generatePersonalContent(
     transcript: dto.transcript,
     openingStyle,
     legacyTone,
+    topicGroupLabel: dto.topicGroupLabel ?? '',
   });
 
   try {
@@ -948,21 +970,30 @@ export async function rewriteContentVariant(
   }
 
   const prompt = isPersonal
-    ? `Viết lại bài đăng Facebook CÁ NHÂN tiếng Việt, yêu cầu: ${modeLabels[dto.mode] ?? dto.mode}.
+    ? `Viết lại bài đăng Facebook XÂY THƯƠNG HIỆU tiếng Việt, yêu cầu: ${modeLabels[dto.mode] ?? dto.mode}.
+Giữ mạch: Câu chuyện thật → Khó khăn → Cách xử lý → Bài học → Thông điệp động lực → CTA tương tác nhẹ.
 KHÔNG bán hàng, KHÔNG CTA mua hàng. Chỉ CTA tương tác nhẹ (hỏi ý kiến, mời comment, lưu bài).
+KHÔNG bịa thêm thành tích / trải nghiệm nếu content gốc không có.
 Giọng: ${isBoldMayTaoTone(dto.personalTone) ? BOLD_MAY_TAO_TONE_LABEL : (dto.personalTone ?? 'approachable')}.
 ${getPersonalTonePromptBlock(dto.personalTone) ? `${getPersonalTonePromptBlock(dto.personalTone)}\n` : ''}Tạo đúng ${count} phiên bản.
 Content gốc:
 ${dto.content}
 
 Trả JSON: {"variants":["..."]}`
-    : `Viết lại content tiếng Việt, yêu cầu: ${modeLabels[dto.mode]}.
+    : (() => {
+        const industry = resolveIndustryContext(dto);
+        const noSpaRule = industry.isSpaBeauty
+          ? ''
+          : `CẤM thêm từ spa/làm đẹp/chăm sóc da nếu content gốc không có. Giữ đúng ngành "${industry.label}".`;
+        return `Viết lại content tiếng Việt, yêu cầu: ${modeLabels[dto.mode]}.
+Ngành: ${industry.label}. ${noSpaRule}
 Nền tảng: ${dto.platform ?? 'facebook'}. Giọng: ${dto.tone ?? 'friendly'}.
 Tạo đúng ${count} phiên bản.
 Content gốc:
 ${dto.content}
 
 Trả JSON: {"variants":["..."]}`;
+      })();
 
   try {
     const raw = await openai.chatCompletion({
@@ -984,6 +1015,8 @@ Trả JSON: {"variants":["..."]}`;
 export interface AdInsightsSuggestion {
   painPoints: string;
   benefits: string;
+  features?: string;
+  differentiators?: string;
   source: 'ai' | 'template';
 }
 
@@ -992,39 +1025,63 @@ function templateSuggestAdInsights(dto: {
   targetAudience?: string;
   platform?: string;
   adObjective?: string;
+  industryId?: string;
+  industryName?: string;
+  customIndustry?: string;
 }): AdInsightsSuggestion {
   const product = dto.productService.trim();
   const audience = dto.targetAudience?.trim() || 'khách hàng mục tiêu';
   const lower = product.toLowerCase();
+  const industry = resolveIndustryContext(dto);
   const objective =
     getAdObjectiveConfig(dto.adObjective) ??
     getAdObjectiveConfig(normalizeAdObjective(dto.adObjective));
 
   let painPoints =
-    'Khó tìm giải pháp phù hợp, lo ngại hiệu quả không như mong đợi, thiếu thời gian tìm hiểu kỹ';
+    `Khó chọn giải pháp phù hợp ngành ${industry.label}, lo hiệu quả không như mong đợi, thiếu thời gian tìm hiểu kỹ`;
   let benefits =
-    'Giải pháp rõ ràng, quy trình minh bạch, cảm nhận khác biệt sau liệu trình, được tư vấn tận tâm';
+    `Giải pháp rõ ràng cho ${product}, quy trình minh bạch, được tư vấn tận tâm`;
+  let features = `Thành phần / công nghệ nổi bật của ${product}, dễ dùng, phù hợp nhu cầu thực tế`;
+  let differentiators = `Khác biệt rõ so với lựa chọn thông thường — quy trình minh bạch, hỗ trợ sau bán tốt`;
 
-  if (/da|spa|trẻ hóa|facial|skincare|mụn|lỗ chân lông/i.test(lower)) {
-    painPoints =
-      'Da xỉn màu, lỗ chân lông to, makeup không ăn, da lão hóa sớm do stress và thiếu chăm sóc';
-    benefits =
-      'Da sáng hơn, mịn màng hơn, makeup ăn nền, thư giãn toàn thân, cải thiện rõ sau liệu trình';
-  } else if (/massage|thư giãn|body|gội/i.test(lower)) {
-    painPoints =
-      'Mỏi vai gáy, căng cơ, mất ngủ, stress công việc, cơ thể luôn mệt mỏi';
-    benefits =
-      'Thư giãn sâu, giảm đau nhức, ngủ ngon hơn, tái tạo năng lượng, cảm giác nhẹ người';
-  } else if (/giảm cân|slim|eo|dáng|fit/i.test(lower)) {
-    painPoints =
-      'Mỡ bụng tích tụ, khó giảm cân dù đã thử nhiều cách, mất tự tin về vóc dáng';
-    benefits =
-      'Vóc dáng săn chắc hơn, giảm số đo có căn cứ, quy trình an toàn, tự tin hơn khi mặc đồ';
-  } else if (/nail|mi|lash|phun xăm|làm đẹp/i.test(lower)) {
-    painPoints =
-      'Khó giữ nét đẹp lâu, sợ hỏng tự nhiên, không biết chọn dịch vụ uy tín';
-    benefits =
-      'Lên form chuẩn, bền màu, tự nhiên, được chăm sóc kỹ, phù hợp phong cách cá nhân';
+  if (industry.isSpaBeauty) {
+    if (/da|spa|trẻ hóa|facial|skincare|mụn|lỗ chân lông/i.test(lower)) {
+      painPoints =
+        'Da xỉn màu, lỗ chân lông to, makeup không ăn, da lão hóa sớm do stress và thiếu chăm sóc';
+      benefits =
+        'Da sáng hơn, mịn màng hơn, makeup ăn nền, thư giãn toàn thân, cải thiện rõ sau liệu trình';
+      features =
+        'Công nghệ phục hồi chuyên sâu, serum dưỡng phù hợp loại da, bước chăm sóc cá nhân hóa';
+      differentiators =
+        'Liệu trình cá nhân hóa theo tình trạng da, theo dõi sau liệu trình, không “một công thức cho tất cả”';
+    } else if (/massage|thư giãn|body|gội/i.test(lower)) {
+      painPoints =
+        'Mỏi vai gáy, căng cơ, mất ngủ, stress công việc, cơ thể luôn mệt mỏi';
+      benefits =
+        'Thư giãn sâu, giảm đau nhức, ngủ ngon hơn, tái tạo năng lượng, cảm giác nhẹ người';
+      features =
+        'Kỹ thuật massage chuyên sâu, liệu pháp nhiệt/đá hỗ trợ, không gian yên tĩnh';
+      differentiators =
+        'Kỹ thuật viên được đào tạo bài bản, áp lực massage điều chỉnh theo người, thư giãn thật sự không vội';
+    } else if (/giảm cân|slim|eo|dáng|fit/i.test(lower)) {
+      painPoints =
+        'Mỡ bụng tích tụ, khó giảm cân dù đã thử nhiều cách, mất tự tin về vóc dáng';
+      benefits =
+        'Vóc dáng săn chắc hơn, giảm số đo có căn cứ, quy trình an toàn, tự tin hơn khi mặc đồ';
+      features =
+        'Công nghệ hỗ trợ đốt mỡ/ săn chắc, đo số liệu trước–sau, lộ trình theo dõi';
+      differentiators =
+        'Cam kết quy trình an toàn, số liệu đo thực tế, tư vấn duy trì sau liệu trình';
+    } else if (/nail|mi|lash|phun xăm|làm đẹp/i.test(lower)) {
+      painPoints =
+        'Khó giữ nét đẹp lâu, sợ hỏng tự nhiên, không biết chọn dịch vụ uy tín';
+      benefits =
+        'Lên form chuẩn, bền màu, tự nhiên, được chăm sóc kỹ, phù hợp phong cách cá nhân';
+      features =
+        'Vật liệu chính hãng, kỹ thuật chuẩn form, vệ sinh dụng cụ nghiêm ngặt';
+      differentiators =
+        'Tự nhiên – bền – đúng form cá nhân, không làm quá tay, hậu mãi khi cần chỉnh';
+    }
   }
 
   if (audience && audience !== 'khách hàng mục tiêu') {
@@ -1053,12 +1110,22 @@ function templateSuggestAdInsights(dto: {
   return {
     painPoints,
     benefits: `${benefits} — phù hợp cho ${product}`,
+    features,
+    differentiators,
     source: 'template',
   };
 }
 
 export async function suggestAdInsights(
-  dto: { productService: string; targetAudience?: string; platform?: string; adObjective?: string },
+  dto: {
+    productService: string;
+    targetAudience?: string;
+    platform?: string;
+    adObjective?: string;
+    industryId?: string;
+    industryName?: string;
+    customIndustry?: string;
+  },
   openai?: OpenAiService,
 ): Promise<AdInsightsSuggestion> {
   if (!openai?.isConfigured()) {
@@ -1068,38 +1135,52 @@ export async function suggestAdInsights(
   const objective =
     getAdObjectiveConfig(dto.adObjective) ??
     getAdObjectiveConfig(normalizeAdObjective(dto.adObjective));
+  const { ctx: industry, block } = buildFullIndustryPromptContext({
+    industry: dto,
+    productService: dto.productService,
+    targetAudience: dto.targetAudience,
+    goal: objective?.label,
+    platform: dto.platform,
+  });
 
-  const prompt = `Bạn là chuyên gia marketing spa/wellness tại Việt Nam.
-Dựa trên thông tin sau, gợi ý NỖI ĐAU khách hàng và LỢI ÍCH/giải pháp để viết quảng cáo Facebook/TikTok.
+  const prompt = `${industryExpertIntro(industry)}
+Dựa trên thông tin sau, gợi ý nội dung để viết quảng cáo bán hàng (sản phẩm/dịch vụ).
 
-Sản phẩm/dịch vụ: ${dto.productService}
-Khách mục tiêu: ${dto.targetAudience ?? 'chưa rõ'}
-Nền tảng: ${dto.platform ?? 'facebook'}
+${block}
+
 Mục tiêu quảng cáo: ${objective ? `${objective.label} — ${objective.description}` : 'chưa chọn'}
 ${objective ? `Ưu tiên insight phù hợp: ${objective.generateHint}` : ''}
 
 Yêu cầu:
-- painPoints: 2–4 ý ngắn gọn, cách nhau bằng dấu phẩy hoặc xuống dòng, đúng insight thực tế
-- benefits: 2–4 lợi ích cụ thể, có thể cảm nhận được, không cam kết 100%
+- painPoints: 2–4 ý ngắn gọn, đúng ngành "${industry.label}"
+- benefits: 2–4 lợi ích cụ thể, không cam kết 100%
+- features: 2–4 tính năng / thành phần / công nghệ nổi bật (dùng cho form sản phẩm)
+- differentiators: 2–3 điểm khác biệt so với đối thủ / vì sao chọn sản phẩm này
+- ${industry.isSpaBeauty ? '' : 'CẤM insight spa/làm đẹp.'}
 - Tiếng Việt tự nhiên, phù hợp quảng cáo
 
 Trả JSON (không markdown):
-{"painPoints":"...","benefits":"..."}`;
+{"painPoints":"...","benefits":"...","features":"...","differentiators":"..."}`;
 
   try {
     const raw = await openai.chatCompletion({
       messages: [{ role: 'user', content: prompt }],
-      maxTokens: 400,
+      maxTokens: 550,
       temperature: 0.6,
     });
     const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim()) as {
       painPoints?: string;
       benefits?: string;
+      features?: string;
+      differentiators?: string;
     };
     const fallback = templateSuggestAdInsights(dto);
     return {
       painPoints: (parsed.painPoints ?? '').trim() || fallback.painPoints,
       benefits: (parsed.benefits ?? '').trim() || fallback.benefits,
+      features: (parsed.features ?? '').trim() || fallback.features,
+      differentiators:
+        (parsed.differentiators ?? '').trim() || fallback.differentiators,
       source: 'ai',
     };
   } catch {
@@ -1235,6 +1316,9 @@ export async function suggestAdCta(
     offer?: string;
     adObjective?: string;
     adContentType?: string;
+    industryId?: string;
+    industryName?: string;
+    customIndustry?: string;
   },
   openai?: OpenAiService,
 ): Promise<AdCtaSuggestion> {
@@ -1245,21 +1329,31 @@ export async function suggestAdCta(
   const objective =
     getAdObjectiveConfig(dto.adObjective) ??
     getAdObjectiveConfig(normalizeAdObjective(dto.adObjective));
+  const { ctx: industry, block } = buildFullIndustryPromptContext({
+    industry: dto,
+    productService: dto.productService,
+    targetAudience: dto.targetAudience,
+    goal: objective?.label,
+    platform: dto.platform,
+    cta: objective?.defaultCta,
+  });
 
-  const prompt = `Bạn là copywriter quảng cáo spa/wellness Việt Nam.
-Gợi ý CTA (call-to-action) cho quảng cáo ${dto.platform ?? 'facebook'}.
+  const prompt = `${industryExpertIntro(industry)}
+Gợi ý CTA (call-to-action) cho quảng cáo ${dto.platform ?? 'facebook'} ngành "${industry.label}".
 
-Sản phẩm/dịch vụ: ${dto.productService}
-Khách mục tiêu: ${dto.targetAudience ?? ''}
+${block}
+
 Ưu đãi: ${dto.offer ?? 'không có'}
 Mục tiêu QC: ${objective ? `${objective.label} — ${objective.description}` : (dto.adObjective ?? '')}
 ${objective ? `Hướng dẫn CTA: ${objective.generateHint}` : ''}
 Loại content: ${dto.adContentType ?? objective?.defaultContentType ?? 'sales'}
+${regulatedComplianceBlock(industry)}
 
 Yêu cầu:
-- cta: 1 CTA chính ngắn gọn, rõ hành động (inbox, comment, đặt lịch...)
+- cta: 1 CTA chính ngắn gọn, rõ hành động, đúng ngành
 - alternatives: 4 CTA phụ khác nhau
 - Tiếng Việt, phù hợp ads, không cam kết 100%
+- ${industry.isSpaBeauty ? '' : 'CẤM CTA kiểu spa/đặt liệu trình da.'}
 
 Trả JSON: {"cta":"...","alternatives":["","",""]}`;
 
@@ -1429,6 +1523,8 @@ function templateSuggestPersonalIdeas(dto: {
 export async function suggestPersonalIdeas(
   dto: {
     postTopic: string;
+    topicGroupId?: string;
+    topicGroupLabel?: string;
     targetAudience?: string;
     postGoal?: string;
     personalPostType?: string;
@@ -1440,9 +1536,11 @@ export async function suggestPersonalIdeas(
     return templateSuggestPersonalIdeas(dto);
   }
 
-  const prompt = `Bạn là người viết bài đăng Facebook CÁ NHÂN tại Việt Nam — KHÔNG phải copywriter bán hàng.
-Gợi ý góc nhìn và ý tưởng câu chuyện để viết bài.
+  const groupLabel = dto.topicGroupLabel?.trim() || '';
+  const prompt = `Bạn viết bài đăng Facebook XÂY THƯƠNG HIỆU / cá nhân — KHÔNG phải copywriter bán hàng.
+Gợi ý góc nhìn và ý tưởng câu chuyện chân thật.
 
+Nhóm chủ đề: ${groupLabel || '(không chọn)'}
 Chủ đề: ${dto.postTopic}
 Đối tượng đọc: ${dto.targetAudience ?? 'chưa rõ'}
 Mục tiêu bài: ${dto.postGoal ?? 'engagement'}
@@ -1452,7 +1550,7 @@ ${getPersonalTonePromptBlock(dto.personalTone) ? `\n${getPersonalTonePromptBlock
 
 Yêu cầu:
 - personalAngle: 1 góc nhìn / thông điệp muốn khai thác, ngắn gọn (1–2 câu)
-- storyIdea: 1 ý tưởng câu chuyện thô để viết bài (2–4 câu), cụ thể, đời thường
+- storyIdea: 1 ý tưởng câu chuyện thô (2–4 câu) theo mạch Khó khăn → Cách xử lý → Bài học — đời thường, không bịa thành tích
 - angleAlternatives: 3 góc nhìn phụ khác
 - storyAlternatives: 3 ý tưởng câu chuyện phụ khác
 - Tiếng Việt tự nhiên, KHÔNG bán hàng, KHÔNG CTA mua hàng
@@ -1486,5 +1584,157 @@ Trả JSON (không markdown):
     };
   } catch {
     return templateSuggestPersonalIdeas(dto);
+  }
+}
+
+export type PersonalTitlesSuggestion = {
+  titles: string[];
+  source: 'ai' | 'template';
+};
+
+const TITLE_FALLBACK_PATTERNS = [
+  (sub: string) => `${sub} — góc nhìn tôi muốn giữ`,
+  (sub: string) => `Điều tôi học được từ: ${sub}`,
+  (sub: string) => `${sub}: câu chuyện chưa kể hết`,
+  (sub: string) => `Khi ${sub.toLowerCase()} trở thành bài học`,
+  (sub: string) => `${sub} — không hoàn hảo, nhưng thật`,
+  (sub: string) => `Tôi từng nghĩ khác về ${sub.toLowerCase()}`,
+  (sub: string) => `${sub}: lần đứng dậy sau khó khăn`,
+  (sub: string) => `Chân thật về ${sub.toLowerCase()}`,
+  (sub: string) => `${sub} — điều tôi muốn nói với chính mình`,
+  (sub: string) => `Bài học nhỏ từ ${sub.toLowerCase()}`,
+  (sub: string) => `${sub}: khoảnh khắc tôi thay đổi cách nhìn`,
+  (sub: string) => `Không phải tip hay — chỉ là ${sub.toLowerCase()}`,
+  (sub: string) => `${sub} và điều tôi sẽ không làm lại`,
+  (sub: string) => `Một lần ${sub.toLowerCase()} đủ để tôi nhớ mãi`,
+  (sub: string) => `${sub} — viết cho người đang cùng hành trình`,
+  (sub: string) => `Điều mạng xã hội bỏ quên về ${sub.toLowerCase()}`,
+  (sub: string) => `${sub}: chậm nhưng bền`,
+  (sub: string) => `Tôi kể ${sub.toLowerCase()} vì ai đó cần nghe`,
+  (sub: string) => `${sub} — không giật tít, chỉ thật`,
+  (sub: string) => `Sau ${sub.toLowerCase()}, tôi chọn đi tiếp như thế này`,
+];
+
+function dedupeTitles(titles: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of titles) {
+    const t = raw.replace(/\s+/g, ' ').trim();
+    if (!t) continue;
+    const key = t
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(t);
+  }
+  return out;
+}
+
+function templateSuggestPersonalTitles(dto: {
+  topicGroupLabel?: string;
+  subtopicLabel: string;
+  count: number;
+  audience?: string;
+  goal?: string;
+}): PersonalTitlesSuggestion {
+  const sub = dto.subtopicLabel.trim() || 'Hành trình cá nhân';
+  const group = dto.topicGroupLabel?.trim();
+  const audience = dto.audience?.trim();
+  const count = Math.min(20, Math.max(1, Number(dto.count) || 5));
+
+  const base = TITLE_FALLBACK_PATTERNS.map((fn) => fn(sub));
+  if (group) {
+    base.push(`${group}: ${sub}`);
+    base.push(`${sub} — trong mạch ${group.toLowerCase()}`);
+  }
+  if (audience) {
+    base.push(`${sub} — gửi tới ${audience}`);
+  }
+  if (dto.goal === 'personal_branding') {
+    base.push(`${sub}: xây thương hiệu bằng sự thật`);
+  }
+
+  let titles = dedupeTitles(base);
+  let i = 1;
+  while (titles.length < count) {
+    titles.push(`${sub} — góc nhìn ${i + 1}`);
+    titles = dedupeTitles(titles);
+    i += 1;
+    if (i > 40) break;
+  }
+
+  return { titles: titles.slice(0, count), source: 'template' };
+}
+
+export async function suggestPersonalTitles(
+  dto: {
+    topicGroupId?: string;
+    topicGroupLabel?: string;
+    subtopicId?: string;
+    subtopicLabel: string;
+    count: 5 | 10 | 20;
+    tone?: string;
+    pronoun?: string;
+    audience?: string;
+    goal?: string;
+  },
+  openai?: OpenAiService,
+): Promise<PersonalTitlesSuggestion> {
+  const count = ([5, 10, 20] as const).includes(dto.count) ? dto.count : 5;
+  const fallback = templateSuggestPersonalTitles({ ...dto, count });
+
+  if (!openai?.isConfigured()) {
+    return fallback;
+  }
+
+  const prompt = `Bạn viết tiêu đề bài đăng Facebook XÂY THƯƠNG HIỆU CÁ NHÂN — không phải copy bán hàng.
+
+Nhóm chủ đề: ${dto.topicGroupLabel?.trim() || '(không rõ)'}
+Chủ đề con: ${dto.subtopicLabel.trim()}
+Số tiêu đề cần: ${count}
+Đối tượng đọc: ${dto.audience?.trim() || 'chưa rõ'}
+Mục tiêu: ${dto.goal?.trim() || 'personal_branding'}
+Giọng / tone: ${dto.tone?.trim() || 'tự nhiên, gần gũi'}
+Xưng hô gợi ý: ${dto.pronoun?.trim() || 'auto'}
+
+Yêu cầu tiêu đề:
+- Phù hợp nhóm + chủ đề con; tiếng Việt tự nhiên, có cảm xúc
+- Xây dựng thương hiệu cá nhân: chân thật, sâu, truyền cảm hứng nhẹ
+- KHÔNG quảng cáo trực tiếp, KHÔNG CTA mua hàng, KHÔNG giật tít rẻ tiền / clickbait
+- KHÔNG trùng hoặc quá giống nhau (đổi góc nhìn / cảm xúc / khung câu)
+- KHÔNG bịa trải nghiệm cụ thể của người dùng (không số liệu giả, không “tôi kiếm X triệu”)
+- Độ dài hợp lý cho Facebook (khoảng 6–16 từ)
+
+Trả JSON thuần (không markdown):
+{"titles":["..."]}
+Đúng ${count} phần tử trong mảng titles.`;
+
+  try {
+    const raw = await openai.chatCompletion({
+      messages: [{ role: 'user', content: prompt }],
+      maxTokens: Math.min(1800, 120 + count * 40),
+      temperature: 0.85,
+    });
+    const parsed = JSON.parse(raw.replace(/```json|```/g, '').trim()) as {
+      titles?: string[];
+    };
+    const fromAi = dedupeTitles(
+      Array.isArray(parsed.titles) ? parsed.titles.map((t) => String(t ?? '')) : [],
+    );
+    if (fromAi.length === 0) {
+      return fallback;
+    }
+    let titles = fromAi.slice(0, count);
+    if (titles.length < count) {
+      titles = dedupeTitles([...titles, ...fallback.titles]).slice(0, count);
+    }
+    return { titles, source: 'ai' };
+  } catch {
+    return fallback;
   }
 }

@@ -30,7 +30,7 @@ import {
 import { cn } from '@/lib/utils';
 
 function statusVariant(status: IntegrationItem['status']): 'default' | 'secondary' | 'outline' {
-  if (status === 'CONNECTED') return 'default';
+  if (status === 'CONNECTED' || status === 'ACTIVE') return 'default';
   if (status === 'ERROR') return 'outline';
   return 'secondary';
 }

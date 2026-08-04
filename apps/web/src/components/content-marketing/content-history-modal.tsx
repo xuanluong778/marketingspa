@@ -75,7 +75,7 @@ export function ContentHistoryModal({
           <Button
             type="button"
             size="sm"
-            className="rounded-lg bg-emerald-600 text-white hover:bg-emerald-700"
+            className="rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 hover:text-[#F97316] [&_svg]:text-white hover:[&_svg]:text-[#F97316]"
             onClick={handleCopy}
           >
             <Copy className="mr-1.5 h-4 w-4" />
@@ -84,8 +84,7 @@ export function ContentHistoryModal({
           <Button
             type="button"
             size="sm"
-            variant="outline"
-            className="rounded-lg border-emerald-300 text-emerald-800 hover:bg-emerald-100"
+            className="rounded-lg border-[#0A3D30] bg-[#0A3D30] text-white hover:border-[#0A3D30] hover:bg-[#0A3D30] hover:text-[#F97316] [&_svg]:text-white hover:[&_svg]:text-[#F97316]"
             onClick={() => {
               sendToAutoPost(router, contentHistoryItemToPayload(item));
               onOpenChange(false);
@@ -97,8 +96,7 @@ export function ContentHistoryModal({
           <Button
             type="button"
             size="sm"
-            variant="outline"
-            className="rounded-lg border-emerald-300 text-emerald-800 hover:bg-emerald-100"
+            className="rounded-lg border-[#0A3D30] bg-[#0A3D30] text-white hover:border-[#0A3D30] hover:bg-[#0A3D30] hover:text-[#F97316] [&_svg]:text-white hover:[&_svg]:text-[#F97316]"
             onClick={() => {
               onEdit(item);
               onOpenChange(false);
@@ -111,7 +109,7 @@ export function ContentHistoryModal({
             type="button"
             size="sm"
             variant="ghost"
-            className="ml-auto rounded-lg text-slate-600 hover:bg-slate-100"
+            className="ml-auto rounded-lg text-slate-600 hover:bg-slate-100 hover:text-[#F97316] hover:[&_svg]:text-[#F97316]"
             onClick={() => onOpenChange(false)}
           >
             <X className="mr-1.5 h-4 w-4" />

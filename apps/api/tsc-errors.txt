@@ -1,0 +1,969 @@
+src/ad-performance/facebook-ads/facebook-ads.service.ts(99,18): error TS2353: Object literal may only specify known properties, and 'userId' does not exist in type 'FacebookAdsConnectionWhereUniqueInput'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(101,11): error TS2353: Object literal may only specify known properties, and 'userId' does not exist in type 'Without<FacebookAdsConnectionCreateInput, FacebookAdsConnectionUncheckedCreateInput> & FacebookAdsConnectionUncheckedCreateInput'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(110,11): error TS2353: Object literal may only specify known properties, and 'encryptedAccessToken' does not exist in type '(Without<FacebookAdsConnectionUpdateInput, FacebookAdsConnectionUncheckedUpdateInput> & FacebookAdsConnectionUncheckedUpdateInput) | (Without<...> & FacebookAdsConnectionUpdateInput)'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(131,79): error TS2353: Object literal may only specify known properties, and 'userId' does not exist in type 'FacebookAdsConnectionWhereUniqueInput'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(132,15): error TS2339: Property 'encryptedAccessToken' does not exist on type '{ id: string; createdAt: Date; organizationId: string; updatedAt: Date; status: FacebookAdsConnectionStatus; scopes: string[]; lastSyncAt: Date | null; ... 5 more ...; lastSyncError: string | null; }'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(146,13): error TS2339: Property 'tokenExpiresAt' does not exist on type '{ id: string; createdAt: Date; organizationId: string; updatedAt: Date; status: FacebookAdsConnectionStatus; scopes: string[]; lastSyncAt: Date | null; ... 5 more ...; lastSyncError: string | null; }'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(146,35): error TS2339: Property 'tokenExpiresAt' does not exist on type '{ id: string; createdAt: Date; organizationId: string; updatedAt: Date; status: FacebookAdsConnectionStatus; scopes: string[]; lastSyncAt: Date | null; ... 5 more ...; lastSyncError: string | null; }'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(149,18): error TS2353: Object literal may only specify known properties, and 'userId' does not exist in type 'FacebookAdsConnectionWhereUniqueInput'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(162,27): error TS2339: Property 'tokenExpiresAt' does not exist on type '{ id: string; createdAt: Date; organizationId: string; updatedAt: Date; status: FacebookAdsConnectionStatus; scopes: string[]; lastSyncAt: Date | null; ... 5 more ...; lastSyncError: string | null; }'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(176,20): error TS2353: Object literal may only specify known properties, and 'userId' does not exist in type 'FacebookAdsConnectionWhereUniqueInput'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(200,16): error TS2353: Object literal may only specify known properties, and 'userId' does not exist in type 'FacebookAdsConnectionWhereUniqueInput'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(216,37): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(217,35): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(224,9): error TS2353: Object literal may only specify known properties, and 'userId' does not exist in type '(Without<FacebookAdsSyncLogCreateInput, FacebookAdsSyncLogUncheckedCreateInput> & FacebookAdsSyncLogUncheckedCreateInput) | (Without<...> & FacebookAdsSyncLogCreateInput)'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(234,16): error TS2353: Object literal may only specify known properties, and 'userId' does not exist in type 'FacebookAdsConnectionWhereUniqueInput'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(246,9): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(257,13): error TS2353: Object literal may only specify known properties, and 'userId_campaignId_dateFrom_dateTo' does not exist in type 'FacebookAdsCampaignSnapshotWhereUniqueInput'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(286,18): error TS2353: Object literal may only specify known properties, and 'userId' does not exist in type 'FacebookAdsConnectionWhereUniqueInput'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(316,18): error TS2353: Object literal may only specify known properties, and 'userId' does not exist in type 'FacebookAdsConnectionWhereUniqueInput'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(328,80): error TS2353: Object literal may only specify known properties, and 'userId' does not exist in type 'FacebookAdsConnectionWhereUniqueInput'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(339,9): error TS2353: Object literal may only specify known properties, and 'userId' does not exist in type 'FacebookAdsCampaignSnapshotWhereInput'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(374,16): error TS2353: Object literal may only specify known properties, and 'userId' does not exist in type 'FacebookAdsSyncLogWhereInput'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(394,73): error TS2353: Object literal may only specify known properties, and 'userId' does not exist in type 'FacebookAdsCampaignSnapshotWhereInput'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(395,64): error TS2353: Object literal may only specify known properties, and 'userId' does not exist in type 'FacebookAdsSyncLogWhereInput'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(396,67): error TS2353: Object literal may only specify known properties, and 'userId' does not exist in type 'FacebookAdsConnectionWhereInput'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(409,32): error TS2353: Object literal may only specify known properties, and 'userId' does not exist in type 'FacebookAdsConnectionWhereUniqueInput'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(458,79): error TS2353: Object literal may only specify known properties, and 'userId' does not exist in type 'FacebookAdsConnectionWhereUniqueInput'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(459,15): error TS2339: Property 'encryptedAccessToken' does not exist on type '{ id: string; createdAt: Date; organizationId: string; updatedAt: Date; status: FacebookAdsConnectionStatus; scopes: string[]; lastSyncAt: Date | null; ... 5 more ...; lastSyncError: string | null; }'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(467,13): error TS2339: Property 'tokenExpiresAt' does not exist on type '{ id: string; createdAt: Date; organizationId: string; updatedAt: Date; status: FacebookAdsConnectionStatus; scopes: string[]; lastSyncAt: Date | null; ... 5 more ...; lastSyncError: string | null; }'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(467,35): error TS2339: Property 'tokenExpiresAt' does not exist on type '{ id: string; createdAt: Date; organizationId: string; updatedAt: Date; status: FacebookAdsConnectionStatus; scopes: string[]; lastSyncAt: Date | null; ... 5 more ...; lastSyncError: string | null; }'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(469,18): error TS2353: Object literal may only specify known properties, and 'userId' does not exist in type 'FacebookAdsConnectionWhereUniqueInput'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(474,30): error TS2339: Property 'encryptedAccessToken' does not exist on type '{ id: string; createdAt: Date; organizationId: string; updatedAt: Date; status: FacebookAdsConnectionStatus; scopes: string[]; lastSyncAt: Date | null; ... 5 more ...; lastSyncError: string | null; }'.
+src/ad-performance/facebook-ads/facebook-ads.service.ts(486,18): error TS2353: Object literal may only specify known properties, and 'userId' does not exist in type 'FacebookAdsConnectionWhereUniqueInput'.
+src/ad-performance/google-ads/google-ads.module.ts(2,10): error TS2305: Module '"./google-ads.controller"' has no exported member 'GoogleAdsController'.
+src/ad-performance/google-ads/google-ads.module.ts(3,10): error TS2305: Module '"./google-ads.service"' has no exported member 'GoogleAdsService'.
+src/ad-performance/google-ads/google-ads.module.ts(4,10): error TS2305: Module '"./google-ads-api.service"' has no exported member 'GoogleAdsApiService'.
+src/ads-actions/ads-action.controller.ts(35,39): error TS2345: Argument of type 'ProposeAdsActionDto' is not assignable to parameter of type '{ campaignId?: string | undefined; draftId?: string | undefined; recommendationId?: string | undefined; platform: string; actionType: string; source?: string | undefined; beforeState: Record<...>; ... 8 more ...; submitForApproval?: boolean | undefined; }'.
+  Type 'ProposeAdsActionDto' is missing the following properties from type '{ campaignId?: string | undefined; draftId?: string | undefined; recommendationId?: string | undefined; platform: string; actionType: string; source?: string | undefined; beforeState: Record<...>; ... 8 more ...; submitForApproval?: boolean | undefined; }': platform, actionType, beforeState, afterState, idempotencyKey
+src/ads-actions/ads-action.controller.ts(57,46): error TS2339: Property 'rejectionReason' does not exist on type 'RejectAdsActionDto'.
+src/affiliate/affiliate-admin.service.ts(79,24): error TS2339: Property 'page' does not exist on type 'AffiliateListQueryDto'.
+src/affiliate/affiliate-admin.service.ts(80,28): error TS2339: Property 'pageSize' does not exist on type 'AffiliateListQueryDto'.
+src/affiliate/affiliate-admin.service.ts(82,15): error TS2339: Property 'status' does not exist on type 'AffiliateListQueryDto'.
+src/affiliate/affiliate-admin.service.ts(82,44): error TS2339: Property 'status' does not exist on type 'AffiliateListQueryDto'.
+src/affiliate/affiliate-admin.service.ts(83,15): error TS2339: Property 'q' does not exist on type 'AffiliateListQueryDto'.
+src/affiliate/affiliate-admin.service.ts(84,23): error TS2339: Property 'q' does not exist on type 'AffiliateListQueryDto'.
+src/affiliate/affiliate-admin.service.ts(150,29): error TS2339: Property 'status' does not exist on type 'AdminSetAffiliateStatusDto'.
+src/affiliate/affiliate-admin.service.ts(159,23): error TS2339: Property 'reason' does not exist on type 'AdminSetAffiliateStatusDto'.
+src/affiliate/affiliate-admin.service.ts(177,27): error TS2339: Property 'customRate' does not exist on type 'AdminSetRateDto'.
+src/affiliate/affiliate-admin.service.ts(178,19): error TS2339: Property 'allowRenewalCommission' does not exist on type 'AdminSetRateDto'.
+src/affiliate/affiliate-admin.service.ts(179,45): error TS2339: Property 'allowRenewalCommission' does not exist on type 'AdminSetRateDto'.
+src/affiliate/affiliate-admin.service.ts(190,23): error TS2339: Property 'reason' does not exist on type 'AdminSetRateDto'.
+src/affiliate/affiliate-admin.service.ts(213,24): error TS2339: Property 'page' does not exist on type 'AffiliateListQueryDto'.
+src/affiliate/affiliate-admin.service.ts(214,28): error TS2339: Property 'pageSize' does not exist on type 'AffiliateListQueryDto'.
+src/affiliate/affiliate-admin.service.ts(216,15): error TS2339: Property 'q' does not exist on type 'AffiliateListQueryDto'.
+src/affiliate/affiliate-admin.service.ts(217,23): error TS2339: Property 'q' does not exist on type 'AffiliateListQueryDto'.
+src/affiliate/affiliate-admin.service.ts(260,24): error TS2339: Property 'page' does not exist on type 'AffiliateListQueryDto'.
+src/affiliate/affiliate-admin.service.ts(261,28): error TS2339: Property 'pageSize' does not exist on type 'AffiliateListQueryDto'.
+src/affiliate/affiliate-admin.service.ts(263,15): error TS2339: Property 'status' does not exist on type 'AffiliateListQueryDto'.
+src/affiliate/affiliate-admin.service.ts(263,44): error TS2339: Property 'status' does not exist on type 'AffiliateListQueryDto'.
+src/affiliate/affiliate-admin.service.ts(264,15): error TS2339: Property 'q' does not exist on type 'AffiliateListQueryDto'.
+src/affiliate/affiliate-admin.service.ts(265,23): error TS2339: Property 'q' does not exist on type 'AffiliateListQueryDto'.
+src/affiliate/affiliate-admin.service.ts(333,23): error TS2339: Property 'reason' does not exist on type 'AffiliateReasonDto'.
+src/affiliate/affiliate-admin.service.ts(346,82): error TS2339: Property 'reason' does not exist on type 'AdminReverseCommissionDto'.
+src/affiliate/affiliate-admin.service.ts(353,19): error TS2339: Property 'reason' does not exist on type 'AdminReverseCommissionDto'.
+src/affiliate/affiliate-admin.service.ts(362,24): error TS2339: Property 'page' does not exist on type 'AffiliateListQueryDto'.
+src/affiliate/affiliate-admin.service.ts(363,28): error TS2339: Property 'pageSize' does not exist on type 'AffiliateListQueryDto'.
+src/affiliate/affiliate-admin.service.ts(365,15): error TS2339: Property 'status' does not exist on type 'AffiliateListQueryDto'.
+src/affiliate/affiliate-admin.service.ts(365,44): error TS2339: Property 'status' does not exist on type 'AffiliateListQueryDto'.
+src/affiliate/affiliate-admin.service.ts(427,23): error TS2339: Property 'reason' does not exist on type 'AffiliateReasonDto'.
+src/affiliate/affiliate-admin.service.ts(451,29): error TS2339: Property 'reason' does not exist on type 'AffiliateReasonDto'.
+src/affiliate/affiliate-admin.service.ts(476,23): error TS2339: Property 'reason' does not exist on type 'AffiliateReasonDto'.
+src/affiliate/affiliate-admin.service.ts(501,30): error TS2339: Property 'paidReference' does not exist on type 'AdminPayoutDecisionDto'.
+src/affiliate/affiliate-admin.service.ts(520,23): error TS2339: Property 'reason' does not exist on type 'AdminPayoutDecisionDto'.
+src/affiliate/affiliate-admin.service.ts(524,32): error TS2339: Property 'paidReference' does not exist on type 'AdminPayoutDecisionDto'.
+src/affiliate/affiliate-admin.service.ts(535,24): error TS2339: Property 'page' does not exist on type 'AffiliateListQueryDto'.
+src/affiliate/affiliate-admin.service.ts(536,28): error TS2339: Property 'pageSize' does not exist on type 'AffiliateListQueryDto'.
+src/affiliate/affiliate-admin.service.ts(574,19): error TS2339: Property 'defaultCommissionRate' does not exist on type 'AdminUpdateSettingsDto'.
+src/affiliate/affiliate-admin.service.ts(575,44): error TS2339: Property 'defaultCommissionRate' does not exist on type 'AdminUpdateSettingsDto'.
+src/affiliate/affiliate-admin.service.ts(577,19): error TS2339: Property 'holdDays' does not exist on type 'AdminUpdateSettingsDto'.
+src/affiliate/affiliate-admin.service.ts(577,54): error TS2339: Property 'holdDays' does not exist on type 'AdminUpdateSettingsDto'.
+src/affiliate/affiliate-admin.service.ts(578,19): error TS2339: Property 'minPayoutVnd' does not exist on type 'AdminUpdateSettingsDto'.
+src/affiliate/affiliate-admin.service.ts(578,62): error TS2339: Property 'minPayoutVnd' does not exist on type 'AdminUpdateSettingsDto'.
+src/affiliate/affiliate-admin.service.ts(579,19): error TS2339: Property 'firstOrderOnlyDefault' does not exist on type 'AdminUpdateSettingsDto'.
+src/affiliate/affiliate-admin.service.ts(580,44): error TS2339: Property 'firstOrderOnlyDefault' does not exist on type 'AdminUpdateSettingsDto'.
+src/affiliate/affiliate-admin.service.ts(582,19): error TS2339: Property 'allowRenewalCommission' does not exist on type 'AdminUpdateSettingsDto'.
+src/affiliate/affiliate-admin.service.ts(583,45): error TS2339: Property 'allowRenewalCommission' does not exist on type 'AdminUpdateSettingsDto'.
+src/affiliate/affiliate-admin.service.ts(593,23): error TS2339: Property 'reason' does not exist on type 'AdminUpdateSettingsDto'.
+src/affiliate/affiliate-admin.service.ts(613,24): error TS2339: Property 'page' does not exist on type 'AffiliateListQueryDto'.
+src/affiliate/affiliate-admin.service.ts(614,28): error TS2339: Property 'pageSize' does not exist on type 'AffiliateListQueryDto'.
+src/affiliate/affiliate-admin.service.ts(616,15): error TS2339: Property 'q' does not exist on type 'AffiliateListQueryDto'.
+src/affiliate/affiliate-admin.service.ts(618,37): error TS2339: Property 'q' does not exist on type 'AffiliateListQueryDto'.
+src/affiliate/affiliate-admin.service.ts(619,41): error TS2339: Property 'q' does not exist on type 'AffiliateListQueryDto'.
+src/affiliate/affiliate.service.ts(203,26): error TS2339: Property 'code' does not exist on type 'TrackClickDto'.
+src/affiliate/affiliate.service.ts(215,43): error TS2339: Property 'fingerprint' does not exist on type 'TrackClickDto'.
+src/affiliate/affiliate.service.ts(216,28): error TS2339: Property 'landingPath' does not exist on type 'TrackClickDto'.
+src/affiliate/affiliate.service.ts(696,31): error TS2339: Property 'accountNumber' does not exist on type 'UpsertPayoutMethodDto'.
+src/affiliate/affiliate.service.ts(708,22): error TS2339: Property 'taxId' does not exist on type 'UpsertPayoutMethodDto'.
+src/affiliate/affiliate.service.ts(709,24): error TS2339: Property 'taxName' does not exist on type 'UpsertPayoutMethodDto'.
+src/affiliate/affiliate.service.ts(716,25): error TS2339: Property 'bankCode' does not exist on type 'UpsertPayoutMethodDto'.
+src/affiliate/affiliate.service.ts(717,25): error TS2339: Property 'bankName' does not exist on type 'UpsertPayoutMethodDto'.
+src/affiliate/affiliate.service.ts(719,28): error TS2339: Property 'accountName' does not exist on type 'UpsertPayoutMethodDto'.
+src/affiliate/affiliate.service.ts(720,27): error TS2339: Property 'branchName' does not exist on type 'UpsertPayoutMethodDto'.
+src/affiliate/affiliate.service.ts(724,25): error TS2339: Property 'bankCode' does not exist on type 'UpsertPayoutMethodDto'.
+src/affiliate/affiliate.service.ts(725,25): error TS2339: Property 'bankName' does not exist on type 'UpsertPayoutMethodDto'.
+src/affiliate/affiliate.service.ts(727,28): error TS2339: Property 'accountName' does not exist on type 'UpsertPayoutMethodDto'.
+src/affiliate/affiliate.service.ts(728,27): error TS2339: Property 'branchName' does not exist on type 'UpsertPayoutMethodDto'.
+src/affiliate/affiliate.service.ts(761,13): error TS2339: Property 'amountVnd' does not exist on type 'CreatePayoutRequestDto'.
+src/affiliate/affiliate.service.ts(779,13): error TS2339: Property 'amountVnd' does not exist on type 'CreatePayoutRequestDto'.
+src/affiliate/affiliate.service.ts(784,25): error TS2339: Property 'amountVnd' does not exist on type 'CreatePayoutRequestDto'.
+src/affiliate/affiliate.service.ts(796,26): error TS2339: Property 'amountVnd' does not exist on type 'CreatePayoutRequestDto'.
+src/affiliate/affiliate.service.ts(803,21): error TS2339: Property 'note' does not exist on type 'CreatePayoutRequestDto'.
+src/affiliate/affiliate.service.ts(816,45): error TS2339: Property 'amountVnd' does not exist on type 'CreatePayoutRequestDto'.
+src/affiliate/affiliate.service.ts(828,31): error TS2339: Property 'amountVnd' does not exist on type 'CreatePayoutRequestDto'.
+src/ai-ads-manager/ai-ads-manager.controller.ts(105,19): error TS2339: Property 'platform' does not exist on type 'CampaignsQueryDto'.
+src/ai-ads-manager/ai-ads-manager.controller.ts(106,15): error TS2339: Property 'page' does not exist on type 'CampaignsQueryDto'.
+src/ai-ads-manager/ai-ads-manager.controller.ts(106,31): error TS2339: Property 'page' does not exist on type 'CampaignsQueryDto'.
+src/ai-ads-manager/ai-ads-manager.controller.ts(107,19): error TS2339: Property 'pageSize' does not exist on type 'CampaignsQueryDto'.
+src/ai-ads-manager/ai-ads-manager.controller.ts(107,39): error TS2339: Property 'pageSize' does not exist on type 'CampaignsQueryDto'.
+src/ai-ads-manager/ai-ads-manager.service.ts(15,10): error TS2305: Module '"../ad-performance/google-ads/google-ads.service"' has no exported member 'GoogleAdsService'.
+src/ai-ads-manager/ai-ads-manager.service.ts(96,5): error TS2739: Type '{ url: string; }' is missing the following properties from type 'Promise<{ url: string; }>': then, catch, finally, [Symbol.toStringTag]
+src/ai-ads-manager/ai-ads-manager.service.ts(131,41): error TS2345: Argument of type 'AuthUser' is not assignable to parameter of type 'string'.
+src/ai-ads-manager/ai-ads-manager.service.ts(164,49): error TS2345: Argument of type 'AuthUser' is not assignable to parameter of type 'string'.
+src/ai-ads-manager/ai-ads-manager.service.ts(171,22): error TS2339: Property 'jobId' does not exist on type '{ message: string; campaignsSynced: number; status: "SUCCESS"; }'.
+src/ai-ads-manager/ai-ads-manager.service.ts(172,23): error TS2339: Property 'queued' does not exist on type '{ message: string; campaignsSynced: number; status: "SUCCESS"; }'.
+src/ai-ads-manager/ai-ads-manager.service.ts(281,36): error TS2339: Property 'mcpMode' does not exist on type 'UpdateAutoModeDto'.
+src/ai-ads-manager/ai-ads-manager.service.ts(285,25): error TS2339: Property 'mcpMode' does not exist on type 'UpdateAutoModeDto'.
+src/ai-ads-manager/ai-ads-manager.service.ts(285,56): error TS2339: Property 'mcpMode' does not exist on type 'UpdateAutoModeDto'.
+src/ai-ads-manager/ai-ads-manager.service.ts(299,37): error TS2339: Property 'maxBudgetChangePercent' does not exist on type 'UpdateAutoModeDto'.
+src/ai-ads-manager/ai-ads-manager.service.ts(300,31): error TS2339: Property 'ruleLookbackDays' does not exist on type 'UpdateAutoModeDto'.
+src/ai-ads-manager/ai-ads-manager.service.ts(301,34): error TS2339: Property 'ruleCooldownMinutes' does not exist on type 'UpdateAutoModeDto'.
+src/ai-ads-manager/ai-ads-manager.service.ts(302,32): error TS2339: Property 'minSpendForAction' does not exist on type 'UpdateAutoModeDto'.
+src/ai-ads-manager/ai-ads-manager.service.ts(309,17): error TS2339: Property 'maxBudgetChangePercent' does not exist on type 'UpdateAutoModeDto'.
+src/ai-ads-manager/ai-ads-manager.service.ts(310,39): error TS2339: Property 'maxBudgetChangePercent' does not exist on type 'UpdateAutoModeDto'.
+src/ai-ads-manager/ai-ads-manager.service.ts(312,17): error TS2339: Property 'ruleLookbackDays' does not exist on type 'UpdateAutoModeDto'.
+src/ai-ads-manager/ai-ads-manager.service.ts(312,75): error TS2339: Property 'ruleLookbackDays' does not exist on type 'UpdateAutoModeDto'.
+src/ai-ads-manager/ai-ads-manager.service.ts(313,17): error TS2339: Property 'ruleCooldownMinutes' does not exist on type 'UpdateAutoModeDto'.
+src/ai-ads-manager/ai-ads-manager.service.ts(314,36): error TS2339: Property 'ruleCooldownMinutes' does not exist on type 'UpdateAutoModeDto'.
+src/ai-ads-manager/ai-ads-manager.service.ts(316,17): error TS2339: Property 'minSpendForAction' does not exist on type 'UpdateAutoModeDto'.
+src/ai-ads-manager/ai-ads-manager.service.ts(317,34): error TS2339: Property 'minSpendForAction' does not exist on type 'UpdateAutoModeDto'.
+src/ai-ads-manager/ai-ads-manager.service.ts(1077,32): error TS2339: Property 'setCampaignActive' does not exist on type 'FacebookAdsService'.
+src/appointments/appointments.controller.ts(21,3): error TS2305: Module '"./dto/appointment.dto"' has no exported member 'RescheduleAppointmentDto'.
+src/appointments/appointments.service.ts(21,3): error TS2305: Module '"./dto/appointment.dto"' has no exported member 'RescheduleAppointmentDto'.
+src/appointments/appointments.service.ts(29,10): error TS2305: Module '"../common/utils/status-transitions.util"' has no exported member 'assertAppointmentTransition'.
+src/appointments/appointments.service.ts(77,17): error TS2339: Property 'serviceId' does not exist on type 'CalendarQueryDto'.
+src/appointments/appointments.service.ts(77,49): error TS2339: Property 'serviceId' does not exist on type 'CalendarQueryDto'.
+src/appointments/appointments.service.ts(78,17): error TS2339: Property 'status' does not exist on type 'CalendarQueryDto'.
+src/appointments/appointments.service.ts(78,43): error TS2339: Property 'status' does not exist on type 'CalendarQueryDto'.
+src/appointments/appointments.service.ts(104,25): error TS2339: Property 'adCampaignId' does not exist on type 'CreateAppointmentDto'.
+src/appointments/appointments.service.ts(107,53): error TS2339: Property 'roomId' does not exist on type 'CreateAppointmentDto'.
+src/appointments/appointments.service.ts(108,52): error TS2339: Property 'bedId' does not exist on type 'CreateAppointmentDto'.
+src/appointments/appointments.service.ts(109,58): error TS2339: Property 'equipmentId' does not exist on type 'CreateAppointmentDto'.
+src/appointments/appointments.service.ts(163,19): error TS2339: Property 'roomId' does not exist on type 'CreateAppointmentDto'.
+src/appointments/appointments.service.ts(164,18): error TS2339: Property 'bedId' does not exist on type 'CreateAppointmentDto'.
+src/appointments/appointments.service.ts(165,24): error TS2339: Property 'equipmentId' does not exist on type 'CreateAppointmentDto'.
+src/appointments/appointments.service.ts(176,21): error TS2339: Property 'roomId' does not exist on type 'CreateAppointmentDto'.
+src/appointments/appointments.service.ts(177,20): error TS2339: Property 'bedId' does not exist on type 'CreateAppointmentDto'.
+src/appointments/appointments.service.ts(178,26): error TS2339: Property 'equipmentId' does not exist on type 'CreateAppointmentDto'.
+src/appointments/appointments.service.ts(179,27): error TS2339: Property 'adCampaignId' does not exist on type 'CreateAppointmentDto'.
+src/appointments/appointments.service.ts(183,28): error TS2339: Property 'depositAmount' does not exist on type 'CreateAppointmentDto'.
+src/appointments/appointments.service.ts(184,28): error TS2339: Property 'depositStatus' does not exist on type 'CreateAppointmentDto'.
+src/appointments/appointments.service.ts(255,19): error TS2339: Property 'roomId' does not exist on type 'UpdateAppointmentDto'.
+src/appointments/appointments.service.ts(256,18): error TS2339: Property 'bedId' does not exist on type 'UpdateAppointmentDto'.
+src/appointments/appointments.service.ts(257,24): error TS2339: Property 'equipmentId' does not exist on type 'UpdateAppointmentDto'.
+src/appointments/appointments.service.ts(280,28): error TS2339: Property 'depositAmount' does not exist on type 'UpdateAppointmentDto'.
+src/appointments/appointments.service.ts(349,30): error TS2339: Property 'cancelledReason' does not exist on type 'UpdateAppointmentStatusDto'.
+src/appointments/appointments.service.ts(350,27): error TS2339: Property 'noShowReason' does not exist on type 'UpdateAppointmentStatusDto'.
+src/appointments/appointments.service.ts(501,17): error TS2339: Property 'serviceId' does not exist on type 'AppointmentQueryDto'.
+src/appointments/appointments.service.ts(501,49): error TS2339: Property 'serviceId' does not exist on type 'AppointmentQueryDto'.
+src/attribution/attribution-dashboard.service.ts(35,24): error TS2339: Property 'from' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(35,46): error TS2339: Property 'from' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(36,22): error TS2339: Property 'to' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(36,42): error TS2339: Property 'to' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(40,17): error TS2339: Property 'channel' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(40,45): error TS2339: Property 'channel' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(41,17): error TS2339: Property 'adCampaignId' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(41,55): error TS2339: Property 'adCampaignId' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(42,17): error TS2339: Property 'adId' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(42,39): error TS2339: Property 'adId' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(43,17): error TS2339: Property 'utmSource' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(43,49): error TS2339: Property 'utmSource' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(46,19): error TS2339: Property 'branchId' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(46,49): error TS2339: Property 'branchId' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(47,19): error TS2339: Property 'employeeId' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(47,55): error TS2339: Property 'employeeId' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(81,25): error TS2339: Property 'serviceId' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(81,57): error TS2339: Property 'serviceId' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(82,25): error TS2339: Property 'branchId' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(82,55): error TS2339: Property 'branchId' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(83,25): error TS2339: Property 'employeeId' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(83,59): error TS2339: Property 'employeeId' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(125,15): error TS2339: Property 'customerType' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(125,37): error TS2339: Property 'customerType' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(177,17): error TS2339: Property 'customerType' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(177,49): error TS2339: Property 'customerType' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(180,21): error TS2339: Property 'customerType' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(184,21): error TS2339: Property 'customerType' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(185,21): error TS2339: Property 'customerType' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(189,31): error TS2339: Property 'groupByAd' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(212,31): error TS2339: Property 'groupByAd' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(282,17): error TS2339: Property 'serviceId' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-dashboard.service.ts(283,76): error TS2339: Property 'serviceId' does not exist on type 'AttributionDashboardQueryDto'.
+src/attribution/attribution-hooks.service.ts(53,31): error TS2339: Property 'gclid' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution-hooks.service.ts(54,32): error TS2339: Property 'fbclid' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(48,20): error TS2339: Property 'channel' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(49,22): error TS2339: Property 'utmSource' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(50,22): error TS2339: Property 'utmMedium' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(51,24): error TS2339: Property 'utmCampaign' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(52,23): error TS2339: Property 'utmContent' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(53,20): error TS2339: Property 'utmTerm' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(54,19): error TS2339: Property 'fbclid' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(55,18): error TS2339: Property 'gclid' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(56,25): error TS2339: Property 'adCampaignId' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(57,20): error TS2339: Property 'adSetId' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(58,17): error TS2339: Property 'adId' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(59,31): error TS2339: Property 'externalCampaignId' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(60,28): error TS2339: Property 'externalAdSetId' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(61,25): error TS2339: Property 'externalAdId' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(62,24): error TS2339: Property 'landingPage' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(63,21): error TS2339: Property 'referrer' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(69,13): error TS2339: Property 'channel' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(69,35): error TS2339: Property 'channel' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(70,13): error TS2339: Property 'fbclid' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(70,29): error TS2339: Property 'utmSource' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(70,84): error TS2339: Property 'utmSource' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(73,13): error TS2339: Property 'gclid' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(73,28): error TS2339: Property 'utmSource' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(76,13): error TS2339: Property 'utmSource' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(77,13): error TS2339: Property 'utmSource' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(164,58): error TS2339: Property 'adCampaignId' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(165,53): error TS2339: Property 'adSetId' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(166,58): error TS2339: Property 'adId' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(170,46): error TS2353: Object literal may only specify known properties, and 'channel' does not exist in type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(178,24): error TS2339: Property 'utmSource' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(179,24): error TS2339: Property 'utmMedium' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(180,26): error TS2339: Property 'utmCampaign' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(181,25): error TS2339: Property 'utmContent' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(182,22): error TS2339: Property 'utmTerm' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(183,21): error TS2339: Property 'fbclid' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(184,20): error TS2339: Property 'gclid' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(185,27): error TS2339: Property 'adCampaignId' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(186,22): error TS2339: Property 'adSetId' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(187,19): error TS2339: Property 'adId' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(188,33): error TS2339: Property 'externalCampaignId' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(189,30): error TS2339: Property 'externalAdSetId' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(190,27): error TS2339: Property 'externalAdId' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(191,26): error TS2339: Property 'landingPage' does not exist on type 'AttributionInputDto'.
+src/attribution/attribution.service.ts(192,23): error TS2339: Property 'referrer' does not exist on type 'AttributionInputDto'.
+src/auth/auth.controller.ts(106,29): error TS2339: Property 'referralCode' does not exist on type 'RegisterDto'.
+src/auth/auth.controller.ts(117,55): error TS2339: Property 'registrationId' does not exist on type 'ResendRegistrationOtpDto'.
+src/auth/auth.controller.ts(129,11): error TS2339: Property 'registrationId' does not exist on type 'VerifyRegistrationOtpDto'.
+src/auth/auth.controller.ts(130,11): error TS2339: Property 'otp' does not exist on type 'VerifyRegistrationOtpDto'.
+src/auth/auth.controller.ts(215,48): error TS2339: Property 'email' does not exist on type 'ForgotPasswordDto'.
+src/auth/auth.controller.ts(220,47): error TS2339: Property 'token' does not exist on type 'ResetPasswordDto'.
+src/auth/auth.controller.ts(220,58): error TS2339: Property 'password' does not exist on type 'ResetPasswordDto'.
+src/auth/auth.controller.ts(225,45): error TS2339: Property 'token' does not exist on type 'VerifyEmailDto'.
+src/auth/auth.controller.ts(243,11): error TS2339: Property 'currentPassword' does not exist on type 'ChangePasswordDto'.
+src/auth/auth.controller.ts(244,11): error TS2339: Property 'newPassword' does not exist on type 'ChangePasswordDto'.
+src/auto-post/auto-post-facebook-page-details.service.ts(66,5): error TS2322: Type 'void' is not assignable to type 'string'.
+src/auto-post/auto-post-facebook.service.ts(1494,5): error TS2322: Type 'void' is not assignable to type 'string'.
+src/auto-post/auto-post.controller.ts(34,3): error TS2305: Module '"./dto/auto-post.dto"' has no exported member 'SelectOAuthPagesDto'.
+src/auto-post/auto-post.controller.ts(91,25): error TS2339: Property 'industryId' does not exist on type 'AutoPostListQueryDto'.
+src/auto-post/auto-post.controller.ts(92,29): error TS2339: Property 'customIndustry' does not exist on type 'AutoPostListQueryDto'.
+src/auto-post/auto-post.service.ts(233,66): error TS2339: Property 'fanpageIds' does not exist on type 'PublishAutoPostDto'.
+src/auto-post/auto-post.service.ts(271,11): error TS2339: Property 'fanpageIds' does not exist on type 'ScheduleAutoPostDto'.
+src/auto-post/auto-post.service.ts(765,24): error TS2339: Property 'customIndustry' does not exist on type 'SaveAutoPostDraftDto'.
+src/auto-post/auto-post.service.ts(772,20): error TS2339: Property 'industryId' does not exist on type 'SaveAutoPostDraftDto'.
+src/auto-post/auto-post.service.ts(774,26): error TS2339: Property 'industryId' does not exist on type 'SaveAutoPostDraftDto'.
+src/auto-post/auto-post.service.ts(779,20): error TS2339: Property 'industryName' does not exist on type 'SaveAutoPostDraftDto'.
+src/auto-post/auto-post.service.ts(780,26): error TS2339: Property 'industryName' does not exist on type 'SaveAutoPostDraftDto'.
+src/automation/automation.controller.ts(22,3): error TS2724: '"./dto/automation.dto"' has no exported member named 'PreviewMessageTemplateDto'. Did you mean 'CreateMessageTemplateDto'?
+src/automation/automation.service.ts(24,15): error TS2724: '"./dto/automation.dto"' has no exported member named 'PreviewMessageTemplateDto'. Did you mean 'CreateMessageTemplateDto'?
+src/automation/automation.service.ts(42,15): error TS2339: Property 'channel' does not exist on type 'TemplateQueryDto'.
+src/automation/automation.service.ts(43,29): error TS2339: Property 'channel' does not exist on type 'TemplateQueryDto'.
+src/automation/automation.service.ts(63,27): error TS2339: Property 'campaignKind' does not exist on type 'CreateMessageTemplateDto'.
+src/automation/automation.service.ts(64,27): error TS2339: Property 'providerMode' does not exist on type 'CreateMessageTemplateDto'.
+src/automation/automation.service.ts(65,33): error TS2339: Property 'providerTemplateId' does not exist on type 'CreateMessageTemplateDto'.
+src/automation/automation.service.ts(66,29): error TS2339: Property 'approvalStatus' does not exist on type 'CreateMessageTemplateDto'.
+src/automation/automation.service.ts(67,23): error TS2339: Property 'mediaUrl' does not exist on type 'CreateMessageTemplateDto'.
+src/automation/automation.service.ts(68,23): error TS2339: Property 'ctaLabel' does not exist on type 'CreateMessageTemplateDto'.
+src/automation/automation.service.ts(69,21): error TS2339: Property 'ctaUrl' does not exist on type 'CreateMessageTemplateDto'.
+src/automation/automation.service.ts(70,33): error TS2339: Property 'variableFallbacks' does not exist on type 'CreateMessageTemplateDto'.
+src/automation/automation.service.ts(71,29): error TS2339: Property 'contentBlocks' does not exist on type 'CreateMessageTemplateDto'.
+src/automation/automation.service.ts(92,30): error TS2339: Property 'variableFallbacks' does not exist on type 'UpdateMessageTemplateDto'.
+src/automation/automation.service.ts(92,49): error TS2339: Property 'contentBlocks' does not exist on type 'UpdateMessageTemplateDto'.
+src/automation/automation.service.ts(181,23): error TS2339: Property 'actions' does not exist on type 'CreateAutomationFlowDto'.
+src/automation/automation.service.ts(183,23): error TS2339: Property 'isPaused' does not exist on type 'CreateAutomationFlowDto'.
+src/automation/automation.service.ts(184,30): error TS2339: Property 'quietHoursStart' does not exist on type 'CreateAutomationFlowDto'.
+src/automation/automation.service.ts(185,28): error TS2339: Property 'quietHoursEnd' does not exist on type 'CreateAutomationFlowDto'.
+src/automation/automation.service.ts(186,29): error TS2339: Property 'maxSendsPerDay' does not exist on type 'CreateAutomationFlowDto'.
+src/automation/automation.service.ts(187,30): error TS2339: Property 'cooldownMinutes' does not exist on type 'CreateAutomationFlowDto'.
+src/automation/automation.service.ts(223,28): error TS2339: Property 'actions' does not exist on type 'UpdateAutomationFlowDto'.
+src/billing/billing.controller.ts(78,71): error TS2339: Property 'planCode' does not exist on type 'CreatePaymentOrderDto'.
+src/billing/billing.controller.ts(158,11): error TS2339: Property 'orderId' does not exist on type 'AdminManualReviewDto'.
+src/billing/billing.controller.ts(159,11): error TS2339: Property 'note' does not exist on type 'AdminManualReviewDto'.
+src/billing/billing.controller.ts(173,45): error TS2559: Type 'AdminUpdateTrialSettingsDto' has no properties in common with type '{ enabled?: boolean | undefined; trialDays?: number | undefined; allowedFeaturePrefixes?: string[] | undefined; aiDailyQuota?: number | undefined; }'.
+src/billing/billing.service.ts(26,3): error TS2305: Module '"../common/utils/email-normalize.util"' has no exported member 'normalizePhoneDigits'.
+src/billing/billing.service.ts(383,39): error TS2339: Property 'deviceFingerprint' does not exist on type 'ActivateTrialDto'.
+src/billing/billing.service.ts(384,31): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/billing/billing.service.ts(985,24): error TS2339: Property 'page' does not exist on type 'AdminPaymentOrdersQueryDto'.
+src/billing/billing.service.ts(986,28): error TS2339: Property 'pageSize' does not exist on type 'AdminPaymentOrdersQueryDto'.
+src/billing/billing.service.ts(988,15): error TS2339: Property 'status' does not exist on type 'AdminPaymentOrdersQueryDto'.
+src/billing/billing.service.ts(988,44): error TS2339: Property 'status' does not exist on type 'AdminPaymentOrdersQueryDto'.
+src/billing/billing.service.ts(989,15): error TS2339: Property 'code' does not exist on type 'AdminPaymentOrdersQueryDto'.
+src/billing/billing.service.ts(989,52): error TS2339: Property 'code' does not exist on type 'AdminPaymentOrdersQueryDto'.
+src/billing/billing.service.ts(990,15): error TS2339: Property 'transferContent' does not exist on type 'AdminPaymentOrdersQueryDto'.
+src/billing/billing.service.ts(991,49): error TS2339: Property 'transferContent' does not exist on type 'AdminPaymentOrdersQueryDto'.
+src/billing/billing.service.ts(993,15): error TS2339: Property 'organizationId' does not exist on type 'AdminPaymentOrdersQueryDto'.
+src/billing/billing.service.ts(993,60): error TS2339: Property 'organizationId' does not exist on type 'AdminPaymentOrdersQueryDto'.
+src/billing/billing.service.ts(994,15): error TS2339: Property 'from' does not exist on type 'AdminPaymentOrdersQueryDto'.
+src/billing/billing.service.ts(994,29): error TS2339: Property 'to' does not exist on type 'AdminPaymentOrdersQueryDto'.
+src/billing/billing.service.ts(996,17): error TS2339: Property 'from' does not exist on type 'AdminPaymentOrdersQueryDto'.
+src/billing/billing.service.ts(996,60): error TS2339: Property 'from' does not exist on type 'AdminPaymentOrdersQueryDto'.
+src/billing/billing.service.ts(997,17): error TS2339: Property 'to' does not exist on type 'AdminPaymentOrdersQueryDto'.
+src/billing/billing.service.ts(997,58): error TS2339: Property 'to' does not exist on type 'AdminPaymentOrdersQueryDto'.
+src/billing/billing.service.ts(999,15): error TS2339: Property 'email' does not exist on type 'AdminPaymentOrdersQueryDto'.
+src/billing/billing.service.ts(1002,44): error TS2339: Property 'email' does not exist on type 'AdminPaymentOrdersQueryDto'.
+src/billing/billing.service.ts(1038,24): error TS2339: Property 'page' does not exist on type 'AdminBillingTransactionsQueryDto'.
+src/billing/billing.service.ts(1039,28): error TS2339: Property 'pageSize' does not exist on type 'AdminBillingTransactionsQueryDto'.
+src/billing/billing.service.ts(1041,15): error TS2339: Property 'matched' does not exist on type 'AdminBillingTransactionsQueryDto'.
+src/billing/billing.service.ts(1042,15): error TS2339: Property 'matched' does not exist on type 'AdminBillingTransactionsQueryDto'.
+src/billing/billing.service.ts(1043,15): error TS2339: Property 'orderCode' does not exist on type 'AdminBillingTransactionsQueryDto'.
+src/billing/billing.service.ts(1044,54): error TS2339: Property 'orderCode' does not exist on type 'AdminBillingTransactionsQueryDto'.
+src/billing/billing.service.ts(1046,15): error TS2339: Property 'q' does not exist on type 'AdminBillingTransactionsQueryDto'.
+src/billing/billing.service.ts(1047,23): error TS2339: Property 'q' does not exist on type 'AdminBillingTransactionsQueryDto'.
+src/billing/billing.service.ts(1126,25): error TS2339: Property 'force' does not exist on type 'AdminReprocessTransactionDto'.
+src/billing/billing.service.ts(1194,27): error TS2339: Property 'reason' does not exist on type 'AdminReprocessTransactionDto'.
+src/billing/billing.service.ts(1232,45): error TS2339: Property 'reason' does not exist on type 'AdminReprocessTransactionDto'.
+src/billing/billing.service.ts(1291,25): error TS2339: Property 'reason' does not exist on type 'AdminReprocessTransactionDto'.
+src/chatbot-cskh/chatbot-cskh-public.service.ts(248,9): error TS2353: Object literal may only specify known properties, and 'attribution' does not exist in type 'CreateLeadDto'.
+src/chatbot-cskh/chatbot-cskh.controller.ts(31,3): error TS2305: Module '"./dto/chatbot-cskh.dto"' has no exported member 'CrawlKnowledgeUrlDto'.
+src/chatbot-cskh/chatbot-cskh.service.ts(19,3): error TS2305: Module '"./dto/chatbot-cskh.dto"' has no exported member 'CrawlKnowledgeUrlDto'.
+src/chatbot-cskh/chatbot-cskh.service.ts(288,11): error TS2322: Type 'typeof KNOWLEDGE_DIAGRAM_URL' is not assignable to type 'string | StringNullableFilter<"ChatbotKnowledgeSource"> | null | undefined'.
+src/chatbot-cskh/chatbot-cskh.service.ts(305,21): error TS7006: Parameter 'node' implicitly has an 'any' type.
+src/chatbot-cskh/chatbot-cskh.service.ts(313,13): error TS2322: Type 'typeof KNOWLEDGE_DIAGRAM_URL' is not assignable to type 'string'.
+src/chatbot-cskh/chatbot-cskh.service.ts(345,41): error TS2339: Property 'message' does not exist on type 'CrawlValidationError | CrawlFetchError'.
+  Property 'message' does not exist on type 'CrawlValidationError'.
+src/chatbot-cskh/chatbot-cskh.service.ts(377,19): error TS7006: Parameter 'content' implicitly has an 'any' type.
+src/chatbot-cskh/chatbot-cskh.service.ts(377,28): error TS7006: Parameter 'i' implicitly has an 'any' type.
+src/chatbot-cskh/chatbot-cskh.service.ts(640,11): error TS2353: Object literal may only specify known properties, and 'pageId' does not exist in type 'ConnectMessengerChannelDto'.
+src/chatbot-cskh/chatbot-cskh.service.ts(727,13): error TS2353: Object literal may only specify known properties, and 'pageId' does not exist in type 'ConnectMessengerChannelDto'.
+src/content-marketing/advanced-article-logic.ts(51,43): error TS2559: Type 'GenerateAdvancedArticleDto' has no properties in common with type 'IndustryFields'.
+src/content-marketing/advanced-article-logic.ts(92,43): error TS2559: Type 'GenerateAdvancedArticleDto' has no properties in common with type 'IndustryFields'.
+src/content-marketing/advanced-article-logic.ts(124,43): error TS2559: Type 'GenerateAdvancedArticleDto' has no properties in common with type 'IndustryFields'.
+src/content-marketing/advanced-article-logic.ts(273,43): error TS2559: Type 'OptimizeAdvancedCtaDto' has no properties in common with type 'IndustryFields'.
+src/content-marketing/advanced-article-logic.ts(332,43): error TS2559: Type 'GenerateAdvancedTitlesDto' has no properties in common with type 'IndustryFields'.
+src/content-marketing/content-industry.service.ts(125,23): error TS2339: Property 'scope' does not exist on type 'UpsertIndustryPreferenceDto'.
+src/content-marketing/content-industry.service.ts(128,36): error TS2339: Property 'SUPER_ADMIN' does not exist on type '{ readonly OWNER: "OWNER"; readonly MANAGER: "MANAGER"; readonly MARKETING: "MARKETING"; readonly SALE: "SALE"; readonly TECHNICIAN: "TECHNICIAN"; readonly HR: "HR"; }'.
+src/content-marketing/content-industry.service.ts(136,92): error TS2559: Type 'UpsertIndustryPreferenceDto' has no properties in common with type '{ industryId?: string | null | undefined; customIndustry?: string | null | undefined; industryName?: string | null | undefined; }'.
+src/content-marketing/content-industry.service.ts(197,22): error TS2339: Property 'name' does not exist on type 'CreateContentIndustryDto'.
+src/content-marketing/content-industry.service.ts(199,21): error TS2339: Property 'slug' does not exist on type 'CreateContentIndustryDto'.
+src/content-marketing/content-industry.service.ts(207,24): error TS2339: Property 'sortOrder' does not exist on type 'CreateContentIndustryDto'.
+src/content-marketing/content-industry.service.ts(208,23): error TS2339: Property 'isActive' does not exist on type 'CreateContentIndustryDto'.
+src/content-marketing/content-industry.service.ts(219,13): error TS2339: Property 'slug' does not exist on type 'UpdateContentIndustryDto'.
+src/content-marketing/content-industry.service.ts(219,25): error TS2339: Property 'slug' does not exist on type 'UpdateContentIndustryDto'.
+src/content-marketing/content-industry.service.ts(229,13): error TS2339: Property 'name' does not exist on type 'UpdateContentIndustryDto'.
+src/content-marketing/content-industry.service.ts(229,43): error TS2339: Property 'name' does not exist on type 'UpdateContentIndustryDto'.
+src/content-marketing/content-industry.service.ts(230,13): error TS2339: Property 'slug' does not exist on type 'UpdateContentIndustryDto'.
+src/content-marketing/content-industry.service.ts(230,77): error TS2339: Property 'slug' does not exist on type 'UpdateContentIndustryDto'.
+src/content-marketing/content-industry.service.ts(231,13): error TS2339: Property 'sortOrder' does not exist on type 'UpdateContentIndustryDto'.
+src/content-marketing/content-industry.service.ts(231,53): error TS2339: Property 'sortOrder' does not exist on type 'UpdateContentIndustryDto'.
+src/content-marketing/content-industry.service.ts(232,13): error TS2339: Property 'isActive' does not exist on type 'UpdateContentIndustryDto'.
+src/content-marketing/content-industry.service.ts(232,51): error TS2339: Property 'isActive' does not exist on type 'UpdateContentIndustryDto'.
+src/content-marketing/content-marketing-logic.ts(225,43): error TS2559: Type 'CheckPolicyDto' has no properties in common with type 'IndustryFields'.
+src/content-marketing/content-marketing-logic.ts(299,5): error TS2353: Object literal may only specify known properties, and 'industryId' does not exist in type 'CheckPolicyDto'.
+src/content-marketing/content-marketing-logic.ts(299,23): error TS2339: Property 'industryId' does not exist on type 'ScoreContentDto'.
+src/content-marketing/content-marketing-logic.ts(300,25): error TS2339: Property 'industryName' does not exist on type 'ScoreContentDto'.
+src/content-marketing/content-marketing-logic.ts(301,27): error TS2339: Property 'customIndustry' does not exist on type 'ScoreContentDto'.
+src/content-marketing/content-marketing-logic.ts(671,5): error TS2559: Type 'GenerateContentDto' has no properties in common with type 'IndustryFields'.
+src/content-marketing/content-marketing-logic.ts(758,26): error TS2339: Property 'topicGroupLabel' does not exist on type 'GenerateContentDto'.
+src/content-marketing/content-marketing-logic.ts(1036,49): error TS2559: Type 'RewriteContentDto' has no properties in common with type 'IndustryFields'.
+src/content-marketing/content-marketing.controller.ts(23,3): error TS2305: Module '"./dto/content-marketing.dto"' has no exported member 'AnalyzeOpinionStoryDto'.
+src/content-marketing/content-marketing.controller.ts(30,3): error TS2305: Module '"./dto/content-marketing.dto"' has no exported member 'OpinionAnalyzeDto'.
+src/content-marketing/content-marketing.controller.ts(31,3): error TS2305: Module '"./dto/content-marketing.dto"' has no exported member 'OpinionGenerateDto'.
+src/content-marketing/content-marketing.controller.ts(32,3): error TS2305: Module '"./dto/content-marketing.dto"' has no exported member 'OpinionRewriteDto'.
+src/content-marketing/content-marketing.controller.ts(33,3): error TS2305: Module '"./dto/content-marketing.dto"' has no exported member 'OpinionScoreNaturalnessDto'.
+src/content-marketing/content-marketing.controller.ts(34,3): error TS2305: Module '"./dto/content-marketing.dto"' has no exported member 'OpinionSuggestFieldDto'.
+src/content-marketing/content-marketing.controller.ts(35,3): error TS2305: Module '"./dto/content-marketing.dto"' has no exported member 'UpsertOpinionVoiceProfileDto'.
+src/content-marketing/content-marketing.controller.ts(36,3): error TS2305: Module '"./dto/content-marketing.dto"' has no exported member 'UpsertTeleprompterSourceDto'.
+src/content-marketing/content-marketing.controller.ts(37,3): error TS2305: Module '"./dto/content-marketing.dto"' has no exported member 'TeleprompterScriptRewriteDto'.
+src/content-marketing/content-marketing.controller.ts(45,3): error TS2724: '"./dto/content-marketing.dto"' has no exported member named 'SuggestPersonalTitlesDto'. Did you mean 'SuggestPersonalIdeasDto'?
+src/content-marketing/content-marketing.controller.ts(46,3): error TS2305: Module '"./dto/content-marketing.dto"' has no exported member 'IndustrySuggestionsDto'.
+src/content-marketing/content-marketing.controller.ts(80,45): error TS2339: Property 'q' does not exist on type 'ListIndustriesQueryDto'.
+src/content-marketing/content-marketing.service.ts(27,3): error TS2305: Module '"./dto/content-marketing.dto"' has no exported member 'AnalyzeOpinionStoryDto'.
+src/content-marketing/content-marketing.service.ts(33,3): error TS2305: Module '"./dto/content-marketing.dto"' has no exported member 'IndustrySuggestionsDto'.
+src/content-marketing/content-marketing.service.ts(34,3): error TS2305: Module '"./dto/content-marketing.dto"' has no exported member 'OpinionAnalyzeDto'.
+src/content-marketing/content-marketing.service.ts(35,3): error TS2305: Module '"./dto/content-marketing.dto"' has no exported member 'OpinionGenerateDto'.
+src/content-marketing/content-marketing.service.ts(36,3): error TS2305: Module '"./dto/content-marketing.dto"' has no exported member 'OpinionRewriteDto'.
+src/content-marketing/content-marketing.service.ts(37,3): error TS2305: Module '"./dto/content-marketing.dto"' has no exported member 'OpinionScoreNaturalnessDto'.
+src/content-marketing/content-marketing.service.ts(38,3): error TS2305: Module '"./dto/content-marketing.dto"' has no exported member 'OpinionSuggestFieldDto'.
+src/content-marketing/content-marketing.service.ts(40,3): error TS2305: Module '"./dto/content-marketing.dto"' has no exported member 'TeleprompterScriptRewriteDto'.
+src/content-marketing/content-marketing.service.ts(48,3): error TS2724: '"./dto/content-marketing.dto"' has no exported member named 'SuggestPersonalTitlesDto'. Did you mean 'SuggestPersonalIdeasDto'?
+src/content-marketing/content-marketing.service.ts(126,13): error TS2339: Property 'creationMode' does not exist on type 'GenerateContentDto'.
+src/content-marketing/content-marketing.service.ts(136,7): error TS2353: Object literal may only specify known properties, and 'industryId' does not exist in type 'CheckPolicyDto'.
+src/content-marketing/content-marketing.service.ts(136,23): error TS2339: Property 'industryId' does not exist on type 'GenerateContentDto'.
+src/content-marketing/content-marketing.service.ts(137,25): error TS2339: Property 'industryName' does not exist on type 'GenerateContentDto'.
+src/content-marketing/content-marketing.service.ts(138,27): error TS2339: Property 'customIndustry' does not exist on type 'GenerateContentDto'.
+src/content-marketing/content-marketing.service.ts(146,9): error TS2353: Object literal may only specify known properties, and 'industryId' does not exist in type 'ScoreContentDto'.
+src/content-marketing/content-marketing.service.ts(146,25): error TS2339: Property 'industryId' does not exist on type 'GenerateContentDto'.
+src/content-marketing/content-marketing.service.ts(147,27): error TS2339: Property 'industryName' does not exist on type 'GenerateContentDto'.
+src/content-marketing/content-marketing.service.ts(148,29): error TS2339: Property 'customIndustry' does not exist on type 'GenerateContentDto'.
+src/content-marketing/content-marketing.service.ts(205,7): error TS2353: Object literal may only specify known properties, and 'industryId' does not exist in type 'CheckPolicyDto'.
+src/content-marketing/content-marketing.service.ts(205,23): error TS2339: Property 'industryId' does not exist on type 'ScoreContentDto'.
+src/content-marketing/content-marketing.service.ts(206,25): error TS2339: Property 'industryName' does not exist on type 'ScoreContentDto'.
+src/content-marketing/content-marketing.service.ts(207,27): error TS2339: Property 'customIndustry' does not exist on type 'ScoreContentDto'.
+src/content-marketing/content-marketing.service.ts(234,11): error TS2339: Property 'imageOcrText' does not exist on type 'FacebookPolicyCheckDto'.
+src/content-marketing/content-marketing.service.ts(234,39): error TS2339: Property 'transcript' does not exist on type 'FacebookPolicyCheckDto'.
+src/content-marketing/content-marketing.service.ts(234,65): error TS2339: Property 'landingPageText' does not exist on type 'FacebookPolicyCheckDto'.
+src/content-marketing/content-marketing.service.ts(244,13): error TS2339: Property 'imageOcrText' does not exist on type 'FacebookPolicyCheckDto'.
+src/content-marketing/content-marketing.service.ts(247,22): error TS2339: Property 'imageOcrText' does not exist on type 'FacebookPolicyCheckDto'.
+src/content-marketing/content-marketing.service.ts(252,45): error TS2339: Property 'imageOcrText' does not exist on type 'FacebookPolicyCheckDto'.
+src/content-marketing/content-marketing.service.ts(258,13): error TS2339: Property 'transcript' does not exist on type 'FacebookPolicyCheckDto'.
+src/content-marketing/content-marketing.service.ts(262,25): error TS2339: Property 'transcript' does not exist on type 'FacebookPolicyCheckDto'.
+src/content-marketing/content-marketing.service.ts(266,45): error TS2339: Property 'transcript' does not exist on type 'FacebookPolicyCheckDto'.
+src/content-marketing/content-marketing.service.ts(276,26): error TS2339: Property 'landingPageText' does not exist on type 'FacebookPolicyCheckDto'.
+src/content-marketing/content-marketing.service.ts(279,22): error TS2339: Property 'landingUrl' does not exist on type 'FacebookPolicyCheckDto'.
+src/content-marketing/content-marketing.service.ts(281,30): error TS2339: Property 'landingPageText' does not exist on type 'FacebookPolicyCheckDto'.
+src/content-marketing/content-marketing.service.ts(284,52): error TS2339: Property 'landingPageText' does not exist on type 'FacebookPolicyCheckDto'.
+src/content-marketing/content-marketing.service.ts(292,29): error TS2339: Property 'primaryText' does not exist on type 'FacebookPolicyRewriteDto'.
+src/content-marketing/content-marketing.service.ts(292,56): error TS2339: Property 'contentToRewrite' does not exist on type 'FacebookPolicyRewriteDto'.
+src/content-marketing/content-marketing.service.ts(296,41): error TS2339: Property 'primaryText' does not exist on type 'FacebookPolicyRewriteDto'.
+src/content-marketing/content-marketing.service.ts(309,16): error TS2339: Property 'url' does not exist on type 'FacebookPolicyImportUrlDto'.
+src/content-marketing/content-marketing.service.ts(310,20): error TS2339: Property 'urlKind' does not exist on type 'FacebookPolicyImportUrlDto'.
+src/content-marketing/content-marketing.service.ts(311,22): error TS2339: Property 'fanpageId' does not exist on type 'FacebookPolicyImportUrlDto'.
+src/content-marketing/content-marketing.service.ts(325,11): error TS2339: Property 'mediaType' does not exist on type 'FacebookPolicyAnalyzeMediaDto'.
+src/content-marketing/content-marketing.service.ts(330,17): error TS2339: Property 'transcript' does not exist on type 'FacebookPolicyAnalyzeMediaDto'.
+src/content-marketing/content-marketing.service.ts(334,53): error TS2339: Property 'transcript' does not exist on type 'FacebookPolicyAnalyzeMediaDto'.
+src/content-marketing/content-marketing.service.ts(336,25): error TS2339: Property 'transcript' does not exist on type 'FacebookPolicyAnalyzeMediaDto'.
+src/content-marketing/content-marketing.service.ts(337,22): error TS2339: Property 'caption' does not exist on type 'FacebookPolicyAnalyzeMediaDto'.
+src/content-marketing/content-marketing.service.ts(341,39): error TS2339: Property 'transcript' does not exist on type 'FacebookPolicyAnalyzeMediaDto'.
+src/content-marketing/content-marketing.service.ts(346,22): error TS2339: Property 'caption' does not exist on type 'FacebookPolicyAnalyzeMediaDto'.
+src/content-marketing/content-marketing.service.ts(362,22): error TS2339: Property 'caption' does not exist on type 'FacebookPolicyAnalyzeMediaDto'.
+src/content-marketing/content-marketing.service.ts(363,31): error TS2339: Property 'transcript' does not exist on type 'FacebookPolicyAnalyzeMediaDto'.
+src/content-marketing/content-marketing.service.ts(374,20): error TS2339: Property 'caption' does not exist on type 'FacebookPolicyAnalyzeMediaDto'.
+src/content-marketing/industry-adaptive.smoke.ts(117,5): error TS2353: Object literal may only specify known properties, and 'industryName' does not exist in type 'CheckPolicyDto'.
+src/content-marketing/opinion-analyze.logic.ts(12,15): error TS2305: Module '"./dto/content-marketing.dto"' has no exported member 'OpinionAnalyzeDto'.
+src/content-marketing/opinion-analyze.logic.ts(176,39): error TS2339: Property 'message' does not exist on type 'CrawlValidationError'.
+src/content-marketing/opinion-analyze.logic.ts(311,39): error TS2339: Property 'message' does not exist on type 'CrawlValidationError'.
+src/content-marketing/opinion-generate.logic.ts(8,3): error TS2305: Module '"./dto/content-marketing.dto"' has no exported member 'OpinionGenerateDto'.
+src/content-marketing/opinion-generate.logic.ts(9,3): error TS2305: Module '"./dto/content-marketing.dto"' has no exported member 'OpinionRewriteDto'.
+src/content-marketing/opinion-generate.logic.ts(10,3): error TS2305: Module '"./dto/content-marketing.dto"' has no exported member 'OpinionRewriteMode'.
+src/content-marketing/opinion-generate.logic.ts(153,49): error TS7006: Parameter 'x' implicitly has an 'any' type.
+src/content-marketing/opinion-generate.logic.ts(154,52): error TS7006: Parameter 'x' implicitly has an 'any' type.
+src/content-marketing/opinion-generate.logic.ts(170,45): error TS7006: Parameter 's' implicitly has an 'any' type.
+src/content-marketing/opinion-generate.logic.ts(171,52): error TS7006: Parameter 's' implicitly has an 'any' type.
+src/content-marketing/opinion-generate.logic.ts(172,52): error TS7006: Parameter 's' implicitly has an 'any' type.
+src/content-marketing/opinion-generate.logic.ts(207,53): error TS7006: Parameter 'f' implicitly has an 'any' type.
+src/content-marketing/opinion-generate.logic.ts(208,57): error TS7006: Parameter 'f' implicitly has an 'any' type.
+src/content-marketing/opinion-generate.logic.ts(394,37): error TS7006: Parameter 's' implicitly has an 'any' type.
+src/content-marketing/opinion-generate.logic.ts(402,37): error TS7006: Parameter 's' implicitly has an 'any' type.
+src/content-marketing/opinion-score-naturalness.logic.ts(6,15): error TS2305: Module '"./dto/content-marketing.dto"' has no exported member 'OpinionScoreNaturalnessDto'.
+src/content-marketing/opinion-story.logic.ts(7,15): error TS2305: Module '"./dto/content-marketing.dto"' has no exported member 'AnalyzeOpinionStoryDto'.
+src/content-marketing/opinion-story.logic.ts(147,9): error TS2339: Property 'opinionStance' does not exist on type 'GenerateContentDto'.
+src/content-marketing/opinion-story.logic.ts(148,13): error TS2339: Property 'opinionStanceCustom' does not exist on type 'GenerateContentDto'.
+src/content-marketing/opinion-story.logic.ts(149,26): error TS2339: Property 'opinionStance' does not exist on type 'GenerateContentDto'.
+src/content-marketing/opinion-story.logic.ts(150,33): error TS2339: Property 'opinionAngle' does not exist on type 'GenerateContentDto'.
+src/content-marketing/opinion-story.logic.ts(151,37): error TS2339: Property 'opinionPronoun' does not exist on type 'GenerateContentDto'.
+src/content-marketing/opinion-story.logic.ts(152,23): error TS2339: Property 'opinionSummary' does not exist on type 'GenerateContentDto'.
+src/content-marketing/opinion-story.logic.ts(153,22): error TS2339: Property 'opinionThesis' does not exist on type 'GenerateContentDto'.
+src/content-marketing/opinion-story.logic.ts(154,22): error TS2339: Property 'opinionDebateIssue' does not exist on type 'GenerateContentDto'.
+src/content-marketing/opinion-story.logic.ts(201,9): error TS2339: Property 'opinionStance' does not exist on type 'GenerateContentDto'.
+src/content-marketing/opinion-story.logic.ts(202,28): error TS2339: Property 'opinionStanceCustom' does not exist on type 'GenerateContentDto'.
+src/content-marketing/opinion-story.logic.ts(203,26): error TS2339: Property 'opinionStance' does not exist on type 'GenerateContentDto'.
+src/content-marketing/opinion-story.logic.ts(204,38): error TS2339: Property 'opinionAngle' does not exist on type 'GenerateContentDto'.
+src/content-marketing/opinion-story.logic.ts(205,42): error TS2339: Property 'opinionPronoun' does not exist on type 'GenerateContentDto'.
+src/content-marketing/opinion-story.logic.ts(206,46): error TS2339: Property 'opinionIntensity' does not exist on type 'GenerateContentDto'.
+src/content-marketing/opinion-story.logic.ts(207,38): error TS2339: Property 'opinionLength' does not exist on type 'GenerateContentDto'.
+src/content-marketing/opinion-story.logic.ts(221,33): error TS2339: Property 'opinionThesis' does not exist on type 'GenerateContentDto'.
+src/content-marketing/opinion-story.logic.ts(224,7): error TS2339: Property 'opinionSummary' does not exist on type 'GenerateContentDto'.
+src/content-marketing/opinion-story.logic.ts(227,7): error TS2339: Property 'opinionDebateIssue' does not exist on type 'GenerateContentDto'.
+src/content-marketing/opinion-story.logic.ts(231,8): error TS2339: Property 'opinionSourceUrl' does not exist on type 'GenerateContentDto'.
+src/content-marketing/opinion-story.logic.ts(231,30): error TS2339: Property 'opinionSourceText' does not exist on type 'GenerateContentDto'.
+src/content-marketing/opinion-story.logic.ts(241,24): error TS2339: Property 'opinionIntensity' does not exist on type 'GenerateContentDto'.
+src/content-marketing/opinion-suggest-field.logic.ts(5,15): error TS2305: Module '"./dto/content-marketing.dto"' has no exported member 'OpinionSuggestFieldDto'.
+src/content-marketing/opinion-voice-profile.service.ts(8,15): error TS2305: Module '"./dto/content-marketing.dto"' has no exported member 'UpsertOpinionVoiceProfileDto'.
+src/content-marketing/opinion-voice-profile.service.ts(69,36): error TS2339: Property 'SUPER_ADMIN' does not exist on type '{ readonly OWNER: "OWNER"; readonly MANAGER: "MANAGER"; readonly MARKETING: "MARKETING"; readonly SALE: "SALE"; readonly TECHNICIAN: "TECHNICIAN"; readonly HR: "HR"; }'.
+src/content-marketing/teleprompter-script.logic.ts(6,15): error TS2305: Module '"./dto/content-marketing.dto"' has no exported member 'TeleprompterScriptRewriteMode'.
+src/content-marketing/teleprompter-script.logic.ts(211,16): error TS2322: Type 'string | undefined' is not assignable to type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/content-marketing/teleprompter-script.logic.ts(247,7): error TS2322: Type '(string | undefined)[]' is not assignable to type 'string[]'.
+  Type 'string | undefined' is not assignable to type 'string'.
+    Type 'undefined' is not assignable to type 'string'.
+src/content-marketing/teleprompter-source.service.ts(7,15): error TS2305: Module '"./dto/content-marketing.dto"' has no exported member 'UpsertTeleprompterSourceDto'.
+src/finance/finance.service.ts(30,3): error TS2305: Module '"../common/utils/status-transitions.util"' has no exported member 'assertPaymentRefundable'.
+src/finance/finance.service.ts(31,3): error TS2305: Module '"../common/utils/status-transitions.util"' has no exported member 'orderStatusFromPaid'.
+src/finance/finance.service.ts(81,13): error TS2339: Property 'leadId' does not exist on type 'CreateOrderDto'.
+src/finance/finance.service.ts(82,56): error TS2339: Property 'leadId' does not exist on type 'CreateOrderDto'.
+src/finance/finance.service.ts(98,21): error TS2339: Property 'leadId' does not exist on type 'CreateOrderDto'.
+src/finance/finance.service.ts(123,31): error TS2339: Property 'leadId' does not exist on type 'CreateOrderDto'.
+src/finance/finance.service.ts(178,25): error TS2339: Property 'idempotencyKey' does not exist on type 'CreatePaymentDto'.
+src/hrm/hrm-attendance.controller.ts(22,3): error TS2305: Module '"./dto/attendance.dto"' has no exported member 'AttendanceExportQueryDto'.
+src/hrm/hrm-attendance.controller.ts(24,3): error TS2305: Module '"./dto/attendance.dto"' has no exported member 'CorrectAttendanceDayDto'.
+src/hrm/hrm-attendance.service.ts(28,3): error TS2305: Module '"./dto/attendance.dto"' has no exported member 'AttendanceExportQueryDto'.
+src/hrm/hrm-attendance.service.ts(30,3): error TS2305: Module '"./dto/attendance.dto"' has no exported member 'CorrectAttendanceDayDto'.
+src/hrm/hrm-attendance.service.ts(104,17): error TS2339: Property 'status' does not exist on type 'AttendanceDaysQueryDto'.
+src/hrm/hrm-attendance.service.ts(104,43): error TS2339: Property 'status' does not exist on type 'AttendanceDaysQueryDto'.
+src/hrm/hrm-attendance.service.ts(105,17): error TS2339: Property 'departmentId' does not exist on type 'AttendanceDaysQueryDto'.
+src/hrm/hrm-attendance.service.ts(105,67): error TS2339: Property 'departmentId' does not exist on type 'AttendanceDaysQueryDto'.
+src/hrm/hrm-leave.controller.ts(26,3): error TS2305: Module '"./dto/leave.dto"' has no exported member 'LeaveBalanceQueryDto'.
+src/hrm/hrm-leave.controller.ts(27,3): error TS2305: Module '"./dto/leave.dto"' has no exported member 'LeaveCancelDto'.
+src/hrm/hrm-leave.controller.ts(29,3): error TS2305: Module '"./dto/leave.dto"' has no exported member 'LeaveRejectDto'.
+src/hrm/hrm-leave.service.ts(25,3): error TS2305: Module '"./dto/leave.dto"' has no exported member 'LeaveBalanceQueryDto'.
+src/hrm/hrm-leave.service.ts(26,3): error TS2305: Module '"./dto/leave.dto"' has no exported member 'LeaveCancelDto'.
+src/hrm/hrm-leave.service.ts(28,3): error TS2305: Module '"./dto/leave.dto"' has no exported member 'LeaveRejectDto'.
+src/hrm/hrm-leave.service.ts(222,25): error TS2339: Property 'dayPart' does not exist on type 'CreateLeaveRequestDto'.
+src/hrm/hrm-leave.service.ts(616,22): error TS2339: Property 'startAt' does not exist on type 'CreateOvertimeRequestDto'.
+src/hrm/hrm-leave.service.ts(617,20): error TS2339: Property 'endAt' does not exist on type 'CreateOvertimeRequestDto'.
+src/hrm/hrm-leave.service.ts(618,27): error TS2339: Property 'breakMinutes' does not exist on type 'CreateOvertimeRequestDto'.
+src/hrm/hrm-leave.service.ts(631,34): error TS2339: Property 'startAt' does not exist on type 'CreateOvertimeRequestDto'.
+src/hrm/hrm-leave.service.ts(632,32): error TS2339: Property 'endAt' does not exist on type 'CreateOvertimeRequestDto'.
+src/hrm/hrm-leave.service.ts(659,27): error TS2339: Property 'breakMinutes' does not exist on type 'CreateOvertimeRequestDto'.
+src/hrm/hrm-leave.service.ts(675,24): error TS2339: Property 'startAt' does not exist on type 'CreateOvertimeRequestDto'.
+src/hrm/hrm-leave.service.ts(676,22): error TS2339: Property 'endAt' does not exist on type 'CreateOvertimeRequestDto'.
+src/hrm/hrm-leave.service.ts(677,29): error TS2339: Property 'breakMinutes' does not exist on type 'CreateOvertimeRequestDto'.
+src/hrm/hrm-shift-assignments.controller.ts(21,3): error TS2724: '"./dto/shift.dto"' has no exported member named 'BulkShiftAssignmentDto'. Did you mean 'UpdateShiftAssignmentDto'?
+src/hrm/hrm-shift-assignments.controller.ts(24,3): error TS2305: Module '"./dto/shift.dto"' has no exported member 'ShiftCalendarQueryDto'.
+src/hrm/hrm-shift-assignments.service.ts(19,3): error TS2724: '"./dto/shift.dto"' has no exported member named 'BulkShiftAssignmentDto'. Did you mean 'UpdateShiftAssignmentDto'?
+src/hrm/hrm-shift-assignments.service.ts(22,3): error TS2305: Module '"./dto/shift.dto"' has no exported member 'ShiftCalendarQueryDto'.
+src/hrm/hrm-shift-assignments.service.ts(126,17): error TS2339: Property 'policyId' does not exist on type 'ShiftAssignmentQueryDto'.
+src/hrm/hrm-shift-assignments.service.ts(126,47): error TS2339: Property 'policyId' does not exist on type 'ShiftAssignmentQueryDto'.
+src/hrm/hrm-shift-assignments.service.ts(128,17): error TS2339: Property 'departmentId' does not exist on type 'ShiftAssignmentQueryDto'.
+src/hrm/hrm-shift-assignments.service.ts(129,41): error TS2339: Property 'departmentId' does not exist on type 'ShiftAssignmentQueryDto'.
+src/hrm/hrm-shift-assignments.service.ts(339,64): error TS2345: Argument of type 'string | undefined' is not assignable to parameter of type 'string'.
+  Type 'undefined' is not assignable to type 'string'.
+src/hrm/hrm-shift-assignments.service.ts(348,29): error TS2339: Property 'forceOverwrite' does not exist on type 'CreateShiftAssignmentDto'.
+src/hrm/hrm-shift-policies.service.ts(85,53): error TS2345: Argument of type 'CreateWorkShiftPolicyDto' is not assignable to parameter of type '{ startTime: string; endTime: string; crossesMidnight?: boolean | undefined; }'.
+  Type 'CreateWorkShiftPolicyDto' is missing the following properties from type '{ startTime: string; endTime: string; crossesMidnight?: boolean | undefined; }': startTime, endTime
+src/hrm/hrm-shift-policies.service.ts(91,22): error TS2339: Property 'startTime' does not exist on type 'CreateWorkShiftPolicyDto'.
+src/hrm/hrm-shift-policies.service.ts(92,20): error TS2339: Property 'endTime' does not exist on type 'CreateWorkShiftPolicyDto'.
+src/hrm/hrm-shift-policies.service.ts(93,25): error TS2339: Property 'breakMinutes' does not exist on type 'CreateWorkShiftPolicyDto'.
+src/hrm/hrm-shift-policies.service.ts(94,29): error TS2339: Property 'lateGraceMinutes' does not exist on type 'CreateWorkShiftPolicyDto'.
+src/hrm/hrm-shift-policies.service.ts(95,35): error TS2339: Property 'earlyLeaveGraceMinutes' does not exist on type 'CreateWorkShiftPolicyDto'.
+src/hrm/hrm-shift-policies.service.ts(96,28): error TS2339: Property 'otBeforeMinutes' does not exist on type 'CreateWorkShiftPolicyDto'.
+src/hrm/hrm-shift-policies.service.ts(97,27): error TS2339: Property 'otAfterMinutes' does not exist on type 'CreateWorkShiftPolicyDto'.
+src/hrm/hrm-shift-policies.service.ts(108,17): error TS18048: 'dto.code' is possibly 'undefined'.
+src/hrm/hrm-shift-policies.service.ts(170,27): error TS2339: Property 'startTime' does not exist on type 'UpdateWorkShiftPolicyDto'.
+src/hrm/hrm-shift-policies.service.ts(171,25): error TS2339: Property 'endTime' does not exist on type 'UpdateWorkShiftPolicyDto'.
+src/hrm/hrm-shift-policies.service.ts(175,28): error TS2339: Property 'crossesMidnight' does not exist on type 'UpdateWorkShiftPolicyDto'.
+src/hrm/hrm-shift-policies.service.ts(181,25): error TS2339: Property 'breakMinutes' does not exist on type 'UpdateWorkShiftPolicyDto'.
+src/hrm/hrm-shift-policies.service.ts(182,29): error TS2339: Property 'lateGraceMinutes' does not exist on type 'UpdateWorkShiftPolicyDto'.
+src/hrm/hrm-shift-policies.service.ts(184,13): error TS2339: Property 'earlyLeaveGraceMinutes' does not exist on type 'UpdateWorkShiftPolicyDto'.
+src/hrm/hrm-shift-policies.service.ts(185,28): error TS2339: Property 'otBeforeMinutes' does not exist on type 'UpdateWorkShiftPolicyDto'.
+src/hrm/hrm-shift-policies.service.ts(186,27): error TS2339: Property 'otAfterMinutes' does not exist on type 'UpdateWorkShiftPolicyDto'.
+src/hrm/hrm-shift-policies.service.ts(219,19): error TS2339: Property 'branchId' does not exist on type 'UpdateWorkShiftPolicyDto'.
+src/hrm/hrm-shift-policies.service.ts(219,61): error TS2339: Property 'branchId' does not exist on type 'UpdateWorkShiftPolicyDto'.
+src/integrations/integrations.service.ts(14,54): error TS2305: Module '"../marketing/connectors"' has no exported member 'isAdsIntegrationProvider'.
+src/leads/leads.controller.ts(27,3): error TS2724: '"./dto/lead.dto"' has no exported member named 'LeadKanbanQueryDto'. Did you mean 'LeadQueryDto'?
+src/leads/leads.controller.ts(28,3): error TS2305: Module '"./dto/lead.dto"' has no exported member 'LeadKanbanColumnQueryDto'.
+src/leads/leads.controller.ts(29,3): error TS2305: Module '"./dto/lead.dto"' has no exported member 'BulkLeadActionDto'.
+src/leads/leads.controller.ts(30,3): error TS2305: Module '"./dto/lead.dto"' has no exported member 'CreateLeadSavedViewDto'.
+src/leads/leads.controller.ts(31,3): error TS2305: Module '"./dto/lead.dto"' has no exported member 'UpdateLeadSavedViewDto'.
+src/leads/leads.service.ts(17,3): error TS2724: '"./dto/lead.dto"' has no exported member named 'LeadKanbanQueryDto'. Did you mean 'LeadQueryDto'?
+src/leads/leads.service.ts(18,3): error TS2305: Module '"./dto/lead.dto"' has no exported member 'LeadKanbanColumnQueryDto'.
+src/leads/leads.service.ts(19,3): error TS2305: Module '"./dto/lead.dto"' has no exported member 'BulkLeadActionDto'.
+src/leads/leads.service.ts(20,3): error TS2305: Module '"./dto/lead.dto"' has no exported member 'CreateLeadSavedViewDto'.
+src/leads/leads.service.ts(21,3): error TS2305: Module '"./dto/lead.dto"' has no exported member 'UpdateLeadSavedViewDto'.
+src/leads/leads.service.ts(27,10): error TS2724: '"../common/utils/status-transitions.util"' has no exported member named 'assertLeadTransition'. Did you mean 'assertStatusTransition'?
+src/leads/leads.service.ts(392,13): error TS2339: Property 'attribution' does not exist on type 'CreateLeadDto'.
+src/leads/leads.service.ts(392,35): error TS2339: Property 'autoAssign' does not exist on type 'CreateLeadDto'.
+src/leads/leads.service.ts(392,47): error TS2339: Property 'tags' does not exist on type 'CreateLeadDto'.
+src/leads/leads.service.ts(392,53): error TS2339: Property 'reminderAt' does not exist on type 'CreateLeadDto'.
+src/leads/leads.service.ts(392,65): error TS2339: Property 'score' does not exist on type 'CreateLeadDto'.
+src/messaging-campaign/messaging-campaign.service.ts(50,19): error TS2339: Property 'name' does not exist on type 'CreateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(51,22): error TS2339: Property 'channel' does not exist on type 'CreateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(52,27): error TS2339: Property 'campaignType' does not exist on type 'CreateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(53,34): error TS2339: Property 'channelConnectionId' does not exist on type 'CreateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(54,28): error TS2339: Property 'integrationId' does not exist on type 'CreateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(55,32): error TS2339: Property 'messageTemplateId' does not exist on type 'CreateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(56,29): error TS2339: Property 'segmentConfig' does not exist on type 'CreateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(57,25): error TS2339: Property 'variables' does not exist on type 'CreateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(58,23): error TS2339: Property 'timezone' does not exist on type 'CreateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(98,17): error TS2339: Property 'name' does not exist on type 'UpdateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(98,51): error TS2339: Property 'name' does not exist on type 'UpdateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(99,17): error TS2339: Property 'channel' does not exist on type 'UpdateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(99,57): error TS2339: Property 'channel' does not exist on type 'UpdateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(100,17): error TS2339: Property 'campaignType' does not exist on type 'UpdateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(100,67): error TS2339: Property 'campaignType' does not exist on type 'UpdateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(101,17): error TS2339: Property 'channelConnectionId' does not exist on type 'UpdateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(102,36): error TS2339: Property 'channelConnectionId' does not exist on type 'UpdateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(104,17): error TS2339: Property 'integrationId' does not exist on type 'UpdateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(104,69): error TS2339: Property 'integrationId' does not exist on type 'UpdateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(105,17): error TS2339: Property 'messageTemplateId' does not exist on type 'UpdateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(105,77): error TS2339: Property 'messageTemplateId' does not exist on type 'UpdateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(106,17): error TS2339: Property 'segmentConfig' does not exist on type 'UpdateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(107,30): error TS2339: Property 'segmentConfig' does not exist on type 'UpdateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(109,17): error TS2339: Property 'variables' does not exist on type 'UpdateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(109,61): error TS2339: Property 'variables' does not exist on type 'UpdateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(110,17): error TS2339: Property 'timezone' does not exist on type 'UpdateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(110,59): error TS2339: Property 'timezone' does not exist on type 'UpdateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(128,64): error TS2559: Type 'MessagingCampaignQueryDto' has no properties in common with type 'PaginationDto'.
+src/messaging-campaign/messaging-campaign.service.ts(131,17): error TS2339: Property 'status' does not exist on type 'MessagingCampaignQueryDto'.
+src/messaging-campaign/messaging-campaign.service.ts(131,43): error TS2339: Property 'status' does not exist on type 'MessagingCampaignQueryDto'.
+src/messaging-campaign/messaging-campaign.service.ts(132,17): error TS2339: Property 'channel' does not exist on type 'MessagingCampaignQueryDto'.
+src/messaging-campaign/messaging-campaign.service.ts(132,45): error TS2339: Property 'channel' does not exist on type 'MessagingCampaignQueryDto'.
+src/messaging-campaign/messaging-campaign.service.ts(133,17): error TS2339: Property 'search' does not exist on type 'MessagingCampaignQueryDto'.
+src/messaging-campaign/messaging-campaign.service.ts(134,33): error TS2339: Property 'search' does not exist on type 'MessagingCampaignQueryDto'.
+src/messaging-campaign/messaging-campaign.service.ts(191,23): error TS2339: Property 'limit' does not exist on type 'PreviewEligibilityDto'.
+src/messaging-campaign/messaging-campaign.service.ts(199,13): error TS2339: Property 'identityIds' does not exist on type 'PreviewEligibilityDto'.
+src/messaging-campaign/messaging-campaign.service.ts(200,35): error TS2339: Property 'identityIds' does not exist on type 'PreviewEligibilityDto'.
+src/messaging-campaign/messaging-campaign.service.ts(251,13): error TS2345: Argument of type '{ customerId: string | undefined; leadId: string | undefined; }' is not assignable to parameter of type 'Pick<TestSendMessagingCampaignDto, "customerId" | "leadId" | "context">'.
+  Property 'context' is missing in type '{ customerId: string | undefined; leadId: string | undefined; }' but required in type 'Pick<TestSendMessagingCampaignDto, "customerId" | "leadId" | "context">'.
+src/messaging-campaign/messaging-campaign.service.ts(272,13): error TS2345: Argument of type '{ customerId: string | undefined; leadId: string | undefined; }' is not assignable to parameter of type 'Pick<TestSendMessagingCampaignDto, "customerId" | "leadId" | "context">'.
+  Property 'context' is missing in type '{ customerId: string | undefined; leadId: string | undefined; }' but required in type 'Pick<TestSendMessagingCampaignDto, "customerId" | "leadId" | "context">'.
+src/messaging-campaign/messaging-campaign.service.ts(327,23): error TS2339: Property 'customerId' does not exist on type 'TestSendMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(328,19): error TS2339: Property 'leadId' does not exist on type 'TestSendMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(344,7): error TS2345: Argument of type 'TestSendMessagingCampaignDto' is not assignable to parameter of type 'Pick<TestSendMessagingCampaignDto, "customerId" | "leadId" | "context">'.
+  Type 'TestSendMessagingCampaignDto' is missing the following properties from type 'Pick<TestSendMessagingCampaignDto, "customerId" | "leadId" | "context">': customerId, leadId, context
+src/messaging-campaign/messaging-campaign.service.ts(359,25): error TS2339: Property 'customerId' does not exist on type 'TestSendMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(360,21): error TS2339: Property 'leadId' does not exist on type 'TestSendMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(391,38): error TS2339: Property 'scheduledAt' does not exist on type 'ScheduleMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(401,17): error TS2339: Property 'timezone' does not exist on type 'ScheduleMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(401,45): error TS2339: Property 'timezone' does not exist on type 'ScheduleMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(940,11): error TS2339: Property 'segmentConfig' does not exist on type 'UpdateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(941,11): error TS2339: Property 'variables' does not exist on type 'UpdateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(942,11): error TS2339: Property 'messageTemplateId' does not exist on type 'UpdateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(943,11): error TS2339: Property 'channelConnectionId' does not exist on type 'UpdateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(944,11): error TS2339: Property 'integrationId' does not exist on type 'UpdateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(945,11): error TS2339: Property 'channel' does not exist on type 'UpdateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(946,11): error TS2339: Property 'campaignType' does not exist on type 'UpdateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(954,13): error TS2339: Property 'channelConnectionId' does not exist on type 'CreateMessagingCampaignDto | UpdateMessagingCampaignDto'.
+  Property 'channelConnectionId' does not exist on type 'CreateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(956,26): error TS2339: Property 'channelConnectionId' does not exist on type 'CreateMessagingCampaignDto | UpdateMessagingCampaignDto'.
+  Property 'channelConnectionId' does not exist on type 'CreateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(959,15): error TS2339: Property 'channel' does not exist on type 'CreateMessagingCampaignDto | UpdateMessagingCampaignDto'.
+  Property 'channel' does not exist on type 'CreateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(959,47): error TS2339: Property 'channel' does not exist on type 'CreateMessagingCampaignDto | UpdateMessagingCampaignDto'.
+  Property 'channel' does not exist on type 'CreateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(964,13): error TS2339: Property 'integrationId' does not exist on type 'CreateMessagingCampaignDto | UpdateMessagingCampaignDto'.
+  Property 'integrationId' does not exist on type 'CreateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(966,26): error TS2339: Property 'integrationId' does not exist on type 'CreateMessagingCampaignDto | UpdateMessagingCampaignDto'.
+  Property 'integrationId' does not exist on type 'CreateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(971,13): error TS2339: Property 'messageTemplateId' does not exist on type 'CreateMessagingCampaignDto | UpdateMessagingCampaignDto'.
+  Property 'messageTemplateId' does not exist on type 'CreateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(973,26): error TS2339: Property 'messageTemplateId' does not exist on type 'CreateMessagingCampaignDto | UpdateMessagingCampaignDto'.
+  Property 'messageTemplateId' does not exist on type 'CreateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(976,15): error TS2339: Property 'channel' does not exist on type 'CreateMessagingCampaignDto | UpdateMessagingCampaignDto'.
+  Property 'channel' does not exist on type 'CreateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(976,51): error TS2339: Property 'channel' does not exist on type 'CreateMessagingCampaignDto | UpdateMessagingCampaignDto'.
+  Property 'channel' does not exist on type 'CreateMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(987,13): error TS2339: Property 'identityId' does not exist on type 'TestSendMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(989,26): error TS2339: Property 'identityId' does not exist on type 'TestSendMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(995,13): error TS2339: Property 'customerId' does not exist on type 'TestSendMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(997,59): error TS2339: Property 'customerId' does not exist on type 'TestSendMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(1003,13): error TS2339: Property 'leadId' does not exist on type 'TestSendMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(1005,55): error TS2339: Property 'leadId' does not exist on type 'TestSendMessagingCampaignDto'.
+src/messaging-campaign/messaging-campaign.service.ts(1016,45): error TS2344: Type '"customerId" | "leadId" | "context"' does not satisfy the constraint '"_"'.
+  Type '"customerId"' is not assignable to type '"_"'.
+src/messaging-identity/messaging-identity.service.ts(43,64): error TS2559: Type 'MessagingIdentityQueryDto' has no properties in common with type 'PaginationDto'.
+src/messaging-identity/messaging-identity.service.ts(45,37): error TS2339: Property 'integrationScopeKey' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(46,15): error TS2339: Property 'connectionId' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(48,28): error TS2339: Property 'connectionId' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(60,17): error TS2339: Property 'channel' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(60,45): error TS2339: Property 'channel' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(61,17): error TS2339: Property 'customerId' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(61,51): error TS2339: Property 'customerId' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(62,17): error TS2339: Property 'leadId' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(62,43): error TS2339: Property 'leadId' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(63,18): error TS2339: Property 'includeMerged' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(65,17): error TS2339: Property 'consentStatus' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(65,57): error TS2339: Property 'consentStatus' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(66,17): error TS2339: Property 'followStatus' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(66,55): error TS2339: Property 'followStatus' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(71,15): error TS2339: Property 'search' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(74,44): error TS2339: Property 'search' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(75,48): error TS2339: Property 'search' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(76,47): error TS2339: Property 'search' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(80,15): error TS2339: Property 'inactiveDays' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(82,47): error TS2339: Property 'inactiveDays' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(85,15): error TS2339: Property 'tag' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(88,44): error TS2339: Property 'tag' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(89,40): error TS2339: Property 'tag' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(93,15): error TS2339: Property 'hasAppointment' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(101,15): error TS2339: Property 'hasOrder' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(108,15): error TS2339: Property 'lastInboundFrom' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(108,40): error TS2339: Property 'lastInboundTo' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(110,19): error TS2339: Property 'lastInboundFrom' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(110,60): error TS2339: Property 'lastInboundFrom' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(111,19): error TS2339: Property 'lastInboundTo' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(111,58): error TS2339: Property 'lastInboundTo' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(114,15): error TS2339: Property 'linkedType' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(115,15): error TS2339: Property 'linkedType' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(116,15): error TS2339: Property 'linkedType' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(120,15): error TS2339: Property 'funnelStageId' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(121,43): error TS2339: Property 'funnelStageId' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(123,15): error TS2339: Property 'pipelineStatus' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(124,44): error TS2339: Property 'pipelineStatus' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(174,19): error TS2339: Property 'connectionId' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(174,41): error TS2339: Property 'campaignType' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(174,63): error TS2339: Property 'channel' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(177,28): error TS2339: Property 'channel' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(178,33): error TS2339: Property 'campaignType' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(180,33): error TS2339: Property 'connectionId' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(181,31): error TS2339: Property 'templateId' does not exist on type 'MessagingIdentityQueryDto'.
+src/messaging-identity/messaging-identity.service.ts(209,13): error TS2339: Property 'integrationId' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(210,63): error TS2339: Property 'integrationId' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(212,13): error TS2339: Property 'chatbotConversationId' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(214,26): error TS2339: Property 'chatbotConversationId' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(220,26): error TS2339: Property 'integrationId' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(221,20): error TS2339: Property 'channel' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(222,30): error TS2339: Property 'channelAccountRef' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(225,57): error TS2339: Property 'phone' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(227,27): error TS2339: Property 'metadata' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(233,29): error TS2339: Property 'externalUserId' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(238,11): error TS2339: Property 'phoneVerified' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(247,17): error TS2339: Property 'externalConversationId' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(248,28): error TS2339: Property 'displayName' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(249,26): error TS2339: Property 'avatarUrl' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(250,25): error TS2339: Property 'phone' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(253,29): error TS2339: Property 'followStatus' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(254,30): error TS2339: Property 'consentStatus' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(255,26): error TS2339: Property 'isBlocked' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(256,25): error TS2339: Property 'optedOut' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(258,17): error TS2339: Property 'chatbotConversationId' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(259,25): error TS2339: Property 'metadata' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(260,67): error TS2339: Property 'metadata' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(274,24): error TS2339: Property 'channel' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(275,31): error TS2339: Property 'externalUserId' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(286,22): error TS2339: Property 'channel' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(287,28): error TS2339: Property 'integrationId' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(289,29): error TS2339: Property 'externalUserId' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(290,37): error TS2339: Property 'externalConversationId' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(291,26): error TS2339: Property 'displayName' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(292,24): error TS2339: Property 'avatarUrl' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(293,23): error TS2339: Property 'phone' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(296,27): error TS2339: Property 'followStatus' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(297,28): error TS2339: Property 'consentStatus' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(298,24): error TS2339: Property 'isBlocked' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(299,23): error TS2339: Property 'optedOut' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(300,36): error TS2339: Property 'chatbotConversationId' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(301,24): error TS2339: Property 'metadata' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(314,22): error TS2339: Property 'channel' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(315,29): error TS2339: Property 'externalUserId' does not exist on type 'UpsertMessagingIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(330,14): error TS2339: Property 'customerId' does not exist on type 'LinkIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(330,33): error TS2339: Property 'leadId' does not exist on type 'LinkIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(338,13): error TS2339: Property 'customerId' does not exist on type 'LinkIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(339,60): error TS2339: Property 'customerId' does not exist on type 'LinkIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(341,13): error TS2339: Property 'leadId' does not exist on type 'LinkIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(342,56): error TS2339: Property 'leadId' does not exist on type 'LinkIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(348,25): error TS2339: Property 'customerId' does not exist on type 'LinkIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(349,21): error TS2339: Property 'leadId' does not exist on type 'LinkIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(351,15): error TS2339: Property 'customerId' does not exist on type 'LinkIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(351,33): error TS2339: Property 'leadId' does not exist on type 'LinkIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(353,19): error TS2339: Property 'customerId' does not exist on type 'LinkIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(365,35): error TS2339: Property 'customerId' does not exist on type 'LinkIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(365,59): error TS2339: Property 'leadId' does not exist on type 'LinkIdentityDto'.
+src/messaging-identity/messaging-identity.service.ts(490,13): error TS2339: Property 'secondaryIdentityIds' does not exist on type 'MergeIdentitiesDto'.
+src/messaging-identity/messaging-identity.service.ts(490,47): error TS2339: Property 'primaryIdentityId' does not exist on type 'MergeIdentitiesDto'.
+src/messaging-identity/messaging-identity.service.ts(495,40): error TS2339: Property 'primaryIdentityId' does not exist on type 'MergeIdentitiesDto'.
+src/messaging-identity/messaging-identity.service.ts(496,14): error TS2339: Property 'secondaryIdentityIds' does not exist on type 'MergeIdentitiesDto'.
+src/messaging-identity/messaging-identity.service.ts(496,40): error TS7006: Parameter 'id' implicitly has an 'any' type.
+src/messaging-identity/messaging-identity.service.ts(503,11): error TS18046: 's' is of type 'unknown'.
+src/messaging-identity/messaging-identity.service.ts(504,51): error TS18046: 's' is of type 'unknown'.
+src/messaging-identity/messaging-identity.service.ts(506,11): error TS18046: 's' is of type 'unknown'.
+src/messaging-identity/messaging-identity.service.ts(511,68): error TS2698: Spread types may only be created from object types.
+src/messaging-identity/messaging-identity.service.ts(516,24): error TS18046: 's' is of type 'unknown'.
+src/messaging-identity/messaging-identity.service.ts(523,45): error TS18046: 's' is of type 'unknown'.
+src/messaging-identity/messaging-identity.service.ts(523,60): error TS2339: Property 'customerId' does not exist on type '{}'.
+src/messaging-identity/messaging-identity.service.ts(527,45): error TS18046: 's' is of type 'unknown'.
+src/messaging-identity/messaging-identity.service.ts(527,56): error TS2339: Property 'leadId' does not exist on type '{}'.
+src/messaging-identity/messaging-identity.service.ts(531,50): error TS18046: 's' is of type 'unknown'.
+src/messaging-identity/messaging-identity.service.ts(532,23): error TS2339: Property 'phoneNormalized' does not exist on type '{}'.
+src/messaging-identity/messaging-identity.service.ts(533,44): error TS2339: Property 'phoneNormalized' does not exist on type '{}'.
+src/messaging-identity/messaging-identity.service.ts(534,37): error TS2339: Property 'phoneRaw' does not exist on type '{}'.
+src/messaging-identity/messaging-identity.service.ts(535,44): error TS2339: Property 'phoneVerifiedAt' does not exist on type '{}'.
+src/messaging-identity/messaging-identity.service.ts(549,34): error TS2339: Property 'secondaryIdentityIds' does not exist on type 'MergeIdentitiesDto'.
+src/messaging-identity/messaging-identity.service.ts(562,31): error TS2339: Property 'secondaryIdentityIds' does not exist on type 'MergeIdentitiesDto'.
+src/messaging/channel-connections.controller.ts(78,64): error TS2339: Property 'isPaused' does not exist on type 'PauseChannelDto'.
+src/messaging/channel-connections.service.ts(54,28): error TS2339: Property 'pageAccessToken' does not exist on type 'ConnectMessengerChannelDto'.
+src/messaging/channel-connections.service.ts(55,19): error TS2339: Property 'pageId' does not exist on type 'ConnectMessengerChannelDto'.
+src/messaging/channel-connections.service.ts(61,23): error TS2339: Property 'pageId' does not exist on type 'ConnectMessengerChannelDto'.
+src/messaging/channel-connections.service.ts(62,24): error TS2339: Property 'pageName' does not exist on type 'ConnectMessengerChannelDto'.
+src/messaging/channel-connections.service.ts(65,30): error TS2339: Property 'subscribeWebhook' does not exist on type 'ConnectMessengerChannelDto'.
+src/messaging/channel-connections.service.ts(79,28): error TS2339: Property 'pageAccessToken' does not exist on type 'ConnectMessengerChannelDto'.
+src/messaging/channel-connections.service.ts(80,19): error TS2339: Property 'pageId' does not exist on type 'ConnectMessengerChannelDto'.
+src/messaging/channel-connections.service.ts(87,25): error TS2339: Property 'pageId' does not exist on type 'ConnectMessengerChannelDto'.
+src/messaging/channel-connections.service.ts(88,26): error TS2339: Property 'pageName' does not exist on type 'ConnectMessengerChannelDto'.
+src/messaging/channel-connections.service.ts(91,32): error TS2339: Property 'subscribeWebhook' does not exist on type 'ConnectMessengerChannelDto'.
+src/messaging/channel-connections.service.ts(101,29): error TS2339: Property 'pageId' does not exist on type 'ConnectMessengerChannelDto'.
+src/messaging/channel-connections.service.ts(108,27): error TS2339: Property 'pageId' does not exist on type 'ConnectMessengerChannelDto'.
+src/messaging/channel-connections.service.ts(109,28): error TS2339: Property 'pageName' does not exist on type 'ConnectMessengerChannelDto'.
+src/messaging/channel-connections.service.ts(113,34): error TS2339: Property 'subscribeWebhook' does not exist on type 'ConnectMessengerChannelDto'.
+src/messaging/channel-connections.service.ts(117,28): error TS2339: Property 'pageName' does not exist on type 'ConnectMessengerChannelDto'.
+src/messaging/channel-connections.service.ts(120,34): error TS2339: Property 'subscribeWebhook' does not exist on type 'ConnectMessengerChannelDto'.
+src/messaging/channel-connections.service.ts(133,27): error TS2339: Property 'pageId' does not exist on type 'ConnectMessengerChannelDto'.
+src/messaging/channel-connections.service.ts(144,24): error TS2339: Property 'accessToken' does not exist on type 'ConnectZaloChannelDto'.
+src/messaging/channel-connections.service.ts(145,17): error TS2339: Property 'oaId' does not exist on type 'ConnectZaloChannelDto'.
+src/messaging/channel-connections.service.ts(146,26): error TS2339: Property 'webhookSecret' does not exist on type 'ConnectZaloChannelDto'.
+src/messaging/channel-connections.service.ts(152,23): error TS2339: Property 'oaId' does not exist on type 'ConnectZaloChannelDto'.
+src/messaging/channel-connections.service.ts(153,24): error TS2339: Property 'oaName' does not exist on type 'ConnectZaloChannelDto'.
+src/messaging/channel-connections.service.ts(161,18): error TS2339: Property 'appId' does not exist on type 'ConnectZbsChannelDto'.
+src/messaging/channel-connections.service.ts(162,22): error TS2339: Property 'secretKey' does not exist on type 'ConnectZbsChannelDto'.
+src/messaging/channel-connections.service.ts(163,24): error TS2339: Property 'accessToken' does not exist on type 'ConnectZbsChannelDto'.
+src/messaging/channel-connections.service.ts(169,23): error TS2339: Property 'accountRef' does not exist on type 'ConnectZbsChannelDto'.
+src/messaging/channel-connections.service.ts(170,24): error TS2339: Property 'displayName' does not exist on type 'ConnectZbsChannelDto'.
+src/messaging/channel-connections.service.ts(179,37): error TS2339: Property 'get' does not exist on type 'MessagingProviderRegistry'.
+src/messaging/channel-connections.service.ts(220,56): error TS2339: Property 'credentials' does not exist on type 'ReconnectChannelDto'.
+src/messaging/channel-connections.service.ts(221,37): error TS2339: Property 'get' does not exist on type 'MessagingProviderRegistry'.
+src/messaging/channel-connections.service.ts(225,24): error TS2339: Property 'credentials' does not exist on type 'ReconnectChannelDto'.
+src/messaging/channel-connections.service.ts(461,37): error TS2339: Property 'get' does not exist on type 'MessagingProviderRegistry'.
+src/messaging/messaging-eligibility.controller.ts(21,20): error TS2339: Property 'channel' does not exist on type 'CheckMessagingEligibilityDto'.
+src/messaging/messaging-eligibility.controller.ts(22,25): error TS2339: Property 'campaignType' does not exist on type 'CheckMessagingEligibilityDto'.
+src/messaging/messaging-eligibility.controller.ts(23,23): error TS2339: Property 'identityId' does not exist on type 'CheckMessagingEligibilityDto'.
+src/messaging/messaging-eligibility.controller.ts(24,27): error TS2339: Property 'externalUserId' does not exist on type 'CheckMessagingEligibilityDto'.
+src/messaging/messaging-eligibility.controller.ts(25,25): error TS2339: Property 'connectionId' does not exist on type 'CheckMessagingEligibilityDto'.
+src/messaging/messaging-eligibility.controller.ts(26,23): error TS2339: Property 'accountRef' does not exist on type 'CheckMessagingEligibilityDto'.
+src/messaging/messaging-eligibility.controller.ts(27,23): error TS2339: Property 'templateId' does not exist on type 'CheckMessagingEligibilityDto'.
+src/messaging/messaging-eligibility.controller.ts(28,19): error TS2339: Property 'flowId' does not exist on type 'CheckMessagingEligibilityDto'.
+src/messaging/messaging-eligibility.controller.ts(29,19): error TS2339: Property 'leadId' does not exist on type 'CheckMessagingEligibilityDto'.
+src/messaging/messaging-eligibility.controller.ts(30,23): error TS2339: Property 'customerId' does not exist on type 'CheckMessagingEligibilityDto'.
+src/messaging/messaging-eligibility.controller.ts(31,29): error TS2339: Property 'providerModeHint' does not exist on type 'CheckMessagingEligibilityDto'.
+src/messaging/messaging-eligibility.service.ts(271,29): error TS2339: Property 'get' does not exist on type 'MessagingProviderRegistry'.
+src/messaging/messaging-org-policy.service.ts(51,17): error TS2339: Property 'timezone' does not exist on type 'UpdateMessagingOrgPolicyDto'.
+src/messaging/messaging-org-policy.service.ts(51,59): error TS2339: Property 'timezone' does not exist on type 'UpdateMessagingOrgPolicyDto'.
+src/messaging/messaging-org-policy.service.ts(52,17): error TS2339: Property 'quietHoursStart' does not exist on type 'UpdateMessagingOrgPolicyDto'.
+src/messaging/messaging-org-policy.service.ts(52,73): error TS2339: Property 'quietHoursStart' does not exist on type 'UpdateMessagingOrgPolicyDto'.
+src/messaging/messaging-org-policy.service.ts(53,17): error TS2339: Property 'quietHoursEnd' does not exist on type 'UpdateMessagingOrgPolicyDto'.
+src/messaging/messaging-org-policy.service.ts(53,69): error TS2339: Property 'quietHoursEnd' does not exist on type 'UpdateMessagingOrgPolicyDto'.
+src/messaging/messaging-org-policy.service.ts(54,17): error TS2339: Property 'maxMessagesPerRecipientPerDay' does not exist on type 'UpdateMessagingOrgPolicyDto'.
+src/messaging/messaging-org-policy.service.ts(55,46): error TS2339: Property 'maxMessagesPerRecipientPerDay' does not exist on type 'UpdateMessagingOrgPolicyDto'.
+src/messaging/messaging-org-policy.service.ts(57,17): error TS2339: Property 'campaignCooldownMinutes' does not exist on type 'UpdateMessagingOrgPolicyDto'.
+src/messaging/messaging-org-policy.service.ts(58,40): error TS2339: Property 'campaignCooldownMinutes' does not exist on type 'UpdateMessagingOrgPolicyDto'.
+src/messaging/messaging-org-policy.service.ts(60,17): error TS2339: Property 'channelRateLimits' does not exist on type 'UpdateMessagingOrgPolicyDto'.
+src/messaging/messaging-org-policy.service.ts(61,34): error TS2339: Property 'channelRateLimits' does not exist on type 'UpdateMessagingOrgPolicyDto'.
+src/messaging/messaging-org-policy.service.ts(63,17): error TS2339: Property 'excludeRecentlyManualMessaged' does not exist on type 'UpdateMessagingOrgPolicyDto'.
+src/messaging/messaging-org-policy.service.ts(64,46): error TS2339: Property 'excludeRecentlyManualMessaged' does not exist on type 'UpdateMessagingOrgPolicyDto'.
+src/messaging/messaging-org-policy.service.ts(66,17): error TS2339: Property 'manualMessageLookbackMinutes' does not exist on type 'UpdateMessagingOrgPolicyDto'.
+src/messaging/messaging-org-policy.service.ts(67,45): error TS2339: Property 'manualMessageLookbackMinutes' does not exist on type 'UpdateMessagingOrgPolicyDto'.
+src/messaging/messaging-org-policy.service.ts(69,17): error TS2339: Property 'stopOnReply' does not exist on type 'UpdateMessagingOrgPolicyDto'.
+src/messaging/messaging-org-policy.service.ts(69,65): error TS2339: Property 'stopOnReply' does not exist on type 'UpdateMessagingOrgPolicyDto'.
+src/messaging/messaging-org-policy.service.ts(70,17): error TS2339: Property 'stopOnOptOut' does not exist on type 'UpdateMessagingOrgPolicyDto'.
+src/messaging/messaging-org-policy.service.ts(70,67): error TS2339: Property 'stopOnOptOut' does not exist on type 'UpdateMessagingOrgPolicyDto'.
+src/messaging/messaging-org-policy.service.ts(71,17): error TS2339: Property 'createTaskOnReply' does not exist on type 'UpdateMessagingOrgPolicyDto'.
+src/messaging/messaging-org-policy.service.ts(71,77): error TS2339: Property 'createTaskOnReply' does not exist on type 'UpdateMessagingOrgPolicyDto'.
+src/messaging/messaging-org-policy.service.ts(72,17): error TS2339: Property 'assignEmployeeOnReply' does not exist on type 'UpdateMessagingOrgPolicyDto'.
+src/messaging/messaging-org-policy.service.ts(73,38): error TS2339: Property 'assignEmployeeOnReply' does not exist on type 'UpdateMessagingOrgPolicyDto'.
+src/messaging/messaging-org-policy.service.ts(75,17): error TS2339: Property 'handoverToChatbotOnReply' does not exist on type 'UpdateMessagingOrgPolicyDto'.
+src/messaging/messaging-org-policy.service.ts(76,41): error TS2339: Property 'handoverToChatbotOnReply' does not exist on type 'UpdateMessagingOrgPolicyDto'.
+src/messaging/messaging-org-policy.service.ts(78,17): error TS2339: Property 'optOutKeywords' does not exist on type 'UpdateMessagingOrgPolicyDto'.
+src/messaging/messaging-org-policy.service.ts(79,31): error TS2339: Property 'optOutKeywords' does not exist on type 'UpdateMessagingOrgPolicyDto'.
+src/messaging/messaging-webhook-ingress.service.ts(59,37): error TS2339: Property 'get' does not exist on type 'MessagingProviderRegistry'.
+src/messaging/messaging-webhook-ingress.service.ts(92,37): error TS2339: Property 'get' does not exist on type 'MessagingProviderRegistry'.
+src/messaging/messaging-webhook-ingress.service.ts(107,37): error TS2339: Property 'get' does not exist on type 'MessagingProviderRegistry'.
+src/meta-fanpage/meta-fanpage-access.ts(29,34): error TS2339: Property 'SUPER_ADMIN' does not exist on type '{ readonly OWNER: "OWNER"; readonly MANAGER: "MANAGER"; readonly MARKETING: "MARKETING"; readonly SALE: "SALE"; readonly TECHNICIAN: "TECHNICIAN"; readonly HR: "HR"; }'.
+src/meta-fanpage/meta-fanpage-access.ts(43,34): error TS2339: Property 'SUPER_ADMIN' does not exist on type '{ readonly OWNER: "OWNER"; readonly MANAGER: "MANAGER"; readonly MARKETING: "MARKETING"; readonly SALE: "SALE"; readonly TECHNICIAN: "TECHNICIAN"; readonly HR: "HR"; }'.
+src/platform-admin/platform-admin-ops.service.ts(52,24): error TS2339: Property 'page' does not exist on type 'AdminUsageQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(53,28): error TS2339: Property 'pageSize' does not exist on type 'AdminUsageQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(55,15): error TS2339: Property 'organizationId' does not exist on type 'AdminUsageQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(55,48): error TS2339: Property 'organizationId' does not exist on type 'AdminUsageQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(56,15): error TS2339: Property 'q' does not exist on type 'AdminUsageQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(57,23): error TS2339: Property 'q' does not exist on type 'AdminUsageQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(278,24): error TS2339: Property 'page' does not exist on type 'AdminJobsQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(279,28): error TS2339: Property 'pageSize' does not exist on type 'AdminJobsQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(280,24): error TS2339: Property 'type' does not exist on type 'AdminJobsQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(287,25): error TS2339: Property 'organizationId' does not exist on type 'AdminJobsQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(287,66): error TS2339: Property 'organizationId' does not exist on type 'AdminJobsQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(310,25): error TS2339: Property 'organizationId' does not exist on type 'AdminJobsQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(310,66): error TS2339: Property 'organizationId' does not exist on type 'AdminJobsQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(334,25): error TS2339: Property 'organizationId' does not exist on type 'AdminJobsQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(334,66): error TS2339: Property 'organizationId' does not exist on type 'AdminJobsQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(482,23): error TS2339: Property 'reason' does not exist on type 'AdminReasonDto'.
+src/platform-admin/platform-admin-ops.service.ts(538,23): error TS2339: Property 'reason' does not exist on type 'AdminReasonDto'.
+src/platform-admin/platform-admin-ops.service.ts(593,21): error TS2339: Property 'reason' does not exist on type 'AdminReasonDto'.
+src/platform-admin/platform-admin-ops.service.ts(604,24): error TS2339: Property 'page' does not exist on type 'AdminAuditQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(605,28): error TS2339: Property 'pageSize' does not exist on type 'AdminAuditQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(607,15): error TS2339: Property 'organizationId' does not exist on type 'AdminAuditQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(607,60): error TS2339: Property 'organizationId' does not exist on type 'AdminAuditQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(608,15): error TS2339: Property 'action' does not exist on type 'AdminAuditQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(608,64): error TS2339: Property 'action' does not exist on type 'AdminAuditQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(609,15): error TS2339: Property 'entityType' does not exist on type 'AdminAuditQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(609,60): error TS2339: Property 'entityType' does not exist on type 'AdminAuditQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(610,15): error TS2339: Property 'entityId' does not exist on type 'AdminAuditQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(610,56): error TS2339: Property 'entityId' does not exist on type 'AdminAuditQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(611,15): error TS2339: Property 'userId' does not exist on type 'AdminAuditQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(611,52): error TS2339: Property 'userId' does not exist on type 'AdminAuditQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(612,15): error TS2339: Property 'q' does not exist on type 'AdminAuditQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(613,23): error TS2339: Property 'q' does not exist on type 'AdminAuditQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(620,15): error TS2339: Property 'from' does not exist on type 'AdminAuditQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(620,29): error TS2339: Property 'to' does not exist on type 'AdminAuditQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(622,17): error TS2339: Property 'from' does not exist on type 'AdminAuditQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(622,60): error TS2339: Property 'from' does not exist on type 'AdminAuditQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(623,17): error TS2339: Property 'to' does not exist on type 'AdminAuditQueryDto'.
+src/platform-admin/platform-admin-ops.service.ts(623,58): error TS2339: Property 'to' does not exist on type 'AdminAuditQueryDto'.
+src/platform-admin/platform-admin.service.ts(108,24): error TS2339: Property 'page' does not exist on type 'AdminListQueryDto'.
+src/platform-admin/platform-admin.service.ts(109,28): error TS2339: Property 'pageSize' does not exist on type 'AdminListQueryDto'.
+src/platform-admin/platform-admin.service.ts(111,15): error TS2339: Property 'q' does not exist on type 'AdminListQueryDto'.
+src/platform-admin/platform-admin.service.ts(112,23): error TS2339: Property 'q' does not exist on type 'AdminListQueryDto'.
+src/platform-admin/platform-admin.service.ts(119,15): error TS2339: Property 'status' does not exist on type 'AdminListQueryDto'.
+src/platform-admin/platform-admin.service.ts(120,15): error TS2339: Property 'status' does not exist on type 'AdminListQueryDto'.
+src/platform-admin/platform-admin.service.ts(211,31): error TS2339: Property 'isActive' does not exist on type 'AdminSetActiveDto'.
+src/platform-admin/platform-admin.service.ts(217,23): error TS2339: Property 'isActive' does not exist on type 'AdminSetActiveDto'.
+src/platform-admin/platform-admin.service.ts(222,25): error TS2339: Property 'reason' does not exist on type 'AdminSetActiveDto'.
+src/platform-admin/platform-admin.service.ts(240,24): error TS2339: Property 'page' does not exist on type 'AdminListQueryDto'.
+src/platform-admin/platform-admin.service.ts(241,28): error TS2339: Property 'pageSize' does not exist on type 'AdminListQueryDto'.
+src/platform-admin/platform-admin.service.ts(243,15): error TS2339: Property 'organizationId' does not exist on type 'AdminListQueryDto'.
+src/platform-admin/platform-admin.service.ts(243,60): error TS2339: Property 'organizationId' does not exist on type 'AdminListQueryDto'.
+src/platform-admin/platform-admin.service.ts(244,15): error TS2339: Property 'status' does not exist on type 'AdminListQueryDto'.
+src/platform-admin/platform-admin.service.ts(247,22): error TS2339: Property 'status' does not exist on type 'AdminListQueryDto'.
+src/platform-admin/platform-admin.service.ts(250,22): error TS2339: Property 'status' does not exist on type 'AdminListQueryDto'.
+src/platform-admin/platform-admin.service.ts(256,15): error TS2339: Property 'q' does not exist on type 'AdminListQueryDto'.
+src/platform-admin/platform-admin.service.ts(257,23): error TS2339: Property 'q' does not exist on type 'AdminListQueryDto'.
+src/platform-admin/platform-admin.service.ts(365,33): error TS2339: Property 'isActive' does not exist on type 'AdminSetActiveDto'.
+src/platform-admin/platform-admin.service.ts(387,31): error TS2339: Property 'isActive' does not exist on type 'AdminSetActiveDto'.
+src/platform-admin/platform-admin.service.ts(391,16): error TS2339: Property 'isActive' does not exist on type 'AdminSetActiveDto'.
+src/platform-admin/platform-admin.service.ts(402,23): error TS2339: Property 'isActive' does not exist on type 'AdminSetActiveDto'.
+src/platform-admin/platform-admin.service.ts(407,25): error TS2339: Property 'reason' does not exist on type 'AdminSetActiveDto'.
+src/platform-admin/platform-admin.service.ts(439,13): error TS2339: Property 'confirm' does not exist on type 'AdminSoftDeleteUserDto'.
+src/platform-admin/platform-admin.service.ts(486,25): error TS2339: Property 'reason' does not exist on type 'AdminSoftDeleteUserDto'.
+src/platform-admin/platform-admin.service.ts(522,25): error TS2339: Property 'idempotencyKey' does not exist on type 'AdminGiftTimeDto'.
+src/platform-admin/platform-admin.service.ts(559,27): error TS2339: Property 'idempotencyKey' does not exist on type 'AdminGiftTimeDto'.
+src/platform-admin/platform-admin.service.ts(583,48): error TS2339: Property 'unit' does not exist on type 'AdminGiftTimeDto'.
+src/platform-admin/platform-admin.service.ts(583,58): error TS2339: Property 'amount' does not exist on type 'AdminGiftTimeDto'.
+src/platform-admin/platform-admin.service.ts(619,19): error TS2339: Property 'unit' does not exist on type 'AdminGiftTimeDto'.
+src/platform-admin/platform-admin.service.ts(620,21): error TS2339: Property 'amount' does not exist on type 'AdminGiftTimeDto'.
+src/platform-admin/platform-admin.service.ts(646,25): error TS2339: Property 'reason' does not exist on type 'AdminGiftTimeDto'.
+src/platform-admin/platform-admin.service.ts(648,33): error TS2339: Property 'idempotencyKey' does not exist on type 'AdminGiftTimeDto'.
+src/platform-admin/platform-admin.service.ts(663,20): error TS2339: Property 'idempotencyKey' does not exist on type 'AdminGiftTimeDto'.
+src/platform-admin/platform-admin.service.ts(701,25): error TS2339: Property 'reason' does not exist on type 'AdminReasonDto'.
+src/platform-admin/platform-admin.service.ts(715,24): error TS2339: Property 'page' does not exist on type 'AdminListQueryDto'.
+src/platform-admin/platform-admin.service.ts(716,28): error TS2339: Property 'pageSize' does not exist on type 'AdminListQueryDto'.
+src/platform-admin/platform-admin.service.ts(718,15): error TS2339: Property 'organizationId' does not exist on type 'AdminListQueryDto'.
+src/platform-admin/platform-admin.service.ts(718,60): error TS2339: Property 'organizationId' does not exist on type 'AdminListQueryDto'.
+src/platform-admin/platform-admin.service.ts(719,15): error TS2339: Property 'q' does not exist on type 'AdminListQueryDto'.
+src/platform-admin/platform-admin.service.ts(720,23): error TS2339: Property 'q' does not exist on type 'AdminListQueryDto'.
+src/platform-admin/platform-admin.service.ts(728,15): error TS2339: Property 'status' does not exist on type 'AdminListQueryDto'.
+src/platform-admin/platform-admin.service.ts(732,15): error TS2339: Property 'status' does not exist on type 'AdminListQueryDto'.
+src/platform-admin/platform-admin.service.ts(777,13): error TS2339: Property 'idempotencyKey' does not exist on type 'AdminExtendSubscriptionDto'.
+src/platform-admin/platform-admin.service.ts(779,27): error TS2339: Property 'idempotencyKey' does not exist on type 'AdminExtendSubscriptionDto'.
+src/platform-admin/platform-admin.service.ts(796,15): error TS2339: Property 'idempotencyKey' does not exist on type 'AdminExtendSubscriptionDto'.
+src/platform-admin/platform-admin.service.ts(798,29): error TS2339: Property 'idempotencyKey' does not exist on type 'AdminExtendSubscriptionDto'.
+src/platform-admin/platform-admin.service.ts(813,39): error TS2339: Property 'days' does not exist on type 'AdminExtendSubscriptionDto'.
+src/platform-admin/platform-admin.service.ts(834,25): error TS2339: Property 'reason' does not exist on type 'AdminExtendSubscriptionDto'.
+src/platform-admin/platform-admin.service.ts(836,23): error TS2339: Property 'days' does not exist on type 'AdminExtendSubscriptionDto'.
+src/platform-admin/platform-admin.service.ts(837,33): error TS2339: Property 'idempotencyKey' does not exist on type 'AdminExtendSubscriptionDto'.
+src/platform-admin/platform-admin.service.ts(859,15): error TS2339: Property 'idempotencyKey' does not exist on type 'AdminExtendSubscriptionDto'.
+src/platform-admin/platform-admin.service.ts(862,22): error TS2339: Property 'idempotencyKey' does not exist on type 'AdminExtendSubscriptionDto'.
+src/platform-admin/platform-admin.service.ts(919,25): error TS2339: Property 'reason' does not exist on type 'AdminReasonDto'.
+src/rag-kb/rag-kb.service.ts(111,13): error TS2339: Property 'isDefault' does not exist on type 'CreateRagKbDto'.
+src/rag-kb/rag-kb.service.ts(121,19): error TS2339: Property 'name' does not exist on type 'CreateRagKbDto'.
+src/rag-kb/rag-kb.service.ts(122,26): error TS2339: Property 'description' does not exist on type 'CreateRagKbDto'.
+src/rag-kb/rag-kb.service.ts(123,24): error TS2339: Property 'isDefault' does not exist on type 'CreateRagKbDto'.
+src/rag-kb/rag-kb.service.ts(132,13): error TS2339: Property 'isDefault' does not exist on type 'UpdateRagKbDto'.
+src/rag-kb/rag-kb.service.ts(141,17): error TS2339: Property 'name' does not exist on type 'UpdateRagKbDto'.
+src/rag-kb/rag-kb.service.ts(141,50): error TS2339: Property 'name' does not exist on type 'UpdateRagKbDto'.
+src/rag-kb/rag-kb.service.ts(142,17): error TS2339: Property 'description' does not exist on type 'UpdateRagKbDto'.
+src/rag-kb/rag-kb.service.ts(143,32): error TS2339: Property 'description' does not exist on type 'UpdateRagKbDto'.
+src/rag-kb/rag-kb.service.ts(145,17): error TS2339: Property 'isDefault' does not exist on type 'UpdateRagKbDto'.
+src/rag-kb/rag-kb.service.ts(145,60): error TS2339: Property 'isDefault' does not exist on type 'UpdateRagKbDto'.
+src/rag-kb/rag-kb.service.ts(204,18): error TS2339: Property 'title' does not exist on type 'ImportRagKbTextDto'.
+src/rag-kb/rag-kb.service.ts(206,20): error TS2339: Property 'content' does not exist on type 'ImportRagKbTextDto'.
+src/rag-kb/rag-kb.service.ts(236,45): error TS2339: Property 'url' does not exist on type 'ImportRagKbUrlDto'.
+src/rag-kb/rag-kb.service.ts(239,41): error TS2339: Property 'message' does not exist on type 'CrawlValidationError | CrawlFetchError'.
+  Property 'message' does not exist on type 'CrawlValidationError'.
+src/rag-kb/rag-kb.service.ts(244,19): error TS2339: Property 'title' does not exist on type 'ImportRagKbUrlDto'.
+src/rag-kb/rag-kb.service.ts(283,23): error TS2339: Property 'query' does not exist on type 'RagKbSearchDto'.
+src/rag-kb/rag-kb.service.ts(284,47): error TS7006: Parameter 't' implicitly has an 'any' type.
+src/rag-kb/rag-kb.service.ts(288,17): error TS2339: Property 'knowledgeBaseId' does not exist on type 'RagKbSearchDto'.
+src/rag-kb/rag-kb.service.ts(288,45): error TS2339: Property 'knowledgeBaseId' does not exist on type 'RagKbSearchDto'.
+src/rag-kb/rag-kb.service.ts(306,28): error TS7006: Parameter 'a' implicitly has an 'any' type.
+src/rag-kb/rag-kb.service.ts(306,31): error TS7006: Parameter 't' implicitly has an 'any' type.
+src/rag-kb/rag-kb.service.ts(325,25): error TS2339: Property 'query' does not exist on type 'RagKbSearchDto'.
+src/video-transcription/video-transcription.controller.ts(82,50): error TS2339: Property 'cleanedTranscript' does not exist on type 'PatchVideoTranscriptionTextDto'.
+src/video-transcription/video-transcription.controller.ts(96,50): error TS2339: Property 'chunkIndex' does not exist on type 'RetryVideoTranscriptionChunkDto'.
+src/video-transcription/video-transcription.service.ts(195,14): error TS2339: Property 'ownershipConfirmed' does not exist on type 'CreateVideoTranscriptionDto'.
+src/video-transcription/video-transcription.service.ts(213,27): error TS2339: Property 'sourceUrl' does not exist on type 'CreateVideoTranscriptionDto'.
+src/video-transcription/video-transcription.service.ts(248,27): error TS2339: Property 'language' does not exist on type 'CreateVideoTranscriptionDto'.
+src/video-transcription/video-transcription.service.ts(249,52): error TS2339: Property 'glossary' does not exist on type 'CreateVideoTranscriptionDto'.

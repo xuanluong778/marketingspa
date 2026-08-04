@@ -1,3 +1,17 @@
 export * from './constants';
 export * from './types';
 export * from './schemas';
+export * from './ads-metrics';
+export * from './ads-mcp';
+export * from './ads-actions';
+export * from './messaging-webhook-normalize';
+export * from './messaging-eligibility';
+export * from './messaging-queue';
+export * from './messaging-send-errors';
+export * from './messaging-send-http';
+export * from './messaging-quiet-hours';
+export * from './messaging-template-render';
+export * from './video-transcription';
+export * from './video-transcription-accuracy';
+export * from './ad-url-analyze';
+// ssrf-fetch uses Node dns/net — import '@marketingspa/shared/ssrf-fetch' (server-only)

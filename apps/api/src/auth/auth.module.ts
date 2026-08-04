@@ -5,9 +5,15 @@ import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
+import { AuthMailService } from './auth-mail.service';
+import { GoogleTokenVerifier } from './google-token.verifier';
+import { AuditModule } from '../audit/audit.module';
+import { AffiliateModule } from '../affiliate/affiliate.module';
 
 @Module({
   imports: [
+    AuditModule,
+    AffiliateModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       inject: [ConfigService],
@@ -18,7 +24,7 @@ import { JwtStrategy } from './jwt.strategy';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  providers: [AuthService, JwtStrategy, AuthMailService, GoogleTokenVerifier],
   exports: [AuthService, JwtModule],
 })
 export class AuthModule {}

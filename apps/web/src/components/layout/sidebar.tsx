@@ -9,6 +9,23 @@ import { sidebarNavGroups, type NavGroup, type NavItem } from '@/config/navigati
 import { CONTENT_AUTO_POST_BASE } from '@/lib/content-auto-post-routes';
 import { ScrollArea } from '@/components/ui/scroll-area';
 
+/** Canonicalize create-section for active match (`ads-check` → `facebook-check`). */
+function normalizeContentSection(section: string | null | undefined): string {
+  const value = (section || 'ad').trim();
+  if (value === 'ads-check') return 'facebook-check';
+  return value || 'ad';
+}
+
+/** Sections that keep outer Content Studio tab `create` active. */
+const CREATE_TAB_SECTIONS = new Set([
+  'ad',
+  'advanced',
+  'personal',
+  'facebook-check',
+  'ads-check',
+  'video-transcript',
+]);
+
 interface SidebarProps {
   onNavigate?: () => void;
 }
@@ -21,9 +38,69 @@ export function Sidebar({ onNavigate }: SidebarProps) {
   const isNavItemActive = useMemo(
     () => (item: NavItem) => {
       if (!item.href) return false;
-      if (item.href.startsWith(`${CONTENT_AUTO_POST_BASE}?`)) {
+
+      try {
+        const want = new URL(item.href, 'http://local');
+        const have = new URL(currentPathWithQuery, 'http://local');
+
+        if (item.href.startsWith(`${CONTENT_AUTO_POST_BASE}?`)) {
+          // Match by tab (+ section when present) so active state is stable.
+          if (have.pathname !== CONTENT_AUTO_POST_BASE) return false;
+          const wantTab = want.searchParams.get('tab');
+          const haveTab = have.searchParams.get('tab') || 'create';
+          if (wantTab !== haveTab) return false;
+          const wantSection = want.searchParams.get('section');
+          if (wantSection) {
+            return (
+              normalizeContentSection(have.searchParams.get('section')) ===
+              normalizeContentSection(wantSection)
+            );
+          }
+          // Tab-only links (library / auto-post / …): active when tab matches.
+          return true;
+        }
+
+        // /automation?tab=* — match by pathname + tab query
+        if (want.pathname === '/automation' && want.searchParams.has('tab')) {
+          if (have.pathname !== '/automation') return false;
+          const wantTab = want.searchParams.get('tab');
+          const haveTab = have.searchParams.get('tab') || 'campaigns';
+          // Tin nhắn tự động (flows): cũng sáng khi đang ở templates/logs/channels
+          if (wantTab === 'flows') {
+            return (
+              haveTab === 'flows' ||
+              haveTab === 'templates' ||
+              haveTab === 'logs' ||
+              haveTab === 'channels'
+            );
+          }
+          return wantTab === haveTab;
+        }
+
+        // Legacy /automation không có tab
+        if (want.pathname === '/automation' && !want.search) {
+          if (have.pathname !== '/automation') return false;
+          const haveTab = have.searchParams.get('tab') || 'campaigns';
+          return (
+            haveTab === 'flows' ||
+            haveTab === 'templates' ||
+            haveTab === 'logs' ||
+            haveTab === 'channels'
+          );
+        }
+
+        // Other links that include a query string
+        if (want.search) {
+          if (have.pathname !== want.pathname) return false;
+          for (const [key, value] of want.searchParams.entries()) {
+            if (have.searchParams.get(key) !== value) return false;
+          }
+          return true;
+        }
+      } catch {
         return currentPathWithQuery === item.href;
       }
+
       return (
         pathname === item.href ||
         pathname.startsWith(`${item.href}/`) ||
@@ -41,17 +118,27 @@ export function Sidebar({ onNavigate }: SidebarProps) {
     () => (group: NavGroup) => {
       if (group.items?.some(isNavItemActive)) return true;
       if (!group.href) return false;
-      return (
-        pathname === group.href ||
-        pathname.startsWith(`${group.href}/`) ||
-        (group.href === CONTENT_AUTO_POST_BASE &&
-          (pathname === '/ai' ||
-            pathname.startsWith('/ai/') ||
-            pathname === '/auto-post' ||
-            pathname.startsWith('/auto-post/')))
-      );
+      if (group.href === CONTENT_AUTO_POST_BASE) {
+        // Keep Content Marketing open/active for create-tab sections and teleprompter.
+        if (pathname === '/teleprompter' || pathname.startsWith('/teleprompter/')) return true;
+        if (pathname === CONTENT_AUTO_POST_BASE || pathname.startsWith(`${CONTENT_AUTO_POST_BASE}/`)) {
+          const tab = searchParams.get('tab') || 'create';
+          if (tab === 'create') {
+            const section = searchParams.get('section') || 'ad';
+            if (CREATE_TAB_SECTIONS.has(section)) return true;
+          }
+          return true;
+        }
+        return (
+          pathname === '/ai' ||
+          pathname.startsWith('/ai/') ||
+          pathname === '/auto-post' ||
+          pathname.startsWith('/auto-post/')
+        );
+      }
+      return pathname === group.href || pathname.startsWith(`${group.href}/`);
     },
-    [isNavItemActive, pathname],
+    [isNavItemActive, pathname, searchParams],
   );
 
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
@@ -88,7 +175,7 @@ export function Sidebar({ onNavigate }: SidebarProps) {
             const hasChildren = Boolean(group.items?.length);
 
             if (hasChildren && group.items?.length === 1) {
-              const onlyItem = group.items[0];
+              const onlyItem = group.items[0]!;
               const itemActive = isNavItemActive(onlyItem);
               return (
                 <Link

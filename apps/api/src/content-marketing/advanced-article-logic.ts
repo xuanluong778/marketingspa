@@ -15,6 +15,10 @@ import {
   WRITING_STYLE_PROMPTS,
 } from './advanced-article-config';
 import { formatArticleForFacebookPost, formatArticleForReadability } from './advanced-article-format.util';
+import {
+  regulatedComplianceBlock,
+  resolveIndustryContext,
+} from './industry-context.util';
 
 export interface AdvancedStepAnalysis {
   step: number;
@@ -44,6 +48,7 @@ function parseJson<T>(raw: string): T {
 }
 
 function dtoToPromptParams(dto: GenerateAdvancedArticleDto) {
+  const industry = resolveIndustryContext(dto);
   return {
     style: WRITING_STYLE_PROMPTS[dto.writingStyle],
     demographic: DEMOGRAPHIC_LABELS[dto.demographic],
@@ -61,6 +66,9 @@ function dtoToPromptParams(dto: GenerateAdvancedArticleDto) {
     customer_story: dto.caseStudy ?? '',
     cta_type: CTA_TYPE_HINTS[dto.ctaType],
     length: ADVANCED_LENGTH_HINT[dto.postLength] ?? dto.postLength,
+    industryLabel: industry.label,
+    isSpaBeauty: industry.isSpaBeauty,
+    regulatedNote: regulatedComplianceBlock(industry),
   };
 }
 
@@ -68,9 +76,9 @@ function defaultCta(dto: Pick<GenerateAdvancedArticleDto, 'productService' | 'ct
   const p = dto.productService;
   switch (dto.ctaType) {
     case 'comment':
-      return `Comment "SPA" hoặc "TƯ VẤN" để được tư vấn miễn phí về ${p}.`;
+      return `Comment "TƯ VẤN" để được tư vấn miễn phí về ${p}.`;
     case 'inbox':
-      return `Inbox ngay — nhắn "ĐẶT LỊCH" để nhận ưu đãi ${p} (có hạn).`;
+      return `Inbox ngay — nhắn để nhận ưu đãi ${p} (có hạn).`;
     case 'hotline':
       return `Gọi hotline hoặc nhắn Zalo để đặt lịch ${p} — tư vấn miễn phí.`;
     case 'booking':
@@ -81,13 +89,15 @@ function defaultCta(dto: Pick<GenerateAdvancedArticleDto, 'productService' | 'ct
 }
 
 function buildAnalysisFromForm(dto: GenerateAdvancedArticleDto): AdvancedStepAnalysis[] {
+  const industry = resolveIndustryContext(dto);
+  const solutionWord = industry.isSpaBeauty ? 'giải pháp spa phù hợp' : `giải pháp ngành ${industry.label}`;
   return ADVANCED_16_STEPS.map((label, i) => {
     const step = i + 1;
     let summary = 'Đã tích hợp trong bài viết.';
     if (step === 1) summary = dto.painPoints.slice(0, 120);
-    if (step === 3) summary = `${dto.productService} — giải pháp spa phù hợp.`;
+    if (step === 3) summary = `${dto.productService} — ${solutionWord}.`;
     if (step === 10) summary = [dto.combo, dto.gift].filter(Boolean).join('; ') || 'Ưu đãi theo chương trình.';
-    if (step === 11) summary = dto.certification || 'Cam kết dịch vụ chuẩn spa.';
+    if (step === 11) summary = dto.certification || `Cam kết dịch vụ chuẩn ngành ${industry.label}.`;
     if (step === 13) summary = dto.caseStudy?.slice(0, 120) || 'Case study minh họa (nếu có).';
     if (step === 16) summary = defaultCta(dto);
     return { step, label, summary };
@@ -111,18 +121,21 @@ function polishAdvancedResult(result: AdvancedArticleResult): AdvancedArticleRes
 }
 
 export function templateGenerateAdvanced(dto: GenerateAdvancedArticleDto): AdvancedArticleResult {
-  const hook = `Bạn có đang ${dto.painPoints.split(/[.,;]/)[0]?.toLowerCase() ?? 'mệt mỏi với làn da'} — và cần một giải pháp spa thực sự phù hợp?`;
+  const industry = resolveIndustryContext(dto);
+  const painFirst =
+    dto.painPoints.split(/[.,;]/)[0]?.toLowerCase() ?? `chưa hài lòng với lựa chọn hiện tại trong ngành ${industry.label}`;
+  const hook = `Bạn có đang ${painFirst} — và cần một giải pháp thực sự phù hợp cho ${industry.label}?`;
   const cta = defaultCta(dto);
   const title = `${dto.productService}${dto.price ? ` — chỉ từ ${dto.price}` : ''} | Ưu đãi có hạn`;
 
   const body = [
     dto.painPoints,
     dto.desires ? `Bạn mong muốn ${dto.desires.charAt(0).toLowerCase()}${dto.desires.slice(1)}.` : '',
-    `Nhiều người thử nhiều cách nhưng chưa hiệu quả bền vững — thường do thiếu quy trình chuẩn, sản phẩm phù hợp cơ địa, hoặc chăm sóc không đều đặn.`,
-    `${dto.productService} là giải pháp spa phù hợp${dto.differentiator ? `: ${dto.differentiator}` : ' — quy trình chuẩn, chuyên viên có kinh nghiệm, không gian riêng tư.'}`,
-    `Khi trải nghiệm liệu trình, bạn có thể cảm nhận da sáng hơn, tự tin hơn (kết quả có thể khác nhau tùy cơ địa). Gói dịch vụ gọn, phù hợp người bận rộn.`,
+    `Nhiều người thử nhiều cách nhưng chưa hiệu quả bền vững — thường do thiếu quy trình chuẩn hoặc chưa chọn đúng giải pháp ngành ${industry.label}.`,
+    `${dto.productService} là giải pháp phù hợp${dto.differentiator ? `: ${dto.differentiator}` : ` — rõ ràng, minh bạch, đúng nhu cầu ngành ${industry.label}.`}`,
+    `Khi trải nghiệm, bạn có thể cảm nhận sự khác biệt (kết quả có thể khác nhau tùy tình trạng). Gói dịch vụ gọn, phù hợp người bận rộn.`,
     dto.price
-      ? `Hiện spa đang có ưu đãi ${dto.price}. So với tự thử nhiều sản phẩm, liệu trình spa có thể tối ưu chi phí hơn tùy nhu cầu.`
+      ? `Hiện đang có ưu đãi ${dto.price}. So với tự thử nhiều hướng, giải pháp chuyên nghiệp có thể tối ưu chi phí hơn tùy nhu cầu.`
       : '',
     dto.combo || dto.gift
       ? [
@@ -136,22 +149,33 @@ export function templateGenerateAdvanced(dto: GenerateAdvancedArticleDto): Advan
     dto.certification ? `${dto.certification}` : '',
     dto.caseStudy ? `${dto.caseStudy}` : '',
     `${cta}`,
-    `Lưu ý: Kết quả có thể khác nhau tùy cơ địa, tình trạng da/cơ thể và liệu trình. Vui lòng tham khảo chuyên viên trước khi quyết định.`,
+    industry.isRegulated
+      ? `Lưu ý: Nội dung mang tính tham khảo. Không cam kết chữa khỏi hay kết quả chắc chắn. Vui lòng tham khảo chuyên gia trước khi quyết định.`
+      : `Lưu ý: Kết quả có thể khác nhau tùy tình trạng và nhu cầu. Vui lòng tham khảo tư vấn trước khi quyết định.`,
   ]
     .filter(Boolean)
     .join('\n\n');
+
+  const tagBase = industry.label
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/[^a-zA-Z0-9]+/g, '');
+  const hashtags = industry.isSpaBeauty
+    ? ['#spa', '#lamdep', '#chamsocda', '#uudai', '#datlich']
+    : [`#${tagBase || 'Content'}`, '#UuDai', '#TuVan', '#BanHang'];
 
   return polishAdvancedResult({
     title,
     hook,
     final_article: body,
     cta,
-    hashtags: ['#spa', '#lamdep', '#chamsocda', '#uudai', '#datlich'],
+    hashtags,
     analysis_16_steps: buildAnalysisFromForm(dto),
     suggested_images: [
-      'Before/after da (có consent khách)',
-      'Không gian phòng trị liệu',
-      'Chuyên viên đang tư vấn',
+      `Ảnh sản phẩm/dịch vụ ngành ${industry.label}`,
+      'Không gian / đội ngũ',
+      'Khách hàng trải nghiệm (có consent)',
       'Poster ưu đãi có deadline',
     ],
     suggested_ads_angle: `Pain → Solution → Offer: ${dto.painPoints.slice(0, 60)} → ${dto.productService}`,
@@ -246,8 +270,10 @@ export async function optimizeAdvancedCta(
   dto: OptimizeAdvancedCtaDto,
   openai?: OpenAiService,
 ): Promise<{ cta: string; alternatives: string[]; updated_article: string; source: 'ai' | 'template' }> {
+  const industry = resolveIndustryContext(dto);
+  const product = dto.productService ?? `dịch vụ ${industry.label}`;
   const fallbackCta = defaultCta({
-    productService: dto.productService ?? 'dịch vụ spa',
+    productService: product,
     ctaType: dto.ctaType,
   });
 
@@ -263,9 +289,11 @@ export async function optimizeAdvancedCta(
     };
   }
 
-  const prompt = `Tối ưu CTA cuối bài spa. Loại CTA: ${CTA_TYPE_HINTS[dto.ctaType]}.
+  const prompt = `Tối ưu CTA cuối bài ngành "${industry.label}". Loại CTA: ${CTA_TYPE_HINTS[dto.ctaType]}.
 Mục tiêu: ${dto.articleGoal ?? 'bán hàng'}.
-Sản phẩm: ${dto.productService ?? ''}.
+Sản phẩm: ${product}.
+${regulatedComplianceBlock(industry)}
+${industry.isSpaBeauty ? '' : 'CẤM CTA spa/liệu trình da.'}
 
 Bài hiện tại:
 ${dto.finalArticle.slice(0, 4000)}
@@ -301,21 +329,24 @@ export async function generateAdvancedTitles(
   dto: GenerateAdvancedTitlesDto,
   openai?: OpenAiService,
 ): Promise<{ titles: string[]; source: 'ai' | 'template' }> {
+  const industry = resolveIndustryContext(dto);
+  const product = dto.productService ?? `Dịch vụ ${industry.label}`;
   const fallback = [
-    `${dto.productService ?? 'Dịch vụ spa'} — ưu đãi có hạn`,
-    `Giải pháp spa cho ${DEMOGRAPHIC_LABELS[dto.demographic ?? 'female_25_35']?.split(':')[0] ?? 'bạn'}`,
-    `Đừng bỏ lỡ liệu trình ${dto.productService ?? 'spa'} này`,
-    `Spa ${dto.productService ?? ''}: Trải nghiệm khác biệt`,
-    `Ưu đãi ${dto.productService ?? 'spa'} — đặt lịch ngay`,
+    `${product} — ưu đãi có hạn`,
+    `Giải pháp ${industry.label} cho ${DEMOGRAPHIC_LABELS[dto.demographic ?? 'female_25_35']?.split(':')[0] ?? 'bạn'}`,
+    `Đừng bỏ lỡ ${product}`,
+    `${industry.label}: ${product} — trải nghiệm khác biệt`,
+    `Ưu đãi ${product} — liên hệ ngay`,
   ];
 
   if (!openai?.isConfigured()) {
     return { titles: fallback, source: 'template' };
   }
 
-  const prompt = `Tạo 5 tiêu đề hấp dẫn cho bài bán hàng spa.
-Sản phẩm: ${dto.productService ?? ''}
+  const prompt = `Tạo 5 tiêu đề hấp dẫn cho bài bán hàng ngành "${industry.label}".
+Sản phẩm: ${product}
 Nhân khẩu học: ${dto.demographic ? DEMOGRAPHIC_LABELS[dto.demographic] : ''}
+${industry.isSpaBeauty ? '' : 'CẤM từ spa/làm đẹp trong tiêu đề.'}
 Bài: ${dto.finalArticle.slice(0, 1500)}
 
 Trả JSON: {"titles":["t1","t2","t3","t4","t5"]}`;

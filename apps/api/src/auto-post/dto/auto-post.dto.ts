@@ -1,12 +1,4 @@
-import {
-  IsDateString,
-  IsEnum,
-  IsNotEmpty,
-  IsOptional,
-  IsString,
-  IsUUID,
-  MaxLength,
-} from 'class-validator';
+import { ArrayNotEmpty, IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsIn, IsInt, IsNotEmpty, IsNumber, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 import { AutoPostStatus, AutoPostType } from '@marketingspa/database';
 
 export class GenerateAutoPostDto {
@@ -119,6 +111,16 @@ export class SaveAutoPostDraftDto {
   @IsOptional()
   @IsString()
   promotion?: string;
+
+  @IsOptional()
+  @IsString()
+  customIndustry?: string;
+  @IsOptional()
+  @IsString()
+  industryId?: string;
+  @IsOptional()
+  @IsString()
+  industryName?: string;
 }
 
 export class UpdateAutoPostDto extends SaveAutoPostDraftDto {
@@ -129,6 +131,10 @@ export class UpdateAutoPostDto extends SaveAutoPostDraftDto {
 export class PublishAutoPostDto {
   @IsUUID()
   postId!: string;
+
+  @IsOptional()
+  @IsArray()
+  fanpageIds?: any[];
 }
 
 export class ScheduleAutoPostDto {
@@ -137,15 +143,39 @@ export class ScheduleAutoPostDto {
 
   @IsDateString()
   scheduledAt!: string;
+
+  @IsOptional()
+  @IsArray()
+  fanpageIds?: any[];
 }
 
 export class AutoPostListQueryDto {
   @IsOptional()
   @IsEnum(AutoPostStatus)
   status?: AutoPostStatus;
+
+  @IsOptional()
+  @IsString()
+  customIndustry?: string;
+  @IsOptional()
+  @IsString()
+  industryId?: string;
 }
 
 export class SelectAutoPostPageDto {
   @IsUUID()
   fanpageId!: string;
+}
+
+/** Chọn Fanpage sau OAuth — chỉ lưu Page user chủ động chọn (Facebook Page ID). */
+export class SelectOAuthPagesDto {
+  @IsArray()
+  @ArrayNotEmpty()
+  @IsString({ each: true })
+  pageIds!: string[];
+
+  /** Legacy: chọn 1 page */
+  @IsOptional()
+  @IsString()
+  pageId?: string;
 }

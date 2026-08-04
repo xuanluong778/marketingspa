@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type Dispatch, type SetStateAction } from 'react';
 import Link from 'next/link';
 import { Phone, GripVertical, MoreHorizontal } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,19 +18,36 @@ import type { Lead } from '@/types/api';
 import { formatDateTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
 
+export type KanbanColumnState = {
+  items: Lead[];
+  total: number;
+  nextCursor?: string | null;
+  isLoading?: boolean;
+  isLoadingMore?: boolean;
+  isError?: boolean;
+};
+
 interface LeadKanbanProps {
-  leadsByStatus: Record<LeadPipelineStatus, Lead[]>;
+  leadsByStatus?: Record<LeadPipelineStatus, Lead[]>;
+  columns?: { status: LeadPipelineStatus; label: string; color: string }[];
+  columnData?: Record<string, KanbanColumnState>;
   isLoading: boolean;
   isError: boolean;
   onRetry: () => void;
   onStatusChange: (leadId: string, status: LeadPipelineStatus) => void;
-  onAssign: (lead: Lead) => void;
-  onCreateAppointment: (lead: Lead) => void;
-  onEdit: (lead: Lead) => void;
+  onAssign?: (lead: Lead) => void;
+  onCreateAppointment?: (lead: Lead) => void;
+  onEdit?: (lead: Lead) => void;
+  onOpenLead?: (lead: Lead) => void;
+  onLoadMore?: (status: LeadPipelineStatus) => void;
+  draggingId?: string | null;
+  onDragStart?: ((leadId?: string) => void) | Dispatch<SetStateAction<string | null>>;
+  onDragEnd?: () => void;
 }
 
 export function LeadKanban({
   leadsByStatus,
+  columnData,
   isLoading,
   isError,
   onRetry,
@@ -38,9 +55,15 @@ export function LeadKanban({
   onAssign,
   onCreateAppointment,
   onEdit,
+  onOpenLead,
 }: LeadKanbanProps) {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<LeadPipelineStatus | null>(null);
+
+  const resolvedLeadsByStatus = (leadsByStatus ??
+    Object.fromEntries(
+      Object.entries(columnData ?? {}).map(([status, col]) => [status, col.items ?? []]),
+    )) as Record<LeadPipelineStatus, Lead[]>;
 
   if (isLoading) return <LoadingState />;
   if (isError) return <ErrorState onRetry={onRetry} />;
@@ -62,7 +85,7 @@ export function LeadKanban({
   return (
     <div className="flex gap-3 overflow-x-auto pb-4 min-h-[480px]">
       {PIPELINE_COLUMNS.map((col) => {
-        const items = leadsByStatus[col.status] ?? [];
+        const items = resolvedLeadsByStatus[col.status] ?? [];
         return (
           <div
             key={col.status}
@@ -138,11 +161,11 @@ export function LeadKanban({
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => onEdit(lead)}>Sửa</DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => onAssign(lead)}>
+                              <DropdownMenuItem onClick={() => onEdit?.(lead)}>Sửa</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => onAssign?.(lead)}>
                                 Gán nhân viên
                               </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => onCreateAppointment(lead)}>
+                              <DropdownMenuItem onClick={() => onCreateAppointment?.(lead)}>
                                 Tạo lịch hẹn
                               </DropdownMenuItem>
                               {PIPELINE_COLUMNS.filter((c) => c.status !== lead.pipelineStatus).map(

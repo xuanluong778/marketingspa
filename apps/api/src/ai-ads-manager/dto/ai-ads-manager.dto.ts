@@ -1,14 +1,5 @@
-import {
-  IsBoolean,
-  IsEmail,
-  IsEnum,
-  IsNumber,
-  IsOptional,
-  IsString,
-  IsUUID,
-  Max,
-  Min,
-} from 'class-validator';
+import { Type } from 'class-transformer';
+import { IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
 import {
   AdAutomationRuleType,
   AdConnectionProvider,
@@ -42,6 +33,26 @@ export class UpdateAutoModeDto {
   @Min(1)
   @Max(100)
   maxTogglesPerDay?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  maxBudgetChangePercent?: number;
+  @IsOptional()
+  @IsString()
+  mcpMode?: string;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  minSpendForAction?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  ruleCooldownMinutes?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  ruleLookbackDays?: number;
 }
 
 export class EmergencyStopDto {
@@ -171,6 +182,18 @@ export class CampaignsQueryDto {
 
   @IsString()
   dateTo!: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  page?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  pageSize?: number;
+  @IsOptional()
+  @IsString()
+  platform?: string;
 }
 
 export class OAuthReturnDto {

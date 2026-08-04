@@ -1,20 +1,18 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Copy,
   FileText,
   Loader2,
+  Maximize2,
   RefreshCw,
   Save,
   Sparkles,
-  Target,
-  Wand2,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -31,11 +29,14 @@ import {
   useContentMarketingStatus,
 } from '@/hooks/use-content-marketing';
 import {
+  clearAdvancedWorkspaceDraft,
   createHistoryId,
   defaultAdvancedFormState,
-  loadAdvancedDraft,
+  emptyAdvancedWorkspaceDraft,
+  loadAdvancedWorkspaceDraft,
   sampleAdvancedFormState,
   saveAdvancedDraft,
+  saveAdvancedWorkspaceDraft,
   saveContentHistoryItem,
 } from '@/lib/content-marketing-form';
 import { formatMutationError } from '@/lib/format-mutation-error';
@@ -43,6 +44,7 @@ import { PresetOrCustomField } from '@/components/content-marketing/preset-or-cu
 import { AdvancedArticleContent } from '@/components/content-marketing/advanced-article-content';
 import { SendToAutoPostButton } from '@/components/auto-post/send-to-auto-post-button';
 import { ContentGeneratingLoader } from '@/components/content-marketing/content-generating-loader';
+import { ContentPreviewDialog } from '@/components/content-marketing/content-preview-dialog';
 import { AiSuggestTextareaField } from '@/components/content-marketing/ai-suggest-textarea-field';
 import {
   buildFacebookPostText,
@@ -80,13 +82,7 @@ export function AdvancedPostStudio({
 }: AdvancedPostStudioProps) {
   const { data: user } = useCurrentUser();
   const { data: aiStatus } = useContentMarketingStatus();
-  const {
-    generateAdvanced,
-    rewriteAdvanced,
-    optimizeAdvancedCta,
-    generateAdvancedTitles,
-    suggestAdvancedField,
-  } = useContentMarketingMutations();
+  const { generateAdvanced, suggestAdvancedField } = useContentMarketingMutations();
 
   const [suggestingField, setSuggestingField] = useState<AdvancedSuggestField | null>(null);
 
@@ -97,6 +93,12 @@ export function AdvancedPostStudio({
   const [copyMsg, setCopyMsg] = useState('');
   const [saved, setSaved] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [draftLoaded, setDraftLoaded] = useState(false);
+  const [isCreatingLoading, setIsCreatingLoading] = useState(false);
+  const [contentPreviewOpen, setContentPreviewOpen] = useState(false);
+  const [analysisExpanded, setAnalysisExpanded] = useState(false);
+  const resultSectionRef = useRef<HTMLDivElement>(null);
+  const scrollToResultLockRef = useRef(false);
 
   const patch = useCallback((p: Partial<AdvancedFormState>) => {
     setForm((prev) => {
@@ -107,9 +109,35 @@ export function AdvancedPostStudio({
   }, [user?.id]);
 
   useEffect(() => {
-    const draft = loadAdvancedDraft(user?.id);
-    if (draft) setForm(draft);
+    const draft = loadAdvancedWorkspaceDraft(user?.id);
+    if (draft) {
+      setForm(draft.form);
+      setResult((draft.result as AdvancedArticleResult | null) ?? null);
+      setVariantTab(
+        (['main', 'facebook', 'website', 'ads'] as const).includes(draft.variantTab as VariantTab)
+          ? (draft.variantTab as VariantTab)
+          : 'main',
+      );
+      setTitleOptions(draft.titleOptions);
+    }
+    setDraftLoaded(true);
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!draftLoaded || isCreatingLoading) return;
+    const timer = window.setTimeout(() => {
+      saveAdvancedWorkspaceDraft(
+        {
+          form,
+          result,
+          variantTab,
+          titleOptions,
+        },
+        user?.id,
+      );
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [draftLoaded, isCreatingLoading, form, result, variantTab, titleOptions, user?.id]);
 
   useEffect(() => {
     if (historyEditItem?.tab === 'advanced') {
@@ -129,6 +157,21 @@ export function AdvancedPostStudio({
       onHistoryEditApplied?.();
     }
   }, [historyEditItem, onHistoryEditApplied]);
+
+  useEffect(() => {
+    if (!isCreatingLoading) {
+      scrollToResultLockRef.current = false;
+      return;
+    }
+    if (scrollToResultLockRef.current) return;
+    scrollToResultLockRef.current = true;
+    const frame = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        resultSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [isCreatingLoading]);
 
   const displayContent = (): string => {
     if (!result) return '';
@@ -163,11 +206,14 @@ export function AdvancedPostStudio({
 
   const handleGenerate = async () => {
     setErrorMsg('');
-    setResult(null);
     if (!form.productService.trim() || !form.painPoints.trim()) {
       setErrorMsg('Vui lòng nhập tên dịch vụ và nỗi đau khách hàng.');
       return;
     }
+    if (isCreatingLoading || generateAdvanced.isPending) return;
+    setIsCreatingLoading(true);
+    setResult(null);
+    setAnalysisExpanded(false);
     try {
       const data = await generateAdvanced.mutateAsync(form);
       setResult(data);
@@ -175,58 +221,8 @@ export function AdvancedPostStudio({
       setTitleOptions([]);
     } catch (e) {
       setErrorMsg(formatMutationError(e));
-    }
-  };
-
-  const handleRewrite = async () => {
-    setErrorMsg('');
-    try {
-      const data = await rewriteAdvanced.mutateAsync({
-        ...form,
-        previousArticle: result?.final_article,
-      });
-      setResult(data);
-    } catch (e) {
-      setErrorMsg(formatMutationError(e));
-    }
-  };
-
-  const handleOptimizeCta = async () => {
-    if (!result) return;
-    setErrorMsg('');
-    try {
-      const data = await optimizeAdvancedCta.mutateAsync({
-        finalArticle: result.final_article,
-        ctaType: form.ctaType,
-        productService: form.productService,
-        articleGoal: form.articleGoal,
-      });
-      setResult({
-        ...result,
-        cta: data.cta,
-        final_article: data.updated_article,
-        variants: {
-          ...result.variants,
-          facebook: data.updated_article,
-        },
-      });
-    } catch (e) {
-      setErrorMsg(formatMutationError(e));
-    }
-  };
-
-  const handleTitles = async () => {
-    if (!result) return;
-    setErrorMsg('');
-    try {
-      const data = await generateAdvancedTitles.mutateAsync({
-        finalArticle: result.final_article,
-        productService: form.productService,
-        demographic: form.demographic,
-      });
-      setTitleOptions(data.titles);
-    } catch (e) {
-      setErrorMsg(formatMutationError(e));
+    } finally {
+      setIsCreatingLoading(false);
     }
   };
 
@@ -243,11 +239,29 @@ export function AdvancedPostStudio({
     }
     if (!text) return;
     await navigator.clipboard.writeText(text);
-    setCopyMsg('Đã copy bài đăng Facebook!');
+    setCopyMsg('Đã copy!');
     setTimeout(() => setCopyMsg(''), 2000);
   };
 
-  const handleSaveHistory = () => {
+  const handlePreviewContentChange = (value: string) => {
+    if (!result) return;
+    if (variantTab === 'facebook') {
+      setResult({ ...result, variants: { ...result.variants, facebook: value } });
+    } else if (variantTab === 'website') {
+      setResult({ ...result, variants: { ...result.variants, website: value } });
+    } else if (variantTab === 'ads') {
+      setResult({ ...result, variants: { ...result.variants, ads: value } });
+    } else {
+      setResult({ ...result, final_article: value });
+    }
+  };
+
+  const handleSave = () => {
+    saveAdvancedWorkspaceDraft(
+      { form, result, variantTab, titleOptions },
+      user?.id,
+      { force: true },
+    );
     if (!result) return;
     const item: ContentHistoryItem = {
       id: createHistoryId(),
@@ -271,32 +285,40 @@ export function AdvancedPostStudio({
     setTimeout(() => setSaved(false), 2000);
   };
 
-  const busy =
-    generateAdvanced.isPending ||
-    rewriteAdvanced.isPending ||
-    optimizeAdvancedCta.isPending ||
-    generateAdvancedTitles.isPending;
+  const handleSample = () => {
+    setForm(sampleAdvancedFormState);
+    saveAdvancedDraft(sampleAdvancedFormState, user?.id);
+  };
+
+  const handleReset = () => {
+    const dirty = !!(
+      result ||
+      form.productService.trim() ||
+      form.painPoints.trim() ||
+      form.desires.trim()
+    );
+    if (dirty && !window.confirm('Làm mới form và xóa kết quả hiện tại?')) return;
+    setForm(defaultAdvancedFormState);
+    setResult(null);
+    setVariantTab('main');
+    setTitleOptions([]);
+    setErrorMsg('');
+    clearAdvancedWorkspaceDraft(user?.id);
+    saveAdvancedWorkspaceDraft(emptyAdvancedWorkspaceDraft(), user?.id, { force: true });
+  };
+
+  const isGeneratingResult = isCreatingLoading || generateAdvanced.isPending;
+  const busy = isGeneratingResult;
 
   return (
-    <div className="advanced-write-tab space-y-4">
+    <div className="advanced-write-tab space-y-4 pb-24">
       {!aiStatus?.aiConfigured && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           AI chưa cấu hình — hệ thống dùng bản mẫu. Thêm OPENAI_API_KEY vào .env để bật AI.
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="border-white/40 bg-[#0A3D30] text-white hover:bg-[#083028] hover:text-[#F97316] [&_svg]:text-white"
-          onClick={() => setForm(sampleAdvancedFormState)}
-        >
-          Điền mẫu
-        </Button>
-        {copyMsg && <span className="self-center text-sm text-emerald-300">{copyMsg}</span>}
-      </div>
+      {copyMsg && <span className="text-sm text-emerald-300">{copyMsg}</span>}
 
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Cột trái — form */}
@@ -325,15 +347,29 @@ export function AdvancedPostStudio({
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-white">Combo / ưu đãi</Label>
-            <Input value={form.combo} onChange={(e) => patch({ combo: e.target.value })} placeholder="Mua 8 tặng 2 buổi" />
-          </div>
+          <AiSuggestTextareaField
+            label={<span className="text-white">Combo / ưu đãi</span>}
+            field="combo"
+            value={form.combo}
+            onChange={(v) => patch({ combo: v })}
+            rows={2}
+            placeholder="Mua 8 tặng 2 buổi"
+            productService={form.productService}
+            onSuggest={() => handleFieldSuggest('combo')}
+            isSuggesting={suggestingField === 'combo'}
+          />
 
-          <div className="space-y-1.5">
-            <Label className="text-white">Quà tặng</Label>
-            <Input value={form.gift} onChange={(e) => patch({ gift: e.target.value })} placeholder="Serum mini, voucher..." />
-          </div>
+          <AiSuggestTextareaField
+            label={<span className="text-white">Quà tặng</span>}
+            field="gift"
+            value={form.gift}
+            onChange={(v) => patch({ gift: v })}
+            rows={2}
+            placeholder="Serum mini, voucher..."
+            productService={form.productService}
+            onSuggest={() => handleFieldSuggest('gift')}
+            isSuggesting={suggestingField === 'gift'}
+          />
 
           <div className="space-y-1.5">
             <Label className="text-white">Khu vực bán hàng</Label>
@@ -458,9 +494,9 @@ export function AdvancedPostStudio({
             </Select>
           </div>
 
-          <div className="flex flex-wrap gap-2 pt-2">
-            <Button onClick={handleGenerate} disabled={busy}>
-              {generateAdvanced.isPending ? (
+          <div className="fixed bottom-0 left-0 right-0 z-40 flex h-[60px] flex-wrap items-center gap-2 border-t border-white/10 bg-[#2E594F] px-4 shadow-[0_-6px_16px_rgba(15,23,42,0.12)] lg:left-64">
+            <Button onClick={() => void handleGenerate()} disabled={busy}>
+              {isGeneratingResult ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
                 <Sparkles className="mr-2 h-4 w-4" />
@@ -470,58 +506,145 @@ export function AdvancedPostStudio({
             <Button
               type="button"
               variant="outline"
-              className="border-white/40 bg-[#0A3D30] text-white hover:bg-[#083028] hover:text-[#F97316] [&_svg]:text-white hover:[&_svg]:text-[#F97316]"
-              onClick={handleSaveHistory}
-              disabled={!result || busy}
+              className="border-[#0A3D30] bg-[#0A3D30] text-white hover:bg-[#083028] hover:text-white [&_svg]:text-white"
+              onClick={handleReset}
+              aria-label="Làm mới form"
+            >
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Làm mới
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="border-[#0A3D30] bg-[#0A3D30] text-white hover:bg-[#083028] hover:text-white [&_svg]:text-white"
+              onClick={handleSample}
+            >
+              Dùng mẫu
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="border-[#0A3D30] bg-[#0A3D30] text-white hover:bg-[#083028] hover:text-white [&_svg]:text-white"
+              onClick={handleSave}
+              disabled={busy}
             >
               <Save className="mr-2 h-4 w-4" />
-              {saved ? 'Đã lưu!' : 'Lưu bài viết'}
+              {saved ? 'Đã lưu!' : 'Lưu'}
             </Button>
           </div>
         </div>
 
         {/* Cột phải — kết quả */}
-        <div className="space-y-4 min-h-[320px]">
-          {generateAdvanced.isPending && (
+        <div
+          ref={resultSectionRef}
+          className="advanced-result-panel min-h-[320px] scroll-mt-24 space-y-4 text-white"
+        >
+          {isGeneratingResult && (
             <ContentGeneratingLoader
               title="Đang tạo bài viết"
               subtitle="AI đang viết bài theo khung 16 bước — vui lòng đợi trong giây lát"
             />
           )}
 
-          {!result && !generateAdvanced.isPending && !busy && (
+          {!result && !isGeneratingResult && (
             <EmptyState title="Chưa có bài viết" description="Điền form và bấm Tạo bài viết" />
           )}
 
-          {result && !generateAdvanced.isPending && (
+          {result && !isGeneratingResult && (
             <>
-              <div className="rounded-xl border bg-card p-4 md:p-5 space-y-3">
+              <div className="space-y-3 rounded-xl border border-white/20 bg-[#0A3D30] p-0 text-white md:p-0 overflow-hidden">
+                <div className="advanced-result-actions flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 text-slate-900">
+                  <h3 className="font-semibold text-slate-900">Kết quả content</h3>
+                  <div className="flex items-center gap-1 text-slate-800">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-slate-800 hover:text-slate-900"
+                      onClick={() => setContentPreviewOpen(true)}
+                      disabled={!displayContent().trim()}
+                    >
+                      <Maximize2 className="mr-1 h-4 w-4" />
+                      Xem lớn
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-slate-800 hover:text-slate-900"
+                      onClick={() => void handleCopy()}
+                    >
+                      <Copy className="mr-1 h-4 w-4" />
+                      {copyMsg || 'Copy'}
+                    </Button>
+                    <SendToAutoPostButton
+                      tab="advanced"
+                      title={result.title || form.productService}
+                      content={
+                        variantTab === 'main' || variantTab === 'facebook'
+                          ? buildFacebookPostText({
+                              hook: result.hook,
+                              body:
+                                variantTab === 'main'
+                                  ? result.final_article
+                                  : result.variants.facebook,
+                              cta: result.cta,
+                              hashtags: result.hashtags,
+                            })
+                          : displayContent()
+                      }
+                      variant="ghost"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-3 px-4 py-4 md:px-5">
                 <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="space-y-2 w-full">
-                    <h3 className="font-bold text-lg leading-snug text-slate-900">{result.title}</h3>
+                  <div className="w-full space-y-2">
+                    <h3 className="text-lg font-bold leading-snug text-white">{result.title}</h3>
                     {result.hook && variantTab !== 'main' && (
-                      <blockquote className="border-l-4 border-primary/60 bg-primary/5 px-4 py-2.5 text-sm italic text-slate-700 rounded-r-md">
+                      <blockquote className="rounded-r-md border-l-4 border-orange-400/70 bg-white/10 px-4 py-2.5 text-sm italic text-white">
                         {result.hook}
                       </blockquote>
                     )}
-                    <Badge variant="secondary">{result.source === 'ai' ? 'AI' : 'Mẫu'}</Badge>
+                    <Badge className="border-white/30 bg-white/15 text-white hover:bg-white/20">
+                      {result.source === 'ai' ? 'AI' : 'Mẫu'}
+                    </Badge>
                   </div>
                 </div>
 
                 <Tabs value={variantTab} onValueChange={(v) => setVariantTab(v as VariantTab)}>
-                  <TabsList className="flex flex-wrap h-auto">
-                    <TabsTrigger value="main">Bài chính</TabsTrigger>
-                    <TabsTrigger value="facebook">Facebook</TabsTrigger>
-                    <TabsTrigger value="website">Website</TabsTrigger>
-                    <TabsTrigger value="ads">Quảng cáo</TabsTrigger>
+                  <TabsList className="flex h-auto flex-wrap border border-white/20 bg-[#083028]">
+                    <TabsTrigger
+                      value="main"
+                      className="text-white data-[state=active]:bg-white data-[state=active]:text-slate-900"
+                    >
+                      Bài chính
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="facebook"
+                      className="text-white data-[state=active]:bg-white data-[state=active]:text-slate-900"
+                    >
+                      Facebook
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="website"
+                      className="text-white data-[state=active]:bg-white data-[state=active]:text-slate-900"
+                    >
+                      Website
+                    </TabsTrigger>
+                    <TabsTrigger
+                      value="ads"
+                      className="text-white data-[state=active]:bg-white data-[state=active]:text-slate-900"
+                    >
+                      Quảng cáo
+                    </TabsTrigger>
                   </TabsList>
                 </Tabs>
 
-                <div className="rounded-lg border border-slate-200 bg-white p-4 md:p-5 max-h-[min(560px,70vh)] overflow-y-auto shadow-inner">
+                <div className="advanced-result-article max-h-[min(560px,70vh)] overflow-y-auto rounded-lg border border-slate-200 bg-white p-4 text-slate-900 shadow-inner md:p-5">
                   {variantTab === 'main' || variantTab === 'facebook' ? (
                     <div className="space-y-4">
                       {variantTab === 'main' && result.hook && (
-                        <p className="text-[15px] leading-[1.85] text-slate-800 whitespace-pre-wrap font-medium">
+                        <p className="whitespace-pre-wrap text-[15px] font-medium leading-[1.85] text-slate-800">
                           {result.hook}
                         </p>
                       )}
@@ -533,54 +656,33 @@ export function AdvancedPostStudio({
                 </div>
 
                 {(variantTab === 'main' || variantTab === 'facebook') && (
-                  <p className="text-xs text-muted-foreground">
+                  <p className="text-xs text-white/80">
                     Bài viết liền mạch — sẵn sàng copy đăng Facebook
                   </p>
                 )}
 
                 {result.cta && (
-                  <div className="rounded-lg border border-primary/20 bg-primary/5 px-4 py-3">
-                    <p className="text-xs font-medium uppercase tracking-wide text-primary mb-1">
+                  <div className="rounded-lg border border-orange-400/50 bg-white/10 px-4 py-3">
+                    <p className="mb-1 text-xs font-medium uppercase tracking-wide text-orange-300">
                       Kêu gọi hành động
                     </p>
-                    <p className="text-sm font-semibold text-slate-900">{result.cta}</p>
+                    <p className="text-sm font-semibold text-white">{result.cta}</p>
                   </div>
                 )}
 
                 {result.hashtags.length > 0 && (
-                  <p className="text-xs text-muted-foreground">{result.hashtags.join(' ')}</p>
+                  <p className="text-xs text-white/80">{result.hashtags.join(' ')}</p>
                 )}
 
-                <div className="flex flex-wrap gap-2">
-                  <Button variant="outline" size="sm" onClick={handleRewrite} disabled={busy}>
-                    <RefreshCw className="mr-1 h-3.5 w-3.5" /> Viết lại
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={handleOptimizeCta} disabled={busy}>
-                    <Target className="mr-1 h-3.5 w-3.5" /> Tối ưu CTA
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={handleTitles} disabled={busy}>
-                    <Wand2 className="mr-1 h-3.5 w-3.5" /> Tạo tiêu đề khác
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={handleCopy}>
-                    <Copy className="mr-1 h-3.5 w-3.5" /> Copy đăng Facebook
-                  </Button>
-                  <SendToAutoPostButton
-                    tab="advanced"
-                    title={result.title || form.productService}
-                    content={displayContent()}
-                    variant="outline"
-                    className="h-8 border-white/40 bg-[#0A3D30] text-white hover:bg-[#083028] hover:text-[#F97316] [&_svg]:text-white"
-                  />
-                  <Button variant="outline" size="sm" onClick={handleSaveHistory}>
-                    <Save className="mr-1 h-3.5 w-3.5" /> {saved ? 'Đã lưu!' : 'Lưu bài viết'}
-                  </Button>
-                </div>
-
                 {titleOptions.length > 0 && (
-                  <ul className="text-sm space-y-1 border-t pt-3">
-                    <li className="font-medium">Tiêu đề gợi ý:</li>
+                  <ul className="space-y-1 border-t border-white/20 pt-3 text-sm text-white">
+                    <li className="font-medium text-white">Tiêu đề gợi ý:</li>
                     {titleOptions.map((t, i) => (
-                      <li key={i} className="text-muted-foreground cursor-pointer hover:text-foreground" onClick={() => setResult({ ...result, title: t })}>
+                      <li
+                        key={i}
+                        className="cursor-pointer text-white/80 hover:text-orange-400"
+                        onClick={() => setResult({ ...result, title: t })}
+                      >
                         • {t}
                       </li>
                     ))}
@@ -588,32 +690,49 @@ export function AdvancedPostStudio({
                 )}
 
                 {result.suggested_ads_angle && (
-                  <p className="text-xs text-muted-foreground border-t pt-2">
+                  <p className="border-t border-white/20 pt-2 text-xs text-white/85">
                     Góc quảng cáo: {result.suggested_ads_angle}
                   </p>
                 )}
+                </div>
               </div>
 
               {/* Phân tích 16 bước */}
               {result.analysis_16_steps.length > 0 && (
-                <div className="rounded-xl border bg-card p-4 md:p-5">
-                  <h4 className="font-semibold mb-3">Phân tích khung 16 bước</h4>
-                  <div className="space-y-2 max-h-[360px] overflow-y-auto">
-                    {result.analysis_16_steps.map((step) => (
-                      <div key={step.step} className="rounded-lg bg-slate-50 px-3 py-2 text-sm">
-                        <span className="font-medium text-primary">Bước {step.step}:</span>{' '}
-                        <span className="text-slate-600">{step.label}</span>
-                        <p className="text-slate-700 mt-0.5">{step.summary}</p>
+                <div className="rounded-xl border border-white/20 bg-[#0A3D30] p-4 text-white md:p-5">
+                  <h4 className="mb-3 font-semibold text-white">Phân tích khung 16 bước</h4>
+                  <div className="space-y-2">
+                    {(analysisExpanded
+                      ? result.analysis_16_steps
+                      : result.analysis_16_steps.slice(0, 5)
+                    ).map((step) => (
+                      <div key={step.step} className="rounded-lg bg-white/10 px-3 py-2 text-sm">
+                        <span className="font-medium text-orange-300">Bước {step.step}:</span>{' '}
+                        <span className="text-white/85">{step.label}</span>
+                        <p className="mt-0.5 text-white">{step.summary}</p>
                       </div>
                     ))}
                   </div>
+                  {result.analysis_16_steps.length > 5 ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="mt-3 w-full text-white hover:bg-white/10 hover:text-[#F97316]"
+                      onClick={() => setAnalysisExpanded((v) => !v)}
+                    >
+                      {analysisExpanded
+                        ? 'Thu gọn'
+                        : `Xem chi tiết (${result.analysis_16_steps.length} bước)`}
+                    </Button>
+                  ) : null}
                 </div>
               )}
 
               {result.suggested_images.length > 0 && (
-                <div className="rounded-xl border p-4 text-sm">
-                  <p className="font-medium mb-2">Gợi ý hình ảnh</p>
-                  <ul className="list-disc pl-4 space-y-1 text-muted-foreground">
+                <div className="rounded-xl border border-white/20 bg-[#0A3D30] p-4 text-sm text-white">
+                  <p className="mb-2 font-medium text-white">Gợi ý hình ảnh</p>
+                  <ul className="list-disc space-y-1 pl-4 text-white/85">
                     {result.suggested_images.map((img, i) => (
                       <li key={i}>{img}</li>
                     ))}
@@ -626,6 +745,27 @@ export function AdvancedPostStudio({
       </div>
 
       {errorMsg && <ErrorState message={errorMsg} onRetry={() => setErrorMsg('')} />}
+
+      <ContentPreviewDialog
+        open={contentPreviewOpen}
+        onOpenChange={setContentPreviewOpen}
+        title={result?.title || form.productService}
+        category="Viết bài nâng cao"
+        content={
+          result
+            ? variantTab === 'main' || variantTab === 'facebook'
+              ? buildFacebookPostText({
+                  hook: result.hook,
+                  body:
+                    variantTab === 'main' ? result.final_article : result.variants.facebook,
+                  cta: result.cta,
+                  hashtags: result.hashtags,
+                })
+              : displayContent()
+            : ''
+        }
+        onContentChange={handlePreviewContentChange}
+      />
     </div>
   );
 }

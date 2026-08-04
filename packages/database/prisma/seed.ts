@@ -97,6 +97,19 @@ async function main() {
     { code: 'hrm.leave.read', name: 'Xem phép / OT', module: 'hrm' },
     { code: 'hrm.leave.write', name: 'Tạo phép / OT', module: 'hrm' },
     { code: 'hrm.leave.approve', name: 'Duyệt phép / OT', module: 'hrm' },
+    { code: 'automation.view', name: 'Xem automation', module: 'automation' },
+    { code: 'automation.template.manage', name: 'Quản lý mẫu tin', module: 'automation' },
+    { code: 'automation.campaign.create', name: 'Tạo/sửa chiến dịch automation', module: 'automation' },
+    { code: 'automation.campaign.approve', name: 'Duyệt chiến dịch automation', module: 'automation' },
+    { code: 'automation.campaign.send', name: 'Gửi/thử automation', module: 'automation' },
+    { code: 'automation.campaign.pause', name: 'Tạm dừng/tiếp tục automation', module: 'automation' },
+    { code: 'automation.integration.manage', name: 'Quản lý tích hợp kênh', module: 'automation' },
+    { code: 'automation.logs.view', name: 'Xem nhật ký automation', module: 'automation' },
+    { code: 'ads.read', name: 'Xem quảng cáo / insights', module: 'ads' },
+    { code: 'ads.connect', name: 'Kết nối tài khoản Ads (OAuth)', module: 'ads' },
+    { code: 'ads.sync', name: 'Đồng bộ dữ liệu Ads', module: 'ads' },
+    { code: 'ads.analyze', name: 'Phân tích / AI draft Ads', module: 'ads' },
+    { code: 'ads.manage', name: 'Quản lý chiến dịch Ads (pause/enable/rules)', module: 'ads' },
   ];
 
   const permissions = await Promise.all(
@@ -112,7 +125,9 @@ async function main() {
 
   const rolePermissionCodes: Record<string, string[]> = {
     OWNER: permissionDefs.map((p) => p.code),
-    MANAGER: permissionDefs.filter((p) => p.code !== 'settings.manage').map((p) => p.code),
+    MANAGER: permissionDefs.filter(
+      (p) => p.code !== 'settings.manage' && p.code !== 'automation.integration.manage',
+    ).map((p) => p.code),
     MARKETING: [
       'customer.read',
       'lead.read',
@@ -120,11 +135,33 @@ async function main() {
       'campaign.send',
       'report.view',
       'hrm.employee.read',
+      'automation.view',
+      'automation.template.manage',
+      'automation.campaign.create',
+      'automation.campaign.approve',
+      'automation.campaign.send',
+      'automation.campaign.pause',
+      'automation.logs.view',
+      'ads.read',
+      'ads.connect',
+      'ads.sync',
+      'ads.analyze',
+      'ads.manage',
     ],
-    SALE: ['customer.read', 'customer.write', 'lead.read', 'lead.write', 'order.read', 'report.view', 'hrm.employee.read'],
+    SALE: [
+      'customer.read',
+      'customer.write',
+      'lead.read',
+      'lead.write',
+      'order.read',
+      'report.view',
+      'hrm.employee.read',
+      'ads.read',
+    ],
     TECHNICIAN: [
       'hrm.employee.read',
       'hrm.attendance.read',
+      'hrm.attendance.write',
       'hrm.leave.read',
       'hrm.leave.write',
       'lead.read',
@@ -160,6 +197,71 @@ async function main() {
       priceMonthly: new Decimal(990000),
       creditsIncluded: 500,
       features: ['crm', 'marketing_basic', '1_branch'],
+    },
+  });
+
+  const mspFeatures = [
+    'crm_full',
+    'marketing_automation',
+    'ads_performance',
+    'chatbot_cskh',
+    'content_auto_post',
+    'hrm',
+    'messaging_campaigns',
+    'reports',
+  ];
+
+  await prisma.subscriptionPlan.upsert({
+    where: { code: 'msp-pro-6m' },
+    update: {
+      name: 'Marketing SPA Pro — 6 tháng',
+      priceMonthly: new Decimal(650000),
+      priceVnd: new Decimal(3900000),
+      durationMonths: 6,
+      highlightLabel: null,
+      savingsAmount: null,
+      sortOrder: 10,
+      features: mspFeatures,
+      isActive: true,
+    },
+    create: {
+      code: 'msp-pro-6m',
+      name: 'Marketing SPA Pro — 6 tháng',
+      priceMonthly: new Decimal(650000),
+      priceVnd: new Decimal(3900000),
+      durationMonths: 6,
+      sortOrder: 10,
+      creditsIncluded: 0,
+      features: mspFeatures,
+      isActive: true,
+    },
+  });
+
+  await prisma.subscriptionPlan.upsert({
+    where: { code: 'msp-pro-12m' },
+    update: {
+      name: 'Marketing SPA Pro — 12 tháng',
+      priceMonthly: new Decimal(458333),
+      priceVnd: new Decimal(5500000),
+      durationMonths: 12,
+      highlightLabel: 'Khuyên dùng',
+      savingsAmount: new Decimal(2300000),
+      sortOrder: 20,
+      features: mspFeatures,
+      isActive: true,
+    },
+    create: {
+      code: 'msp-pro-12m',
+      name: 'Marketing SPA Pro — 12 tháng',
+      priceMonthly: new Decimal(458333),
+      priceVnd: new Decimal(5500000),
+      durationMonths: 12,
+      highlightLabel: 'Khuyên dùng',
+      savingsAmount: new Decimal(2300000),
+      sortOrder: 20,
+      creditsIncluded: 0,
+      features: mspFeatures,
+      isActive: true,
     },
   });
 

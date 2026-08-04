@@ -35,42 +35,42 @@ export class FacebookAdsController {
   @Get('status')
   @UseGuards(JwtAuthGuard, TenantGuard)
   status(@CurrentUser() user: AuthUser) {
-    return this.service.getStatus(user.id);
+    return this.service.getStatus(user);
   }
 
   @Get('ad-accounts')
   @UseGuards(JwtAuthGuard, TenantGuard)
   adAccounts(@CurrentUser() user: AuthUser) {
-    return this.service.listAdAccounts(user.id);
+    return this.service.listAdAccounts(user);
   }
 
   @Post('ad-account')
   @UseGuards(JwtAuthGuard, TenantGuard)
   selectAdAccount(@CurrentUser() user: AuthUser, @Body() dto: SelectAdAccountDto) {
-    return this.service.selectAdAccount(user.id, dto);
+    return this.service.selectAdAccount(user, dto);
   }
 
   @Post('sync')
   @UseGuards(JwtAuthGuard, TenantGuard)
   sync(@CurrentUser() user: AuthUser, @Body() dto: SyncFacebookAdsDto) {
-    return this.service.sync(user.id, dto);
+    return this.service.sync(user, dto);
   }
 
   @Get('campaigns')
   @UseGuards(JwtAuthGuard, TenantGuard)
   campaigns(@CurrentUser() user: AuthUser, @Query() query: FacebookCampaignsQueryDto) {
-    return this.service.getCampaigns(user.id, query);
+    return this.service.getCampaigns(user, query);
   }
 
   @Get('sync-logs')
   @UseGuards(JwtAuthGuard, TenantGuard)
   syncLogs(@CurrentUser() user: AuthUser) {
-    return this.service.listSyncLogs(user.id);
+    return this.service.listSyncLogs(user);
   }
 
   @Delete('disconnect')
   @UseGuards(JwtAuthGuard, TenantGuard)
   disconnect(@CurrentUser() user: AuthUser) {
-    return this.service.disconnect(user.id);
+    return this.service.disconnect(user);
   }
 }

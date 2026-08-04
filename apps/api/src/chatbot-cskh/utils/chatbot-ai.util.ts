@@ -160,8 +160,11 @@ export async function generateAiReply(params: {
     userText: string;
     temperature: number;
   }) => Promise<string>;
+  /** Số lần retry OpenAI sau lần đầu (0–2). */
+  maxRetries?: number;
 }): Promise<AiReplyResult> {
   const { bot, userText, sources, history, settings, usageAllowed, openAiChat } = params;
+  const maxRetries = Math.min(2, Math.max(0, params.maxRetries ?? 0));
   const text = userText.trim();
 
   if (isGreetingOnly(text)) {
@@ -192,36 +195,55 @@ export async function generateAiReply(params: {
   const knowledgeText = knowledgeContext(chunks);
   const systemPrompt = buildSystemPrompt(bot, knowledgeText, profileText, settings.systemPrompt ?? '');
 
-  try {
-    if (openAiChat) {
-      const hist = history.map((m) => ({
-        role: m.role === 'assistant' ? 'assistant' : 'user',
-        content: m.message,
-      }));
-      const reply = await openAiChat({
-        model: settings.model || 'gpt-4o-mini',
-        systemPrompt,
-        history: hist,
-        userText: text,
-        temperature: settings.temperature ?? 0.4,
-      });
-      if (reply) {
-        return {
-          reply,
-          usedAi: true,
-          showLead: shouldShowLead(text, reply),
-          noData: reply.includes(NO_DATA_REPLY),
-        };
+  if (openAiChat) {
+    const hist = history.map((m) => ({
+      role: m.role === 'assistant' ? 'assistant' : 'user',
+      content: m.message,
+    }));
+    let lastErr: Error | null = null;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const reply = await openAiChat({
+          model: settings.model || 'gpt-4o-mini',
+          systemPrompt,
+          history: hist,
+          userText: text,
+          temperature: settings.temperature ?? 0.4,
+        });
+        if (reply) {
+          return {
+            reply,
+            usedAi: true,
+            showLead: shouldShowLead(text, reply),
+            noData: reply.includes(NO_DATA_REPLY),
+          };
+        }
+      } catch (err) {
+        lastErr = err as Error;
+        if (attempt < maxRetries) {
+          await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+          continue;
+        }
       }
     }
+    const reply = fallbackReplyFromKnowledge(chunks, profileText) || AI_FRIENDLY_ERROR;
+    return {
+      reply,
+      usedAi: false,
+      showLead: true,
+      noData: false,
+      blockedCode: lastErr ? 'ai_error' : 'llm_empty',
+    };
+  }
 
+  try {
     const reply = fallbackReplyFromKnowledge(chunks, profileText);
     return {
       reply,
       usedAi: false,
       showLead: shouldShowLead(text, reply),
       noData: reply === NO_DATA_REPLY,
-      blockedCode: openAiChat ? undefined : 'llm_unavailable',
+      blockedCode: 'llm_unavailable',
     };
   } catch {
     const reply = fallbackReplyFromKnowledge(chunks, profileText) || AI_FRIENDLY_ERROR;

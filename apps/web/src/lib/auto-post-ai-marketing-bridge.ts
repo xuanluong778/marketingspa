@@ -19,6 +19,9 @@ export interface AiMarketingPostPayload {
   content: string;
   contentScore?: number;
   sourceLabel: string;
+  industryId?: string | null;
+  industryName?: string | null;
+  customIndustry?: string | null;
 }
 
 export function aiMarketingTabLabel(tab: ContentStudioTab): string {
@@ -39,6 +42,9 @@ export function contentHistoryItemToPayload(item: ContentHistoryItem): AiMarketi
     content: item.content,
     contentScore: item.contentScore,
     sourceLabel: aiMarketingTabLabel(item.tab),
+    industryId: item.industryId,
+    industryName: item.industryName,
+    customIndustry: item.customIndustry,
   };
 }
 

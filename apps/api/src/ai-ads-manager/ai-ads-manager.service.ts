@@ -1,9 +1,4 @@
-import {
-  BadRequestException,
-  Injectable,
-  Logger,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   AdAutomationAction,
@@ -15,19 +10,18 @@ import {
   Prisma,
 } from '@marketingspa/database';
 import { PrismaService } from '../prisma/prisma.service';
-import { encryptSecret, decryptSecret } from '../common/utils/encryption.util';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { FacebookAdsService } from '../ad-performance/facebook-ads/facebook-ads.service';
-import { MetaGraphApiService } from '../ad-performance/facebook-ads/meta-graph-api.service';
-import { mapMetaInsightToCampaign } from '../ad-performance/facebook-ads/facebook-ads.mapper';
+import { GoogleAdsService } from '../ad-performance/google-ads/google-ads.service';
+import { AdConnectionFacade } from '../ad-performance/ad-connection.facade';
+import { AdsSyncQueueService } from '../ad-performance/ads-sync-queue.service';
+import { AdsMcpGateway } from '../ads-mcp/ads-mcp.gateway';
+import { tenantFromAuthUser } from '../ads-mcp/ads-mcp.context';
+import { AdsActionService } from '../ads-actions/ads-action.service';
 import { OpenAiService } from '../openai/openai.service';
-import { evaluateRules } from './ads-automation.engine';
-import {
-  buildAiSuggestion,
-  computeEfficiencyScore,
-  decimalToNumber,
-  type CampaignMetrics,
-} from './ads-efficiency.util';
+import { createHash } from 'crypto';
+import { evaluateRules, clampBudgetChangePercent, normalizeMcpMode } from './ads-automation.engine';
+import { decimalToNumber, type CampaignMetrics } from './ads-efficiency.util';
 import type {
   ConnectGmailDto,
   ConnectGoogleDto,
@@ -47,269 +41,281 @@ export class AiAdsManagerService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly facebookAds: FacebookAdsService,
-    private readonly meta: MetaGraphApiService,
+    private readonly googleAds: GoogleAdsService,
+    private readonly connections: AdConnectionFacade,
+    private readonly adsSyncQueue: AdsSyncQueueService,
+    private readonly adsMcp: AdsMcpGateway,
+    private readonly adsActions: AdsActionService,
     private readonly openAi: OpenAiService,
   ) {}
 
+  /** Đọc dashboard chỉ qua Internal Ads MCP Gateway (PostgreSQL). */
   async getDashboard(user: AuthUser, dateFrom: string, dateTo: string) {
-    const insights = await this.prisma.adInsight.findMany({
-      where: { userId: user.id, dateFrom: new Date(dateFrom), dateTo: new Date(dateTo) },
-    });
+    const ctx = tenantFromAuthUser(user);
+    const m = await this.adsMcp.getMetrics(ctx, { dateFrom, dateTo });
+    const { assertNoCredentialLeak } = await import('../common/utils/token-security.util');
+    const payload = {
+      dateFrom: m.dateFrom,
+      dateTo: m.dateTo,
+      totalSpend: m.totalSpend,
+      totalRevenue: m.conversionValue,
+      conversionValue: m.conversionValue,
+      roas: m.roas,
+      cpa: m.cpa,
+      cpl: m.cpa,
+      totalConversions: m.totalConversions,
+      activeCampaigns: m.activeCampaigns,
+      poorCampaigns: m.poorCampaigns,
+      profit: m.conversionValue - m.totalSpend,
+      source: 'AdsMcpGateway' as const,
+      evidence: m.evidence,
+    };
+    assertNoCredentialLeak(payload);
+    return payload;
+  }
 
-    const campaigns = await this.prisma.adManagerCampaign.findMany({
-      where: { userId: user.id },
-    });
-
-    let totalSpend = 0;
-    let totalRevenue = 0;
-    let totalConversions = 0;
-    let poorCount = 0;
-
-    for (const row of insights) {
-      totalSpend += decimalToNumber(row.spend);
-      totalRevenue += decimalToNumber(row.revenue);
-      totalConversions += decimalToNumber(row.conversions) + decimalToNumber(row.leads);
-      if ((row.efficiencyScore ?? 50) < 40) poorCount += 1;
-    }
-
-    const roas = totalSpend > 0 ? totalRevenue / totalSpend : null;
-    const cpa = totalConversions > 0 ? totalSpend / totalConversions : 0;
-    const activeCampaigns = campaigns.filter((c) => c.status === 'ACTIVE').length;
-    const profit = totalRevenue - totalSpend;
-
+  /** Accounts từ MCP — không gọi Meta/Google status API. */
+  async getConnections(user: AuthUser) {
+    const ctx = tenantFromAuthUser(user);
+    const res = await this.adsMcp.listAccounts(ctx);
     return {
-      dateFrom,
-      dateTo,
-      totalSpend,
-      totalRevenue,
-      roas,
-      cpa,
-      cpl: cpa,
-      totalConversions,
-      activeCampaigns,
-      poorCampaigns: poorCount,
-      profit,
+      items: res.items.map((a) => ({
+        provider: a.platform,
+        status: a.status,
+        accountName: a.accountName,
+        lastSyncAt: a.lastSyncAt,
+        lastError: a.lastError,
+        connected: a.connected,
+        credentialSource: 'AdConnection' as const,
+      })),
+      source: 'AdsMcpGateway' as const,
     };
   }
 
-  async getConnections(user: AuthUser) {
-    const [connections, fbStatus] = await Promise.all([
-      this.prisma.adConnection.findMany({ where: { userId: user.id } }),
-      this.facebookAds.getStatus(user.id).catch(() => null),
-    ]);
-
-    const meta = this.mapConnectionStatus(
-      AdConnectionProvider.META,
-      connections.find((c) => c.provider === 'META'),
-      fbStatus?.connected
-        ? fbStatus.status === 'TOKEN_EXPIRED'
-          ? AdConnectionStatus.TOKEN_EXPIRED
-          : fbStatus.status === 'NO_AD_ACCOUNT_ACCESS'
-            ? AdConnectionStatus.INSUFFICIENT_PERMISSIONS
-            : AdConnectionStatus.CONNECTED
-        : AdConnectionStatus.DISCONNECTED,
-      fbStatus?.selectedAdAccountName ?? undefined,
-    );
-
-    const google = this.mapConnectionStatus(
-      AdConnectionProvider.GOOGLE,
-      connections.find((c) => c.provider === 'GOOGLE'),
-    );
-
-    const gmail = this.mapConnectionStatus(
-      AdConnectionProvider.GMAIL,
-      connections.find((c) => c.provider === 'GMAIL'),
-    );
-
-    return { items: [meta, google, gmail] };
-  }
-
-  getMetaOAuthStart(user: AuthUser): { url: string } {
+  getMetaOAuthStart(user: AuthUser): Promise<{ url: string }> {
     return this.facebookAds.getOAuthStartUrl(user, 'ads');
   }
 
-  async connectGoogle(user: AuthUser, dto: ConnectGoogleDto) {
-    const encrypted = encryptSecret(
-      JSON.stringify({ refreshToken: dto.refreshToken, customerId: dto.customerId }),
-      this.getEncryptionKey(),
+  getGoogleOAuthStart(user: AuthUser): Promise<{ url: string }> {
+    return this.googleAds.getOAuthStartUrl(user, 'ads');
+  }
+
+  /** @deprecated Paste refresh token bị từ chối — dùng OAuth */
+  async connectGoogle(_user: AuthUser, dto: ConnectGoogleDto) {
+    if (dto.refreshToken) {
+      throw new BadRequestException(
+        'Không chấp nhận paste Google refresh token. Dùng OAuth: GET /ad-performance/google/oauth/start',
+      );
+    }
+    throw new BadRequestException(
+      'Kết nối Google Ads qua OAuth: GET /ai-ads-manager/google/oauth/start hoặc /ad-performance/google/oauth/start',
     );
-
-    await this.prisma.adConnection.upsert({
-      where: { userId_provider: { userId: user.id, provider: 'GOOGLE' } },
-      create: {
-        userId: user.id,
-        organizationId: user.organizationId,
-        provider: 'GOOGLE',
-        status: AdConnectionStatus.CONNECTED,
-        encryptedCredentials: encrypted,
-        externalAccountId: dto.customerId,
-        externalAccountName: dto.accountName ?? `Google Ads ${dto.customerId}`,
-        scopes: ['https://www.googleapis.com/auth/adwords'],
-      },
-      update: {
-        status: AdConnectionStatus.CONNECTED,
-        encryptedCredentials: encrypted,
-        externalAccountId: dto.customerId,
-        externalAccountName: dto.accountName ?? `Google Ads ${dto.customerId}`,
-        lastError: null,
-      },
-    });
-
-    await this.prisma.adPlatformAccount.upsert({
-      where: {
-        userId_platform_externalId: {
-          userId: user.id,
-          platform: 'GOOGLE',
-          externalId: dto.customerId,
-        },
-      },
-      create: {
-        userId: user.id,
-        organizationId: user.organizationId,
-        platform: 'GOOGLE',
-        externalId: dto.customerId,
-        name: dto.accountName ?? `Google Ads ${dto.customerId}`,
-      },
-      update: {
-        name: dto.accountName ?? `Google Ads ${dto.customerId}`,
-        isActive: true,
-      },
-    });
-
-    return { ok: true };
   }
 
   async connectGmail(user: AuthUser, dto: ConnectGmailDto) {
-    const encrypted = encryptSecret(
-      JSON.stringify({ refreshToken: dto.refreshToken, email: dto.email }),
-      this.getEncryptionKey(),
-    );
-
-    await this.prisma.adConnection.upsert({
-      where: { userId_provider: { userId: user.id, provider: 'GMAIL' } },
-      create: {
-        userId: user.id,
-        organizationId: user.organizationId,
-        provider: 'GMAIL',
-        status: AdConnectionStatus.CONNECTED,
-        encryptedCredentials: encrypted,
-        externalAccountId: dto.email,
-        externalAccountName: dto.email,
-        scopes: ['https://www.googleapis.com/auth/gmail.send'],
-      },
-      update: {
-        status: AdConnectionStatus.CONNECTED,
-        encryptedCredentials: encrypted,
-        externalAccountId: dto.email,
-        externalAccountName: dto.email,
-        lastError: null,
-      },
+    await this.connections.upsertEncryptedCredentials({
+      organizationId: user.organizationId,
+      userId: user.id,
+      provider: AdConnectionProvider.GMAIL,
+      plaintextPayload: JSON.stringify({ refreshToken: dto.refreshToken, email: dto.email }),
+      status: AdConnectionStatus.CONNECTED,
+      externalAccountId: dto.email,
+      externalAccountName: dto.email,
+      scopes: ['https://www.googleapis.com/auth/gmail.send'],
     });
-
     return { ok: true };
   }
 
   async disconnect(user: AuthUser, provider: AdConnectionProvider) {
     if (provider === 'META') {
-      await this.facebookAds.disconnect(user.id);
+      await this.facebookAds.disconnect(user);
+      return { ok: true };
     }
-
-    await this.prisma.adConnection.updateMany({
-      where: { userId: user.id, provider },
-      data: {
-        status: AdConnectionStatus.DISCONNECTED,
-        encryptedCredentials: null,
-        externalAccountId: null,
-        externalAccountName: null,
-      },
-    });
-
+    if (provider === 'GOOGLE') {
+      await this.googleAds.disconnect(user);
+      return { ok: true };
+    }
+    await this.connections.clearCredentials(user.organizationId, provider, user.id);
     return { ok: true };
+  }
+
+  async listSyncJobs(user: AuthUser, limit = 30) {
+    return this.adsSyncQueue.listJobs(user, limit);
+  }
+
+  async getSyncJob(user: AuthUser, jobId: string) {
+    return this.adsSyncQueue.getJob(user, jobId);
   }
 
   async sync(user: AuthUser, dto: SyncAdsDto) {
     const platforms = dto.platform ? [dto.platform] : [AdPlatform.META, AdPlatform.GOOGLE];
-    const results: Array<{ platform: string; synced: number }> = [];
+    const results: Array<{
+      platform: string;
+      synced: number;
+      deprecated?: boolean;
+      message?: string;
+      jobId?: string;
+      queued?: boolean;
+      status?: string;
+    }> = [];
 
     for (const platform of platforms) {
       if (platform === 'META') {
-        const count = await this.syncMeta(user, dto.dateFrom, dto.dateTo);
-        results.push({ platform: 'META', synced: count });
+        const res = await this.facebookAds.sync(user, {
+          dateFrom: dto.dateFrom,
+          dateTo: dto.dateTo,
+        });
+        results.push({
+          platform: 'META',
+          synced: 0,
+          jobId: res.jobId,
+          queued: res.queued,
+          status: res.status,
+          message: res.message,
+        });
       } else if (platform === 'GOOGLE') {
-        const count = await this.syncGoogle(user, dto.dateFrom, dto.dateTo);
-        results.push({ platform: 'GOOGLE', synced: count });
+        const res = await this.adsSyncQueue.enqueueGoogleSync(user, {
+          dateFrom: dto.dateFrom,
+          dateTo: dto.dateTo,
+        });
+        results.push({
+          platform: 'GOOGLE',
+          synced: 0,
+          jobId: res.jobId,
+          queued: res.queued,
+          status: res.status,
+          message: res.message,
+        });
       }
     }
 
     await this.runAutomationAfterSync(user, dto.dateFrom, dto.dateTo);
-
     return { results };
   }
 
-  async getCampaigns(user: AuthUser, dateFrom: string, dateTo: string) {
-    const insights = await this.prisma.adInsight.findMany({
-      where: { userId: user.id, dateFrom: new Date(dateFrom), dateTo: new Date(dateTo) },
-      include: { campaign: true },
-      orderBy: { spend: 'desc' },
+  async getCampaigns(
+    user: AuthUser,
+    dateFrom: string,
+    dateTo: string,
+    opts?: { platform?: string; page?: number; pageSize?: number },
+  ) {
+    const { assertNoCredentialLeak } = await import('../common/utils/token-security.util');
+    const ctx = tenantFromAuthUser(user);
+    const limit = Math.min(opts?.pageSize ?? 20, 50);
+    const page = opts?.page ?? 1;
+
+    const mcp = await this.adsMcp.listCampaigns(ctx, {
+      dateFrom,
+      dateTo,
+      platform: opts?.platform,
+      limit: Math.min(limit * page, 50),
     });
 
-    return {
-      items: insights.map((row) => ({
-        id: row.campaignId ?? row.id,
-        insightId: row.id,
-        platform: row.platform,
-        name: row.campaignName,
-        status: row.campaign?.status ?? 'ACTIVE',
-        budget: row.campaign?.budget ? decimalToNumber(row.campaign.budget) : null,
-        externalId: row.externalCampaignId,
-        spend: decimalToNumber(row.spend),
-        impressions: row.impressions,
-        clicks: row.clicks,
-        ctr: decimalToNumber(row.ctr),
-        cpc: decimalToNumber(row.cpc),
-        cpm: decimalToNumber(row.cpm),
-        conversions: decimalToNumber(row.conversions),
-        leads: decimalToNumber(row.leads),
-        cpa: decimalToNumber(row.cpa),
-        cpl: decimalToNumber(row.cpl),
-        roas: row.roas ? decimalToNumber(row.roas) : null,
-        efficiencyScore: row.efficiencyScore,
-        aiSuggestion: row.aiSuggestion,
+    // MCP trả top-N theo spend; phân trang đơn giản trên kết quả đã giới hạn
+    const start = (page - 1) * limit;
+    const slice = mcp.items.slice(start, start + limit);
+
+    const payload = {
+      total: mcp.total,
+      page,
+      pageSize: limit,
+      source: 'AdsMcpGateway' as const,
+      items: slice.map((c) => ({
+        insightId: c.insightId ?? c.campaignId,
+        id: c.campaignId,
+        organizationId: user.organizationId,
+        platform: c.platform,
+        externalCampaignId: c.campaignId,
+        name: c.name,
+        campaignName: c.name,
+        status: c.status,
+        budget: null as number | null,
+        dateFrom: c.dateFrom ?? dateFrom,
+        dateTo: c.dateTo ?? dateTo,
+        date: c.dateFrom ?? dateFrom,
+        impressions: c.impressions,
+        reach: 0,
+        clicks: c.clicks,
+        spend: c.spend,
+        conversions: c.conversions,
+        conversionValue: c.conversionValue,
+        ctr: c.ctr,
+        cpc: c.cpc,
+        cpm: c.cpm,
+        cpa: c.cpa,
+        roas: c.roas,
+        currency: c.currency ?? 'USD',
+        timezone: 'UTC',
+        conversionActions: [] as unknown[],
+        efficiencyScore: c.efficiencyScore ?? null,
+        aiSuggestion: null as string | null,
+        leads: 0,
+        externalId: c.campaignId,
       })),
     };
+    assertNoCredentialLeak(payload);
+    return payload;
   }
 
   async getSettings(user: AuthUser) {
     const settings = await this.ensureSettings(user);
     return {
       autoModeEnabled: settings.autoModeEnabled,
+      mcpMode: normalizeMcpMode(settings.mcpMode),
       dailyBudgetLimit: settings.dailyBudgetLimit
         ? decimalToNumber(settings.dailyBudgetLimit)
         : null,
       maxTogglesPerDay: settings.maxTogglesPerDay,
       togglesToday: settings.togglesToday,
+      maxBudgetChangePercent: settings.maxBudgetChangePercent,
+      ruleLookbackDays: settings.ruleLookbackDays,
+      ruleCooldownMinutes: settings.ruleCooldownMinutes,
+      minSpendForAction: settings.minSpendForAction
+        ? decimalToNumber(settings.minSpendForAction)
+        : null,
       emergencyStop: settings.emergencyStop,
     };
   }
 
   async updateAutoMode(user: AuthUser, dto: UpdateAutoModeDto) {
-    if (dto.autoModeEnabled) {
+    if (dto.autoModeEnabled || dto.mcpMode === 'AUTO') {
       await this.ensureSettings(user);
     }
+
+    const mcpMode = dto.mcpMode ? normalizeMcpMode(dto.mcpMode) : undefined;
+    let autoModeEnabled = dto.autoModeEnabled;
+    if (mcpMode === 'AUTO') autoModeEnabled = true;
+    if (mcpMode === 'OBSERVE') autoModeEnabled = false;
 
     const settings = await this.prisma.adManagerSettings.upsert({
       where: { userId: user.id },
       create: {
         userId: user.id,
         organizationId: user.organizationId,
-        autoModeEnabled: dto.autoModeEnabled,
+        autoModeEnabled,
+        mcpMode: mcpMode ?? 'SUGGEST',
         dailyBudgetLimit: dto.dailyBudgetLimit,
         maxTogglesPerDay: dto.maxTogglesPerDay ?? 10,
+        maxBudgetChangePercent: dto.maxBudgetChangePercent ?? 20,
+        ruleLookbackDays: dto.ruleLookbackDays ?? 7,
+        ruleCooldownMinutes: dto.ruleCooldownMinutes ?? 60,
+        minSpendForAction: dto.minSpendForAction,
       },
       update: {
-        autoModeEnabled: dto.autoModeEnabled,
+        autoModeEnabled,
+        ...(mcpMode && { mcpMode }),
         ...(dto.dailyBudgetLimit !== undefined && { dailyBudgetLimit: dto.dailyBudgetLimit }),
         ...(dto.maxTogglesPerDay !== undefined && { maxTogglesPerDay: dto.maxTogglesPerDay }),
+        ...(dto.maxBudgetChangePercent !== undefined && {
+          maxBudgetChangePercent: dto.maxBudgetChangePercent,
+        }),
+        ...(dto.ruleLookbackDays !== undefined && { ruleLookbackDays: dto.ruleLookbackDays }),
+        ...(dto.ruleCooldownMinutes !== undefined && {
+          ruleCooldownMinutes: dto.ruleCooldownMinutes,
+        }),
+        ...(dto.minSpendForAction !== undefined && {
+          minSpendForAction: dto.minSpendForAction,
+        }),
       },
     });
 
@@ -319,10 +325,8 @@ export class AiAdsManagerService {
         organizationId: user.organizationId,
         platform: 'META',
         action: AdAutomationAction.RECOMMEND,
-        autoMode: dto.autoModeEnabled,
-        reason: dto.autoModeEnabled
-          ? 'User bật Auto Mode — AI có thể pause/enable theo rule'
-          : 'User tắt Auto Mode — AI chỉ gợi ý',
+        autoMode: settings.autoModeEnabled,
+        reason: `MCP mode=${normalizeMcpMode(settings.mcpMode)}; auto=${settings.autoModeEnabled}`,
         snapshot: { settings },
       },
     });
@@ -347,7 +351,7 @@ export class AiAdsManagerService {
 
   async listRules(user: AuthUser) {
     const items = await this.prisma.adAutomationRule.findMany({
-      where: { userId: user.id },
+      where: { organizationId: user.organizationId },
       orderBy: { createdAt: 'desc' },
     });
     return {
@@ -377,7 +381,7 @@ export class AiAdsManagerService {
 
   async updateRule(user: AuthUser, id: string, dto: UpdateAutomationRuleDto) {
     const existing = await this.prisma.adAutomationRule.findFirst({
-      where: { id, userId: user.id },
+      where: { id, organizationId: user.organizationId },
     });
     if (!existing) throw new NotFoundException('Rule không tồn tại');
 
@@ -394,7 +398,7 @@ export class AiAdsManagerService {
 
   async deleteRule(user: AuthUser, id: string) {
     const existing = await this.prisma.adAutomationRule.findFirst({
-      where: { id, userId: user.id },
+      where: { id, organizationId: user.organizationId },
     });
     if (!existing) throw new NotFoundException('Rule không tồn tại');
     await this.prisma.adAutomationRule.delete({ where: { id } });
@@ -411,7 +415,7 @@ export class AiAdsManagerService {
 
   async listLogs(user: AuthUser, limit = 50) {
     const items = await this.prisma.adAutomationLog.findMany({
-      where: { userId: user.id },
+      where: { organizationId: user.organizationId },
       orderBy: { createdAt: 'desc' },
       take: limit,
       include: { rule: { select: { name: true, ruleType: true } } },
@@ -421,7 +425,7 @@ export class AiAdsManagerService {
 
   async listDrafts(user: AuthUser) {
     const items = await this.prisma.adDraft.findMany({
-      where: { userId: user.id },
+      where: { organizationId: user.organizationId },
       orderBy: { createdAt: 'desc' },
     });
     return {
@@ -441,6 +445,35 @@ export class AiAdsManagerService {
       }
     }
 
+    const ctx = tenantFromAuthUser(user);
+    const to = new Date();
+    const from = new Date();
+    from.setDate(from.getDate() - 7);
+    const dateFrom = from.toISOString().slice(0, 10);
+    const dateTo = to.toISOString().slice(0, 10);
+
+    let evidenceNote = '';
+    try {
+      const metrics = await this.adsMcp.getMetrics(ctx, { dateFrom, dateTo });
+      const waste = await this.adsMcp.detectBudgetWaste(ctx, {
+        dateFrom,
+        dateTo,
+        limit: 5,
+      });
+      evidenceNote = JSON.stringify({
+        source: 'AdsMcpGateway',
+        evidence: metrics.evidence,
+        wasteSignals: waste.signals.slice(0, 3).map((s) => ({
+          code: s.code,
+          severity: s.severity,
+          campaignName: s.campaignName,
+          evidence: s.evidence,
+        })),
+      });
+    } catch (err) {
+      this.logger.warn(`MCP evidence for draft skipped: ${String(err)}`);
+    }
+
     let content = {
       objective: dto.objective,
       audience: dto.audience ?? 'Khách hàng tiềm năng spa/beauty 25–45 tuổi',
@@ -457,11 +490,11 @@ export class AiAdsManagerService {
             {
               role: 'system',
               content:
-                'Bạn là chuyên gia quảng cáo Facebook/Google cho spa. Trả về JSON: objective, audience, headline, content, cta, landingPage. Tiếng Việt.',
+                'Bạn là chuyên gia quảng cáo Facebook/Google cho spa. Chỉ dùng số liệu evidence từ AdsMcpGateway (PostgreSQL), không giả định token/API provider. Trả về JSON: objective, audience, headline, content, cta, landingPage. Tiếng Việt.',
             },
             {
               role: 'user',
-              content: `Tạo bản nháp quảng cáo ${dto.platform}: mục tiêu ${dto.objective}, sản phẩm ${dto.product ?? 'spa'}, ngân sách ${dto.budget ?? 'chưa xác định'}`,
+              content: `Tạo bản nháp quảng cáo ${dto.platform}: mục tiêu ${dto.objective}, sản phẩm ${dto.product ?? 'spa'}, ngân sách ${dto.budget ?? 'chưa xác định'}. Evidence: ${evidenceNote || 'không có'}`,
             },
           ],
           temperature: 0.7,
@@ -495,7 +528,7 @@ export class AiAdsManagerService {
 
   async publishDraft(user: AuthUser, draftId: string) {
     const draft = await this.prisma.adDraft.findFirst({
-      where: { id: draftId, userId: user.id },
+      where: { id: draftId, organizationId: user.organizationId },
     });
     if (!draft) throw new NotFoundException('Bản nháp không tồn tại');
 
@@ -521,14 +554,14 @@ export class AiAdsManagerService {
 
   async getEmailReports(user: AuthUser) {
     const items = await this.prisma.adEmailReport.findMany({
-      where: { userId: user.id },
+      where: { organizationId: user.organizationId },
     });
     return { items };
   }
 
   async upsertEmailReport(user: AuthUser, dto: UpsertEmailReportDto) {
     const existing = await this.prisma.adEmailReport.findFirst({
-      where: { userId: user.id },
+      where: { organizationId: user.organizationId },
     });
 
     if (existing) {
@@ -553,7 +586,7 @@ export class AiAdsManagerService {
     const logs = await this.listLogs(user, 10);
 
     const report = await this.prisma.adEmailReport.findFirst({
-      where: { userId: user.id, enabled: true },
+      where: { organizationId: user.organizationId, enabled: true },
     });
 
     if (!report) {
@@ -586,33 +619,13 @@ export class AiAdsManagerService {
   }
 
   async optimizeCampaign(user: AuthUser, campaignId: string) {
+    const ctx = tenantFromAuthUser(user);
+    const analysis = await this.adsMcp.analyzeCampaign(ctx, { campaignId });
+
     const campaign = await this.prisma.adManagerCampaign.findFirst({
-      where: { id: campaignId, userId: user.id },
+      where: { id: campaignId, organizationId: user.organizationId },
     });
     if (!campaign) throw new NotFoundException('Chiến dịch không tồn tại');
-
-    const insight = await this.prisma.adInsight.findFirst({
-      where: { userId: user.id, campaignId },
-      orderBy: { syncedAt: 'desc' },
-    });
-
-    const metrics: CampaignMetrics = {
-      spend: insight ? decimalToNumber(insight.spend) : 0,
-      revenue: insight ? decimalToNumber(insight.revenue) : 0,
-      impressions: insight?.impressions ?? 0,
-      clicks: insight?.clicks ?? 0,
-      ctr: insight ? decimalToNumber(insight.ctr) : 0,
-      cpc: insight ? decimalToNumber(insight.cpc) : 0,
-      cpm: insight ? decimalToNumber(insight.cpm) : 0,
-      conversions: insight ? decimalToNumber(insight.conversions) : 0,
-      leads: insight ? decimalToNumber(insight.leads) : 0,
-      cpa: insight ? decimalToNumber(insight.cpa) : 0,
-      cpl: insight ? decimalToNumber(insight.cpl) : 0,
-      roas: insight?.roas ? decimalToNumber(insight.roas) : null,
-    };
-
-    const score = computeEfficiencyScore(metrics);
-    const suggestion = buildAiSuggestion(metrics, score);
 
     const rec = await this.prisma.adAiRecommendation.create({
       data: {
@@ -621,322 +634,123 @@ export class AiAdsManagerService {
         campaignId,
         platform: campaign.platform,
         type: 'optimize',
-        content: suggestion,
-        priority: 100 - score,
+        content: analysis.summary,
+        priority: 100 - (analysis.efficiencyScore ?? 50),
       },
     });
 
-    if (insight) {
-      await this.prisma.adInsight.update({
-        where: { id: insight.id },
-        data: { aiSuggestion: suggestion, efficiencyScore: score },
-      });
-    }
-
-    return { recommendation: rec, suggestion, efficiencyScore: score };
-  }
-
-  private async syncMeta(user: AuthUser, dateFrom: string, dateTo: string): Promise<number> {
-    const fbStatus = await this.facebookAds.getStatus(user.id);
-    if (!fbStatus.connected || !fbStatus.selectedAdAccountId) {
-      return 0;
-    }
-
-    await this.facebookAds.sync(user.id, { dateFrom, dateTo });
-
-    const snapshots = await this.prisma.facebookAdsCampaignSnapshot.findMany({
-      where: { userId: user.id, dateFrom: new Date(dateFrom), dateTo: new Date(dateTo) },
-    });
-
-    const account = await this.prisma.adPlatformAccount.upsert({
-      where: {
-        userId_platform_externalId: {
-          userId: user.id,
-          platform: 'META',
-          externalId: fbStatus.selectedAdAccountId,
-        },
-      },
-      create: {
-        userId: user.id,
-        organizationId: user.organizationId,
-        platform: 'META',
-        externalId: fbStatus.selectedAdAccountId,
-        name: fbStatus.selectedAdAccountName ?? fbStatus.selectedAdAccountId,
-      },
-      update: {
-        name: fbStatus.selectedAdAccountName ?? fbStatus.selectedAdAccountId,
+    await this.prisma.adInsight.updateMany({
+      where: { organizationId: user.organizationId, campaignId },
+      data: {
+        aiSuggestion: analysis.summary,
+        efficiencyScore: analysis.efficiencyScore ?? undefined,
       },
     });
 
-    let count = 0;
-    for (const snap of snapshots) {
-      const mapped = {
-        spend: decimalToNumber(snap.spend),
-        results: decimalToNumber(snap.results),
-        costPerResult: decimalToNumber(snap.costPerResult),
-        purchaseRoas: snap.purchaseRoas ? decimalToNumber(snap.purchaseRoas) : null,
-      };
+    // AI chỉ đề xuất — không tự duyệt / không tự đổi chiến dịch
+    let actionRequest: Awaited<ReturnType<AdsActionService['propose']>> | null = null;
+    const suggestedStatus =
+      analysis.verdict === 'pause'
+        ? 'PAUSED'
+        : analysis.verdict === 'scale' || analysis.verdict === 'hold'
+          ? campaign.status
+          : campaign.status;
 
-      const campaign = await this.prisma.adManagerCampaign.upsert({
-        where: {
-          userId_platform_externalId: {
-            userId: user.id,
-            platform: 'META',
-            externalId: snap.campaignId,
-          },
-        },
-        create: {
-          userId: user.id,
-          organizationId: user.organizationId,
-          accountId: account.id,
-          platform: 'META',
-          externalId: snap.campaignId,
-          name: snap.campaignName,
-          status: AdCampaignStatus.ACTIVE,
-          objective: snap.objective ?? undefined,
-          lastSyncedAt: new Date(),
-        },
-        update: {
-          name: snap.campaignName,
-          lastSyncedAt: new Date(),
-        },
-      });
+    if (analysis.verdict === 'pause' || analysis.verdict === 'optimize') {
+      const actionType = analysis.verdict === 'pause' ? 'PAUSE_CAMPAIGN' : 'UPDATE_STATUS';
+      const idempotencyKey = createHash('sha256')
+        .update(
+          [
+            user.organizationId,
+            campaignId,
+            actionType,
+            analysis.verdict,
+            new Date().toISOString().slice(0, 10),
+          ].join(':'),
+        )
+        .digest('hex')
+        .slice(0, 64);
 
-      const revenue = mapped.purchaseRoas ? mapped.spend * mapped.purchaseRoas : 0;
-      const metrics: CampaignMetrics = {
-        spend: mapped.spend,
-        revenue,
-        impressions: snap.impressions,
-        clicks: snap.clicks,
-        ctr: decimalToNumber(snap.ctr),
-        cpc: decimalToNumber(snap.cpc),
-        cpm: decimalToNumber(snap.cpm),
-        conversions: snap.campaignType === 'SALES' ? mapped.results : 0,
-        leads: snap.campaignType === 'MESSAGE_LEAD' ? mapped.results : 0,
-        cpa: mapped.costPerResult,
-        cpl: mapped.costPerResult,
-        roas: mapped.purchaseRoas,
-      };
-
-      const score = computeEfficiencyScore(metrics);
-      const suggestion = buildAiSuggestion(metrics, score);
-
-      await this.prisma.adInsight.upsert({
-        where: {
-          userId_platform_externalCampaignId_dateFrom_dateTo: {
-            userId: user.id,
-            platform: 'META',
-            externalCampaignId: snap.campaignId,
-            dateFrom: new Date(dateFrom),
-            dateTo: new Date(dateTo),
-          },
-        },
-        create: {
-          userId: user.id,
-          organizationId: user.organizationId,
+      actionRequest = await this.adsActions.propose(user, {
+        campaignId,
+        recommendationId: rec.id,
+        platform: campaign.platform,
+        actionType,
+        source: 'AI',
+        aiGenerated: true,
+        submitForApproval: true,
+        idempotencyKey,
+        reason: analysis.summary,
+        beforeState: {
           campaignId: campaign.id,
-          platform: 'META',
-          externalCampaignId: snap.campaignId,
-          campaignName: snap.campaignName,
-          dateFrom: new Date(dateFrom),
-          dateTo: new Date(dateTo),
-          spend: mapped.spend,
-          revenue,
-          impressions: snap.impressions,
-          clicks: snap.clicks,
-          ctr: decimalToNumber(snap.ctr),
-          cpc: decimalToNumber(snap.cpc),
-          cpm: decimalToNumber(snap.cpm),
-          reach: snap.reach,
-          frequency: decimalToNumber(snap.frequency),
-          conversions: metrics.conversions,
-          leads: metrics.leads,
-          cpa: mapped.costPerResult,
-          cpl: mapped.costPerResult,
-          roas: mapped.purchaseRoas,
-          efficiencyScore: score,
-          aiSuggestion: suggestion,
-          syncedAt: new Date(),
+          status: campaign.status,
+          budget: campaign.budget != null ? decimalToNumber(campaign.budget) : null,
+          name: campaign.name,
+          platform: campaign.platform,
+          externalCampaignId: campaign.externalId,
         },
-        update: {
+        afterState: {
           campaignId: campaign.id,
-          campaignName: snap.campaignName,
-          spend: mapped.spend,
-          revenue,
-          impressions: snap.impressions,
-          clicks: snap.clicks,
-          ctr: decimalToNumber(snap.ctr),
-          cpc: decimalToNumber(snap.cpc),
-          cpm: decimalToNumber(snap.cpm),
-          conversions: metrics.conversions,
-          leads: metrics.leads,
-          cpa: mapped.costPerResult,
-          cpl: mapped.costPerResult,
-          roas: mapped.purchaseRoas,
-          efficiencyScore: score,
-          aiSuggestion: suggestion,
-          syncedAt: new Date(),
+          status: analysis.verdict === 'pause' ? 'PAUSED' : suggestedStatus,
+          budget: campaign.budget != null ? decimalToNumber(campaign.budget) : null,
+          name: campaign.name,
+          platform: campaign.platform,
+          externalCampaignId: campaign.externalId,
         },
+        evidence: {
+          efficiencyScore: analysis.efficiencyScore,
+          verdict: analysis.verdict,
+          evidence: analysis.evidence,
+          wasteSignals: analysis.wasteSignals,
+        },
+        payload: { verdict: analysis.verdict, providerWrite: false },
       });
-
-      count += 1;
     }
 
-    await this.prisma.adConnection.upsert({
-      where: { userId_provider: { userId: user.id, provider: 'META' } },
-      create: {
-        userId: user.id,
-        organizationId: user.organizationId,
-        provider: 'META',
-        status: AdConnectionStatus.CONNECTED,
-        externalAccountId: fbStatus.selectedAdAccountId,
-        externalAccountName: fbStatus.selectedAdAccountName,
-        lastSyncAt: new Date(),
-      },
-      update: {
-        status: AdConnectionStatus.CONNECTED,
-        externalAccountId: fbStatus.selectedAdAccountId,
-        externalAccountName: fbStatus.selectedAdAccountName,
-        lastSyncAt: new Date(),
-      },
-    });
-
-    return count;
-  }
-
-  private async syncGoogle(user: AuthUser, dateFrom: string, dateTo: string): Promise<number> {
-    const conn = await this.prisma.adConnection.findUnique({
-      where: { userId_provider: { userId: user.id, provider: 'GOOGLE' } },
-    });
-    if (!conn || conn.status !== 'CONNECTED' || !conn.externalAccountId) return 0;
-
-    const account = await this.prisma.adPlatformAccount.findFirst({
-      where: { userId: user.id, platform: 'GOOGLE', externalId: conn.externalAccountId },
-    });
-    if (!account) return 0;
-
-    const mockCampaigns = [
-      { id: 'g-demo-1', name: 'Google Search — Spa', spend: 1_500_000, impressions: 12000, clicks: 340, conversions: 8, roas: 2.1 },
-      { id: 'g-demo-2', name: 'Google Display — Remarketing', spend: 800_000, impressions: 45000, clicks: 120, conversions: 2, roas: 0.8 },
-    ];
-
-    let count = 0;
-    for (const mc of mockCampaigns) {
-      const ctr = mc.impressions > 0 ? (mc.clicks / mc.impressions) * 100 : 0;
-      const cpc = mc.clicks > 0 ? mc.spend / mc.clicks : 0;
-      const cpm = mc.impressions > 0 ? (mc.spend / mc.impressions) * 1000 : 0;
-      const revenue = mc.spend * mc.roas;
-      const cpa = mc.conversions > 0 ? mc.spend / mc.conversions : 0;
-
-      const campaign = await this.prisma.adManagerCampaign.upsert({
-        where: {
-          userId_platform_externalId: { userId: user.id, platform: 'GOOGLE', externalId: mc.id },
-        },
-        create: {
-          userId: user.id,
-          organizationId: user.organizationId,
-          accountId: account.id,
-          platform: 'GOOGLE',
-          externalId: mc.id,
-          name: mc.name,
-          status: AdCampaignStatus.ACTIVE,
-          lastSyncedAt: new Date(),
-        },
-        update: { name: mc.name, lastSyncedAt: new Date() },
-      });
-
-      const metrics: CampaignMetrics = {
-        spend: mc.spend,
-        revenue,
-        impressions: mc.impressions,
-        clicks: mc.clicks,
-        ctr,
-        cpc,
-        cpm,
-        conversions: mc.conversions,
-        leads: 0,
-        cpa,
-        cpl: cpa,
-        roas: mc.roas,
-      };
-
-      const score = computeEfficiencyScore(metrics);
-      const suggestion = buildAiSuggestion(metrics, score);
-
-      await this.prisma.adInsight.upsert({
-        where: {
-          userId_platform_externalCampaignId_dateFrom_dateTo: {
-            userId: user.id,
-            platform: 'GOOGLE',
-            externalCampaignId: mc.id,
-            dateFrom: new Date(dateFrom),
-            dateTo: new Date(dateTo),
-          },
-        },
-        create: {
-          userId: user.id,
-          organizationId: user.organizationId,
-          campaignId: campaign.id,
-          platform: 'GOOGLE',
-          externalCampaignId: mc.id,
-          campaignName: mc.name,
-          dateFrom: new Date(dateFrom),
-          dateTo: new Date(dateTo),
-          spend: mc.spend,
-          revenue,
-          impressions: mc.impressions,
-          clicks: mc.clicks,
-          ctr,
-          cpc,
-          cpm,
-          conversions: mc.conversions,
-          cpa,
-          cpl: cpa,
-          roas: mc.roas,
-          efficiencyScore: score,
-          aiSuggestion: suggestion,
-          syncedAt: new Date(),
-        },
-        update: {
-          spend: mc.spend,
-          revenue,
-          impressions: mc.impressions,
-          clicks: mc.clicks,
-          ctr,
-          cpc,
-          cpm,
-          conversions: mc.conversions,
-          cpa,
-          roas: mc.roas,
-          efficiencyScore: score,
-          aiSuggestion: suggestion,
-          syncedAt: new Date(),
-        },
-      });
-      count += 1;
-    }
-
-    await this.prisma.adConnection.update({
-      where: { id: conn.id },
-      data: { lastSyncAt: new Date() },
-    });
-
-    return count;
+    const { assertNoCredentialLeak } = await import('../common/utils/token-security.util');
+    const payload = {
+      recommendation: rec,
+      suggestion: analysis.summary,
+      efficiencyScore: analysis.efficiencyScore,
+      analysis,
+      actionRequest,
+      message:
+        'AI chỉ tạo AdsActionRequest (PENDING_APPROVAL). Cần ads.manage phê duyệt — AI không tự duyệt.',
+      source: 'AdsMcpGateway' as const,
+    };
+    assertNoCredentialLeak(payload);
+    return payload;
   }
 
   private async runAutomationAfterSync(user: AuthUser, dateFrom: string, dateTo: string) {
     const settings = await this.ensureSettings(user);
+    const mcpMode = normalizeMcpMode(settings.mcpMode);
     const rules = await this.prisma.adAutomationRule.findMany({
-      where: { userId: user.id, enabled: true },
+      where: { organizationId: user.organizationId, enabled: true },
     });
 
     const insights = await this.prisma.adInsight.findMany({
-      where: { userId: user.id, dateFrom: new Date(dateFrom), dateTo: new Date(dateTo) },
+      where: {
+        organizationId: user.organizationId,
+        dateFrom: new Date(dateFrom),
+        dateTo: new Date(dateTo),
+      },
       include: { campaign: true },
     });
 
+    const minSpend = settings.minSpendForAction
+      ? decimalToNumber(settings.minSpendForAction)
+      : null;
+    const maxBudgetPct = settings.maxBudgetChangePercent ?? 20;
+    const cooldownMs = (settings.ruleCooldownMinutes ?? 60) * 60_000;
+
     for (const row of insights) {
       if (!row.campaign) continue;
+
+      // Không tự bật lại quảng cáo do user tắt thủ công
+      const userPaused =
+        row.campaign.status === 'PAUSED' &&
+        !(await this.wasLastPausedByAutomation(row.campaign.id));
 
       const metrics: CampaignMetrics = {
         spend: decimalToNumber(row.spend),
@@ -949,8 +763,8 @@ export class AiAdsManagerService {
         conversions: decimalToNumber(row.conversions),
         leads: decimalToNumber(row.leads),
         cpa: decimalToNumber(row.cpa),
-        cpl: decimalToNumber(row.cpl),
-        roas: row.roas ? decimalToNumber(row.roas) : null,
+        cpl: row.cpl != null ? decimalToNumber(row.cpl) : null,
+        roas: row.roas != null ? decimalToNumber(row.roas) : null,
       };
 
       const evaluations = evaluateRules(
@@ -963,11 +777,178 @@ export class AiAdsManagerService {
         })),
         metrics,
         row.campaign.status,
+        { minSpendForAction: minSpend },
       );
 
       for (const ev of evaluations) {
-        if (ev.shouldPause && settings.autoModeEnabled && !settings.emergencyStop) {
-          await this.toggleCampaign(user, row.campaign.id, 'PAUSED', false, ev);
+        if (await this.isRuleInCooldown(user.organizationId, row.campaign.id, ev.ruleId, cooldownMs)) {
+          continue;
+        }
+
+        // OBSERVE: chỉ ghi log / recommendation — không tạo AdsActionRequest
+        if (mcpMode === 'OBSERVE' || settings.emergencyStop) {
+          await this.prisma.adAutomationLog.create({
+            data: {
+              userId: user.id,
+              organizationId: user.organizationId,
+              ruleId: ev.ruleId,
+              campaignId: row.campaign.id,
+              platform: row.platform,
+              externalCampaignId: row.externalCampaignId,
+              campaignName: row.campaignName,
+              action: ev.shouldPause ? AdAutomationAction.PAUSE : AdAutomationAction.ALERT,
+              autoMode: false,
+              reason: `[OBSERVE/STOP] ${ev.reason}`,
+              snapshot: metrics as unknown as Prisma.InputJsonValue,
+            },
+          });
+          if (ev.shouldAlert) {
+            await this.prisma.adAiRecommendation.create({
+              data: {
+                userId: user.id,
+                organizationId: user.organizationId,
+                campaignId: row.campaign.id,
+                platform: row.platform,
+                type: ev.ruleType,
+                content: ev.reason,
+                priority: 50,
+              },
+            });
+          }
+          continue;
+        }
+
+        if (ev.shouldPause && !userPaused) {
+          const idempotencyKey = createHash('sha256')
+            .update(
+              [
+                user.organizationId,
+                row.campaign.id,
+                'PAUSE_CAMPAIGN',
+                ev.ruleId,
+                dateFrom,
+                dateTo,
+              ].join(':'),
+            )
+            .digest('hex')
+            .slice(0, 64);
+
+          const proposed = await this.adsActions.propose(user, {
+            campaignId: row.campaign.id,
+            platform: row.platform,
+            actionType: 'PAUSE_CAMPAIGN',
+            source: 'RULE',
+            aiGenerated: true,
+            submitForApproval: true,
+            idempotencyKey,
+            reason: ev.reason,
+            beforeState: {
+              campaignId: row.campaign.id,
+              status: row.campaign.status,
+              name: row.campaignName,
+              platform: row.platform,
+              externalCampaignId: row.externalCampaignId,
+            },
+            afterState: {
+              campaignId: row.campaign.id,
+              status: 'PAUSED',
+              name: row.campaignName,
+              platform: row.platform,
+              externalCampaignId: row.externalCampaignId,
+            },
+            evidence: { ruleId: ev.ruleId, metrics, mcpMode },
+            payload: {
+              ruleId: ev.ruleId,
+              providerWrite: mcpMode === 'AUTO',
+            },
+          });
+
+          if (mcpMode === 'AUTO' && !settings.emergencyStop) {
+            // AUTO trong giới hạn: hệ thống queue (không tự approve bằng cùng user AI —
+            // enqueue trực tiếp qua service nội bộ nếu đã SUBMIT)
+            await this.tryAutoQueueWithinLimits(user, proposed.id, settings);
+          }
+
+          await this.prisma.adAutomationLog.create({
+            data: {
+              userId: user.id,
+              organizationId: user.organizationId,
+              ruleId: ev.ruleId,
+              campaignId: row.campaign.id,
+              platform: row.platform,
+              externalCampaignId: row.externalCampaignId,
+              campaignName: row.campaignName,
+              action: AdAutomationAction.RECOMMEND,
+              autoMode: mcpMode === 'AUTO',
+              reason: `Rule PAUSE → AdsActionRequest (${mcpMode}): ${ev.reason}`,
+              snapshot: metrics as unknown as Prisma.InputJsonValue,
+            },
+          });
+        } else if (ev.budgetChangePercent != null && row.campaign.budget != null) {
+          const pct = clampBudgetChangePercent(ev.budgetChangePercent, maxBudgetPct);
+          const currentBudget = decimalToNumber(row.campaign.budget);
+          const proposedBudget = Math.max(1, Math.round(currentBudget * (1 + pct / 100) * 100) / 100);
+          const dailyLimit = settings.dailyBudgetLimit
+            ? decimalToNumber(settings.dailyBudgetLimit)
+            : null;
+          if (dailyLimit != null && proposedBudget > dailyLimit) {
+            await this.prisma.adAutomationLog.create({
+              data: {
+                userId: user.id,
+                organizationId: user.organizationId,
+                ruleId: ev.ruleId,
+                campaignId: row.campaign.id,
+                platform: row.platform,
+                action: AdAutomationAction.ALERT,
+                autoMode: false,
+                reason: `Budget ${proposedBudget} vượt dailyBudgetLimit ${dailyLimit} — bỏ qua`,
+                snapshot: metrics as unknown as Prisma.InputJsonValue,
+              },
+            });
+            continue;
+          }
+
+          const idempotencyKey = createHash('sha256')
+            .update(
+              [
+                user.organizationId,
+                row.campaign.id,
+                'ADJUST_BUDGET',
+                ev.ruleId,
+                String(proposedBudget),
+                dateFrom,
+                dateTo,
+              ].join(':'),
+            )
+            .digest('hex')
+            .slice(0, 64);
+
+          await this.adsActions.propose(user, {
+            campaignId: row.campaign.id,
+            platform: row.platform,
+            actionType: 'ADJUST_BUDGET',
+            source: 'RULE',
+            aiGenerated: true,
+            submitForApproval: true,
+            idempotencyKey,
+            reason: ev.reason,
+            proposedBudget,
+            budgetLimit: dailyLimit ?? undefined,
+            beforeState: {
+              campaignId: row.campaign.id,
+              budget: currentBudget,
+              status: row.campaign.status,
+              externalCampaignId: row.externalCampaignId,
+            },
+            afterState: {
+              campaignId: row.campaign.id,
+              budget: proposedBudget,
+              status: row.campaign.status,
+              externalCampaignId: row.externalCampaignId,
+            },
+            evidence: { ruleId: ev.ruleId, metrics, pct, mcpMode },
+            payload: { ruleId: ev.ruleId, budgetChangePercent: pct },
+          });
         } else {
           await this.prisma.adAutomationLog.create({
             data: {
@@ -1003,6 +984,69 @@ export class AiAdsManagerService {
     }
   }
 
+  private async wasLastPausedByAutomation(campaignId: string): Promise<boolean> {
+    const last = await this.prisma.adAutomationLog.findFirst({
+      where: { campaignId, action: AdAutomationAction.PAUSE },
+      orderBy: { createdAt: 'desc' },
+    });
+    return Boolean(last?.autoMode);
+  }
+
+  private async isRuleInCooldown(
+    organizationId: string,
+    campaignId: string,
+    ruleId: string,
+    cooldownMs: number,
+  ): Promise<boolean> {
+    if (cooldownMs <= 0) return false;
+    const since = new Date(Date.now() - cooldownMs);
+    const hit = await this.prisma.adAutomationLog.findFirst({
+      where: {
+        organizationId,
+        campaignId,
+        ruleId,
+        createdAt: { gte: since },
+      },
+      select: { id: true },
+    });
+    return Boolean(hit);
+  }
+
+  private async tryAutoQueueWithinLimits(
+    user: AuthUser,
+    actionRequestId: string,
+    settings: { maxTogglesPerDay: number; togglesToday: number; emergencyStop: boolean },
+  ) {
+    if (settings.emergencyStop) return;
+    if (settings.togglesToday >= settings.maxTogglesPerDay) {
+      await this.prisma.adAutomationLog.create({
+        data: {
+          userId: user.id,
+          organizationId: user.organizationId,
+          platform: 'META',
+          action: AdAutomationAction.ALERT,
+          autoMode: true,
+          reason: `AUTO bỏ qua — vượt maxTogglesPerDay (${settings.maxTogglesPerDay})`,
+          snapshot: { actionRequestId },
+        },
+      });
+      return;
+    }
+    // AUTO: chuyển PENDING → APPROVED bởi system actor khác requester (audit)
+    // Không gọi approve() với cùng user — enqueue nội bộ khi ADS_ACTIONS_LIVE
+    try {
+      await this.adsActions.systemAutoApproveForMcp(user.organizationId, actionRequestId, user.id);
+      await this.prisma.adManagerSettings.updateMany({
+        where: { userId: user.id, organizationId: user.organizationId },
+        data: { togglesToday: { increment: 1 } },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `MCP AUTO queue failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   private async toggleCampaign(
     user: AuthUser,
     campaignId: string,
@@ -1011,7 +1055,7 @@ export class AiAdsManagerService {
     ruleEv?: { ruleId: string; reason: string },
   ) {
     const campaign = await this.prisma.adManagerCampaign.findFirst({
-      where: { id: campaignId, userId: user.id },
+      where: { id: campaignId, organizationId: user.organizationId },
     });
     if (!campaign) throw new NotFoundException('Chiến dịch không tồn tại');
 
@@ -1025,15 +1069,25 @@ export class AiAdsManagerService {
       await this.checkToggleLimit(settings);
     }
 
-    if (campaign.platform === 'META' && (manual || settings.autoModeEnabled)) {
+    // Provider write tắt mặc định — chỉ human manual + ADS_ACTIONS_PROVIDER_WRITE=true
+    const providerWrite =
+      String(this.config.get('ADS_ACTIONS_PROVIDER_WRITE') ?? 'false').toLowerCase() === 'true';
+    if (manual && providerWrite && campaign.platform === 'META') {
       try {
-        const token = await this.getMetaAccessToken(user.id);
-        await this.meta.updateCampaignStatus(token, campaign.externalId, status === 'ACTIVE');
+        await this.facebookAds.setCampaignActive(
+          user.organizationId,
+          campaign.externalId,
+          status === 'ACTIVE',
+        );
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Meta API lỗi';
         this.logger.warn(`Meta pause/enable failed for campaign ${campaign.externalId}: ${msg}`);
-        if (manual) throw new BadRequestException(msg);
+        throw new BadRequestException(msg);
       }
+    } else if (!manual) {
+      throw new BadRequestException(
+        'Auto Mode không được tự ghi chiến dịch — dùng AdsActionRequest + phê duyệt ads.manage',
+      );
     }
 
     const updated = await this.prisma.adManagerCampaign.update({
@@ -1052,7 +1106,9 @@ export class AiAdsManagerService {
         campaignName: campaign.name,
         action: status === 'PAUSED' ? AdAutomationAction.PAUSE : AdAutomationAction.ENABLE,
         autoMode: !manual && settings.autoModeEnabled,
-        reason: ruleEv?.reason ?? (manual ? `User ${status === 'PAUSED' ? 'tạm dừng' : 'bật lại'} thủ công` : 'Auto Mode'),
+        reason:
+          ruleEv?.reason ??
+          (manual ? `User ${status === 'PAUSED' ? 'tạm dừng' : 'bật lại'} thủ công` : 'Auto Mode'),
         snapshot: { status },
       },
     });
@@ -1060,7 +1116,12 @@ export class AiAdsManagerService {
     return updated;
   }
 
-  private async checkToggleLimit(settings: { id: string; maxTogglesPerDay: number; togglesToday: number; togglesResetDate: Date | null }) {
+  private async checkToggleLimit(settings: {
+    id: string;
+    maxTogglesPerDay: number;
+    togglesToday: number;
+    togglesResetDate: Date | null;
+  }) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -1081,14 +1142,6 @@ export class AiAdsManagerService {
     });
   }
 
-  private async getMetaAccessToken(userId: string): Promise<string> {
-    const row = await this.prisma.facebookAdsConnection.findUnique({ where: { userId } });
-    if (!row?.encryptedAccessToken) {
-      throw new BadRequestException('Chưa kết nối Facebook Ads');
-    }
-    return decryptSecret(row.encryptedAccessToken, this.getEncryptionKey());
-  }
-
   private async ensureSettings(user: AuthUser) {
     return this.prisma.adManagerSettings.upsert({
       where: { userId: user.id },
@@ -1099,7 +1152,14 @@ export class AiAdsManagerService {
 
   private mapConnectionStatus(
     provider: AdConnectionProvider,
-    row: { status: AdConnectionStatus; externalAccountName: string | null; lastSyncAt: Date | null; lastError: string | null } | undefined,
+    row:
+      | {
+          status: AdConnectionStatus;
+          externalAccountName: string | null;
+          lastSyncAt: Date | null;
+          lastError: string | null;
+        }
+      | undefined,
     overrideStatus?: AdConnectionStatus,
     accountName?: string,
   ) {
@@ -1131,13 +1191,5 @@ export class AiAdsManagerService {
       `Chiến dịch kém nhất: ${worst?.name ?? '—'}`,
       `Hành động AI: ${logs.map((l) => l.reason).join('; ')}`,
     ].join('\n');
-  }
-
-  private getEncryptionKey(): string {
-    const key = this.config.get<string>('ENCRYPTION_KEY');
-    if (!key || key.length < 16) {
-      throw new Error('ENCRYPTION_KEY chưa cấu hình');
-    }
-    return key;
   }
 }

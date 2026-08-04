@@ -1,16 +1,19 @@
-export type LeadPipelineStatus = 'NEW' | 'CONTACTED' | 'BOOKED' | 'VISITED' | 'PURCHASED' | 'LOST';
+export type LeadPipelineStatus =
+  'NEW' | 'CONTACTED' | 'QUALIFIED' | 'BOOKED' | 'CONFIRMED' | 'VISITED' | 'PURCHASED' | 'LOST';
 
 export const PIPELINE_COLUMNS: {
   status: LeadPipelineStatus;
   label: string;
   color: string;
 }[] = [
-  { status: 'NEW', label: 'Mới', color: 'bg-blue-500' },
-  { status: 'CONTACTED', label: 'Đã tư vấn', color: 'bg-cyan-500' },
-  { status: 'BOOKED', label: 'Đặt lịch', color: 'bg-amber-500' },
+  { status: 'NEW', label: 'Lead mới', color: 'bg-blue-500' },
+  { status: 'CONTACTED', label: 'Đã liên hệ', color: 'bg-cyan-500' },
+  { status: 'QUALIFIED', label: 'Đủ điều kiện', color: 'bg-violet-500' },
+  { status: 'BOOKED', label: 'Đã đặt lịch', color: 'bg-amber-500' },
+  { status: 'CONFIRMED', label: 'Đã xác nhận', color: 'bg-orange-500' },
   { status: 'VISITED', label: 'Đã đến', color: 'bg-purple-500' },
   { status: 'PURCHASED', label: 'Đã mua', color: 'bg-green-500' },
-  { status: 'LOST', label: 'Mất khách', color: 'bg-gray-400' },
+  { status: 'LOST', label: 'Mất lead', color: 'bg-gray-400' },
 ];
 
 export function pipelineLabel(status: string): string {
@@ -49,6 +52,7 @@ export interface CustomerDetail {
   updatedAt?: string;
   leadSource?: LeadSource | null;
   branch?: Branch | null;
+  assignedEmployee?: EmployeeRef | null;
 }
 
 export interface LeadDetail {
@@ -60,12 +64,17 @@ export interface LeadDetail {
   note?: string | null;
   estimatedValue?: number | null;
   lostReason?: string | null;
+  score?: number;
+  tags?: string[];
+  slaRespondBy?: string | null;
+  reminderAt?: string | null;
   createdAt: string;
   updatedAt?: string;
   leadSource?: LeadSource | null;
   assignedTo?: EmployeeRef | null;
   customer?: { id: string; name: string } | null;
   branch?: Branch | null;
+  funnelStage?: { id: string; name: string; code?: string | null } | null;
   appointments?: AppointmentRef[];
 }
 
@@ -77,6 +86,10 @@ export interface AppointmentRef {
   employee?: EmployeeRef | null;
   service?: { id: string; name: string } | null;
   branch?: Branch | null;
+  room?: { id: string; name: string } | null;
+  bed?: { id: string; name: string } | null;
+  depositAmount?: number | string;
+  depositStatus?: string;
 }
 
 export interface OrderRef {
@@ -101,6 +114,8 @@ export interface CustomerHistory {
   appointments: AppointmentRef[];
   orders: OrderRef[];
   consultationNotes: ConsultationNote[];
+  totalSpend?: number;
+  timeline?: Array<{ type: string; at: string; title: string }>;
 }
 
 export interface CreateCustomerInput {
@@ -124,6 +139,19 @@ export interface CreateLeadInput {
   assignedToId?: string;
   note?: string;
   estimatedValue?: number;
+  tags?: string[];
+  autoAssign?: boolean;
+  attribution?: {
+    utmSource?: string;
+    utmMedium?: string;
+    utmCampaign?: string;
+    utmContent?: string;
+    utmTerm?: string;
+    fbclid?: string;
+    gclid?: string;
+    landingPage?: string;
+    referrer?: string;
+  };
 }
 
 export interface CreateAppointmentInput {
@@ -131,7 +159,12 @@ export interface CreateAppointmentInput {
   customerId?: string;
   leadId?: string;
   employeeId?: string;
+  serviceId?: string;
+  roomId?: string;
+  bedId?: string;
+  adCampaignId?: string;
   scheduledAt: string;
   durationMinutes?: number;
   note?: string;
+  depositAmount?: number;
 }

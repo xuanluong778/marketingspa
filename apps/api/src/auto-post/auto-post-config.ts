@@ -1,4 +1,7 @@
-import { AutoPostType } from '@marketingspa/database';
+import type { AutoPostType } from '@marketingspa/database';
+import {
+  resolveAutoPostOAuthRedirectUri,
+} from './assert-auto-post-meta-oauth';
 
 export const AUTO_POST_TYPE_LABELS: Record<AutoPostType, string> = {
   SPA_SALES: 'Bài bán hàng spa',
@@ -11,12 +14,14 @@ export const AUTO_POST_TYPE_LABELS: Record<AutoPostType, string> = {
   INBOX_BOOKING: 'Bài kéo inbox/đặt lịch',
 };
 
-/** Classic Facebook Login scopes (chỉ dùng khi KHÔNG có META_LOGIN_CONFIG_ID). */
+/** Default Facebook Login scopes (Standard Access) — include Messenger for Chatbot E2E. */
 export const AUTO_POST_META_SCOPES = [
+  'public_profile',
   'pages_show_list',
-  'pages_manage_metadata',
   'pages_read_engagement',
   'pages_manage_posts',
+  'pages_messaging',
+  'pages_manage_metadata',
 ];
 
 /**
@@ -41,6 +46,47 @@ export function resolveMetaAppSecret(
   getEnv: (key: string) => string | undefined,
 ): string | undefined {
   return getEnv('META_APP_SECRET')?.trim() || getEnv('FACEBOOK_APP_SECRET')?.trim() || undefined;
+}
+
+/**
+ * Auto Post OAuth state: userId:organizationId:ts:nonce:sig (5 segments).
+ * Ads OAuth state: userId:organizationId:returnTo:exp:nonce:sig (6 segments).
+ */
+export function isAutoPostOAuthState(state: string | undefined): boolean {
+  if (!state) return false;
+  try {
+    const decoded = Buffer.from(state, 'base64url').toString('utf8');
+    return decoded.split(':').length === 5;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * MarketingAutoAZ OAuth state (base64url): 5 segments = Auto Post, 6 = Ads.
+ * Relay partner state là JWT (có dấu chấm) — không trùng format này.
+ */
+export function isMarketingAutoazOAuthState(state: string | undefined): boolean {
+  if (!state || state.includes('.')) return false;
+  try {
+    const decoded = Buffer.from(state, 'base64url').toString('utf8');
+    const n = decoded.split(':').length;
+    return n === 5 || n === 6;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Redirect URI Auto Post Fanpage OAuth.
+ * Production MarketingAutoAZ: chỉ META_AUTO_POST_REDIRECT_URI (không relay seoauto).
+ * @deprecated Prefer resolveAutoPostOAuthRedirectUri from assert-auto-post-meta-oauth.
+ */
+export function resolveMetaOAuthRedirectUri(
+  getEnv: (key: string) => string | undefined,
+  _fallbackPath: string,
+): string {
+  return resolveAutoPostOAuthRedirectUri(getEnv);
 }
 
 export function resolveAutoPostMetaScopes(

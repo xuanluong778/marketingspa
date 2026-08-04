@@ -94,21 +94,21 @@ export function AiSuggestTextareaField({
       {msg ? <p className="text-xs text-emerald-700">{msg}</p> : null}
 
       {open && options.length > 0 && (
-        <div className="rounded-lg border border-primary/20 bg-primary/5 p-2.5 space-y-1.5">
-          <p className="text-xs font-medium text-primary">Chọn một gợi ý:</p>
+        <div className="ai-suggest-options rounded-lg border border-white/25 bg-white p-2.5 space-y-1.5">
+          <p className="text-xs font-medium text-slate-900">Chọn một gợi ý:</p>
           <div className="space-y-1.5 max-h-48 overflow-y-auto">
             {options.map((opt, i) => (
               <button
                 key={`${field}-${i}`}
                 type="button"
                 className={cn(
-                  'w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-left text-sm',
-                  'hover:border-primary/40 hover:bg-primary/5 transition-colors',
-                  value === opt && 'border-primary ring-1 ring-primary/30',
+                  'w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-900',
+                  'transition-colors hover:border-orange-400 hover:bg-orange-50 hover:text-orange-500',
+                  value === opt && 'border-orange-400 ring-1 ring-orange-300',
                 )}
                 onClick={() => pickOption(opt)}
               >
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground mr-2">
+                <span className="mr-2 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
                   {i + 1}
                 </span>
                 {opt}
@@ -117,7 +117,7 @@ export function AiSuggestTextareaField({
           </div>
           <button
             type="button"
-            className="text-xs text-muted-foreground hover:text-foreground underline"
+            className="text-xs text-slate-500 underline hover:text-orange-500"
             onClick={() => setOpen(false)}
           >
             Đóng

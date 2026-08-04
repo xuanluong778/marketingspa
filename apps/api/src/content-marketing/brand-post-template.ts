@@ -139,7 +139,7 @@ function buildTemplateBody(
 ): string {
   const you = pronounYou(pronoun);
   const spaBridge =
-    'Một spa tử tế không chỉ làm da khách đẹp hơn — mà làm họ tin lại vào chính mình. Chăm sóc bản thân không phải phù phiếm, đó là lòng tự trọng. Làm đẹp là cách phụ nữ lấy lại khí chất — không phải để giữ ai, mà để không đánh mất chính mình.';
+    'Thương hiệu cá nhân không xây bằng khẩu hiệu — xây bằng câu chuyện thật, bài học thật, và sự tử tế với chính mình.';
 
   const genreParagraphs: Record<BrandArticleGenre, string[]> = {
     edgy_motivation: [

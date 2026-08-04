@@ -1,16 +1,11 @@
+import { Type } from 'class-transformer';
+import { IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, IsUUID, MaxLength, Min, MinLength } from 'class-validator';
 import {
-  IsOptional,
-  IsString,
-  IsEnum,
-  IsUUID,
-  IsBoolean,
-  IsObject,
-  IsInt,
-  Min,
-  MinLength,
-  IsArray,
-} from 'class-validator';
-import { MessageChannel, AutomationTriggerType } from '@marketingspa/database';
+  MessageChannel,
+  AutomationTriggerType,
+  MessageTemplateApprovalStatus,
+  MessagingCampaignKind,
+} from '@marketingspa/database';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 
 export class CreateMessageTemplateDto {
@@ -37,6 +32,33 @@ export class CreateMessageTemplateDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsEnum(MessageTemplateApprovalStatus)
+  approvalStatus?: MessageTemplateApprovalStatus;
+  @IsOptional()
+  @IsEnum(MessagingCampaignKind)
+  campaignKind?: MessagingCampaignKind;
+  @IsOptional()
+  @IsArray()
+  contentBlocks?: any[];
+  @IsOptional()
+  @IsString()
+  ctaLabel?: string;
+  @IsOptional()
+  @IsString()
+  ctaUrl?: string;
+  @IsOptional()
+  @IsString()
+  mediaUrl?: string;
+  @IsOptional()
+  @IsString()
+  providerMode?: string;
+  @IsOptional()
+  @IsString()
+  providerTemplateId?: string;
+  @IsOptional()
+  variableFallbacks?: Record<string, unknown>;
 }
 
 export class UpdateMessageTemplateDto {
@@ -64,6 +86,12 @@ export class UpdateMessageTemplateDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  contentBlocks?: any[];
+  @IsOptional()
+  variableFallbacks?: Record<string, unknown>;
 }
 
 export class CreateAutomationFlowDto {
@@ -94,6 +122,27 @@ export class CreateAutomationFlowDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  actions?: any[];
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  cooldownMinutes?: number;
+  @IsOptional()
+  @IsBoolean()
+  isPaused?: boolean;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  maxSendsPerDay?: number;
+  @IsOptional()
+  @IsString()
+  quietHoursEnd?: string;
+  @IsOptional()
+  @IsString()
+  quietHoursStart?: string;
 }
 
 export class UpdateAutomationFlowDto {
@@ -125,6 +174,10 @@ export class UpdateAutomationFlowDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsArray()
+  actions?: any[];
 }
 
 export class SimulateAutomationDto {
@@ -141,7 +194,17 @@ export class SimulateAutomationDto {
   context?: Record<string, string>;
 }
 
-export class TemplateQueryDto extends PaginationDto {}
+export class TemplateQueryDto extends PaginationDto {
+  @IsOptional()
+  @IsEnum(MessageChannel)
+  channel?: MessageChannel;
+}
+
+export class PreviewMessageTemplateDto {
+  @IsOptional()
+  @IsObject()
+  context?: Record<string, string>;
+}
 
 export class LogQueryDto extends PaginationDto {
   @IsOptional()

@@ -1,16 +1,4 @@
-import {
-  IsBoolean,
-  IsEnum,
-  IsInt,
-  IsNumber,
-  IsOptional,
-  IsString,
-  IsUUID,
-  Max,
-  MaxLength,
-  Min,
-  MinLength,
-} from 'class-validator';
+import { IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Max, MaxLength, Min, MinLength } from 'class-validator';
 import {
   ChatbotBotStatus,
   ChatbotChannelType,
@@ -244,4 +232,22 @@ export class ConnectFacebookPageDto {
   @IsOptional()
   @IsBoolean()
   aiEnabled?: boolean;
+}
+
+export class CrawlKnowledgeUrlDto {
+  @IsString()
+  @MinLength(1)
+  url!: string;
+
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @IsString()
+  @MinLength(1)
+  botId!: string;
+
+  @IsOptional()
+  @IsString()
+  replaceExisting?: string;
 }

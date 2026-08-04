@@ -1,12 +1,13 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
   Copy,
   Loader2,
   Maximize2,
+  RefreshCw,
   Save,
   Shield,
   Sparkles,
@@ -40,19 +41,28 @@ import {
   useContentMarketingStatus,
 } from '@/hooks/use-content-marketing';
 import {
+  clearAdWorkspaceDraft,
   createHistoryId,
   defaultContentFormState,
-  loadContentDraft,
+  emptyAdWorkspaceDraft,
+  loadAdWorkspaceDraft,
   loadContentHistory,
   deleteContentHistoryItem,
   sampleAdFormState,
+  saveAdWorkspaceDraft,
   saveContentDraft,
   saveContentHistoryItem,
+  assertAdFormExclusive,
+  normalizeAdFormExclusive,
 } from '@/lib/content-marketing-form';
 import { suggestAdCtaLocal, suggestAdInsightsLocal } from '@/lib/ad-insights-suggest';
 import { PersonalPostStudio } from '@/components/content-marketing/personal-post-studio';
 import { AdvancedPostStudio } from '@/components/content-marketing/advanced-post-studio';
+import { AdUrlAnalyzePanel } from '@/components/content-marketing/ad-url-analyze-panel';
 import type {
+  AdPostKind,
+  AdProductDetails,
+  AdServiceDetails,
   ContentFormState,
   ContentHistoryItem,
   ContentScoreResult,
@@ -62,12 +72,14 @@ import type {
 } from '@/types/content-marketing';
 import {
   AD_OBJECTIVE_OPTIONS,
+  AD_POST_KIND_OPTIONS,
   AD_TYPE_OPTIONS,
   OFFER_PERCENT_OPTIONS,
   PLATFORM_OPTIONS,
-  PRODUCT_SERVICE_OPTIONS,
   TARGET_AUDIENCE_OPTIONS,
   TONE_OPTIONS,
+  emptyAdProductDetails,
+  emptyAdServiceDetails,
 } from '@/types/content-marketing';
 
 function safeScore(n: number | undefined | null): number {
@@ -155,6 +167,12 @@ function ContentForm({
   suggestingCta,
   ctaSuggestMsg,
   ctaAlternatives,
+  onSuggestProductField,
+  suggestingProductField,
+  productFieldSuggestMsg,
+  lastProductSuggestField,
+  urlAnalyzeResetKey,
+  onUrlAnalyzeDirtyChange,
 }: {
   form: ContentFormState;
   onChange: (patch: Partial<ContentFormState>) => void;
@@ -165,17 +183,337 @@ function ContentForm({
   suggestingCta?: boolean;
   ctaSuggestMsg?: string;
   ctaAlternatives?: string[];
+  onSuggestProductField?: (field: 'features' | 'differentiators') => void;
+  suggestingProductField?: 'features' | 'differentiators' | null;
+  productFieldSuggestMsg?: string;
+  lastProductSuggestField?: 'features' | 'differentiators' | null;
+  urlAnalyzeResetKey?: number;
+  onUrlAnalyzeDirtyChange?: (dirty: boolean) => void;
 }) {
+  const kind = form.adPostKind === 'service' ? 'service' : 'product';
+  const patchProduct = (patch: Partial<AdProductDetails>) => {
+    const next = { ...form.productDetails, ...patch };
+    onChange({
+      productDetails: next,
+      productService: patch.name != null ? patch.name : form.productService || next.name,
+      benefits: patch.benefits != null ? patch.benefits : form.benefits,
+      offer: patch.offer != null ? patch.offer : form.offer,
+      serviceDetails: emptyAdServiceDetails(),
+    });
+  };
+  const patchService = (patch: Partial<AdServiceDetails>) => {
+    const next = { ...form.serviceDetails, ...patch };
+    onChange({
+      serviceDetails: next,
+      productService: patch.name != null ? patch.name : form.productService || next.name,
+      targetAudience:
+        patch.suitableCustomers != null ? patch.suitableCustomers : form.targetAudience,
+      painPoints: patch.problems != null ? patch.problems : form.painPoints,
+      benefits: patch.expectedBenefits != null ? patch.expectedBenefits : form.benefits,
+      offer: patch.offer != null ? patch.offer : form.offer,
+      productDetails: emptyAdProductDetails(),
+    });
+  };
+
   return (
     <div className="space-y-4">
-      <PresetOrCustomField
-        label="Sản phẩm / dịch vụ"
-        required
-        value={form.productService}
-        options={PRODUCT_SERVICE_OPTIONS}
-        placeholder="VD: Liệu trình trẻ hóa da spa"
-        onChange={(v) => onChange({ productService: v })}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label>Loại bài quảng cáo</Label>
+          <Select
+            value={kind}
+            onValueChange={(v) => {
+              const next = v as AdPostKind;
+              if (next === 'product') {
+                onChange({
+                  adPostKind: 'product',
+                  serviceDetails: emptyAdServiceDetails(),
+                  productService: form.productDetails.name || form.productService,
+                });
+              } else {
+                onChange({
+                  adPostKind: 'service',
+                  productDetails: emptyAdProductDetails(),
+                  productService: form.serviceDetails.name || form.productService,
+                });
+              }
+            }}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {AD_POST_KIND_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Tên thương hiệu / cơ sở</Label>
+          <Input
+            value={form.brandName}
+            placeholder="VD: Spa Hoa Sen"
+            onChange={(e) => onChange({ brandName: e.target.value })}
+          />
+        </div>
+      </div>
+
+      <AdUrlAnalyzePanel
+        key={urlAnalyzeResetKey ?? 0}
+        adPostKind={kind}
+        brandName={form.brandName}
+        form={form}
+        onApplyForm={(next) => onChange(next)}
+        onDirtyChange={onUrlAnalyzeDirtyChange}
       />
+
+      {kind === 'product' ? (
+        <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/40 p-3">
+          <p className="text-sm font-medium text-slate-800">Chi tiết sản phẩm</p>
+          <div className="space-y-1.5">
+            <Label>Tên sản phẩm *</Label>
+            <Input
+              value={form.productDetails.name || form.productService}
+              placeholder="VD: Serum nám XYZ"
+              onChange={(e) => patchProduct({ name: e.target.value })}
+            />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>Danh mục</Label>
+              <Input
+                value={form.productDetails.category}
+                placeholder="VD: Chăm sóc da"
+                onChange={(e) => patchProduct({ category: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Giá</Label>
+              <Input
+                value={form.productDetails.price}
+                placeholder="VD: Từ 890.000đ"
+                onChange={(e) => patchProduct({ price: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Label>Tính năng</Label>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="h-7 text-xs"
+                disabled={
+                  !(form.productDetails.name || form.productService).trim() ||
+                  suggestingProductField === 'features' ||
+                  suggestingInsights
+                }
+                onClick={() => onSuggestProductField?.('features')}
+              >
+                {suggestingProductField === 'features' ? (
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                ) : (
+                  <Sparkles className="mr-1 h-3 w-3" />
+                )}
+                Gợi ý AI
+              </Button>
+            </div>
+            <Textarea
+              rows={2}
+              className="bg-white"
+              value={form.productDetails.features}
+              placeholder="Thành phần / công nghệ nổi bật"
+              onChange={(e) => patchProduct({ features: e.target.value })}
+            />
+            {productFieldSuggestMsg && lastProductSuggestField === 'features' ? (
+              <p className="text-xs text-emerald-700">{productFieldSuggestMsg}</p>
+            ) : null}
+          </div>
+          <div className="space-y-1.5">
+            <Label>Lợi ích</Label>
+            <Textarea
+              rows={2}
+              className="bg-white"
+              value={form.productDetails.benefits || form.benefits}
+              placeholder="Khách nhận được gì"
+              onChange={(e) => patchProduct({ benefits: e.target.value })}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Label>Điểm khác biệt</Label>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="h-7 text-xs"
+                disabled={
+                  !(form.productDetails.name || form.productService).trim() ||
+                  suggestingProductField === 'differentiators' ||
+                  suggestingInsights
+                }
+                onClick={() => onSuggestProductField?.('differentiators')}
+              >
+                {suggestingProductField === 'differentiators' ? (
+                  <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                ) : (
+                  <Sparkles className="mr-1 h-3 w-3" />
+                )}
+                Gợi ý AI
+              </Button>
+            </div>
+            <Textarea
+              rows={2}
+              className="bg-white"
+              value={form.productDetails.differentiators}
+              placeholder="Vì sao chọn sản phẩm này"
+              onChange={(e) => patchProduct({ differentiators: e.target.value })}
+            />
+            {productFieldSuggestMsg && lastProductSuggestField === 'differentiators' ? (
+              <p className="text-xs text-emerald-700">{productFieldSuggestMsg}</p>
+            ) : null}
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>Bảo hành</Label>
+              <Input
+                value={form.productDetails.warranty}
+                placeholder="VD: Đổi trả 7 ngày"
+                onChange={(e) => patchProduct({ warranty: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Ưu đãi</Label>
+              <Input
+                value={form.productDetails.offer || form.offer}
+                placeholder="VD: Giảm 30%"
+                onChange={(e) => patchProduct({ offer: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Bằng chứng</Label>
+            <Textarea
+              rows={2}
+              className="bg-white"
+              value={form.productDetails.proof}
+              placeholder="Số khách, đánh giá, chứng nhận…"
+              onChange={(e) => patchProduct({ proof: e.target.value })}
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/40 p-3">
+          <p className="text-sm font-medium text-slate-800">Chi tiết dịch vụ</p>
+          <div className="space-y-1.5">
+            <Label>Tên dịch vụ *</Label>
+            <Input
+              value={form.serviceDetails.name || form.productService}
+              placeholder="VD: Liệu trình trẻ hóa da"
+              onChange={(e) => patchService({ name: e.target.value })}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Khách hàng phù hợp</Label>
+            <Textarea
+              rows={2}
+              className="bg-white"
+              value={form.serviceDetails.suitableCustomers || form.targetAudience}
+              placeholder="Đối tượng nên dùng dịch vụ"
+              onChange={(e) => patchService({ suitableCustomers: e.target.value })}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Vấn đề cần giải quyết</Label>
+            <Textarea
+              rows={2}
+              className="bg-white"
+              value={form.serviceDetails.problems || form.painPoints}
+              placeholder="Nỗi đau / nhu cầu"
+              onChange={(e) => patchService({ problems: e.target.value })}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Quy trình</Label>
+            <Textarea
+              rows={2}
+              className="bg-white"
+              value={form.serviceDetails.process}
+              placeholder="Các bước thực hiện"
+              onChange={(e) => patchService({ process: e.target.value })}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Điểm nổi bật</Label>
+            <Textarea
+              rows={2}
+              className="bg-white"
+              value={form.serviceDetails.highlights}
+              placeholder="Điểm mạnh dịch vụ"
+              onChange={(e) => patchService({ highlights: e.target.value })}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Lợi ích kỳ vọng</Label>
+            <Textarea
+              rows={2}
+              className="bg-white"
+              value={form.serviceDetails.expectedBenefits || form.benefits}
+              placeholder="Kết quả khách có thể cảm nhận"
+              onChange={(e) => patchService({ expectedBenefits: e.target.value })}
+            />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>Thời gian</Label>
+              <Input
+                value={form.serviceDetails.duration}
+                placeholder="VD: 60–90 phút"
+                onChange={(e) => patchService({ duration: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Địa điểm</Label>
+              <Input
+                value={form.serviceDetails.location}
+                placeholder="VD: Quận 1, TP.HCM"
+                onChange={(e) => patchService({ location: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Chuyên gia</Label>
+            <Input
+              value={form.serviceDetails.experts}
+              placeholder="Kỹ thuật viên / bác sĩ phụ trách"
+              onChange={(e) => patchService({ experts: e.target.value })}
+            />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label>Bằng chứng</Label>
+              <Input
+                value={form.serviceDetails.proof}
+                placeholder="Review / số liệu"
+                onChange={(e) => patchService({ proof: e.target.value })}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Ưu đãi</Label>
+              <Input
+                value={form.serviceDetails.offer || form.offer}
+                placeholder="VD: Giảm 30%"
+                onChange={(e) => patchService({ offer: e.target.value })}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="grid gap-4 sm:grid-cols-2">
         <PresetOrCustomField
           label="Khách hàng mục tiêu"
@@ -272,7 +610,9 @@ function ContentForm({
             {AD_OBJECTIVE_OPTIONS.find((o) => o.value === form.adObjective)?.description}
           </p>
         ) : (
-          <p className="text-xs text-amber-700">Chọn mục tiêu để AI gợi ý content, CTA và chấm điểm phù hợp</p>
+          <p className="text-xs text-amber-700">
+            Chọn mục tiêu để AI gợi ý content, CTA và chấm điểm phù hợp
+          </p>
         )}
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
@@ -302,9 +642,7 @@ function ContentForm({
               Gợi ý AI
             </Button>
           </div>
-          {ctaSuggestMsg ? (
-            <p className="text-xs text-emerald-700">{ctaSuggestMsg}</p>
-          ) : null}
+          {ctaSuggestMsg ? <p className="text-xs text-emerald-700">{ctaSuggestMsg}</p> : null}
           <Input
             value={form.cta}
             placeholder='VD: Inbox "SPA" để tư vấn'
@@ -390,6 +728,7 @@ function ContentForm({
   );
 }
 
+
 export function AdStudioTabPanel({
   historyEditItem,
   onHistoryEditApplied,
@@ -422,12 +761,93 @@ export function AdStudioTabPanel({
   const [suggestMsg, setSuggestMsg] = useState('');
   const [ctaSuggestMsg, setCtaSuggestMsg] = useState('');
   const [ctaAlternatives, setCtaAlternatives] = useState<string[]>([]);
+  const [headline, setHeadline] = useState('');
+  const [shortDescription, setShortDescription] = useState('');
+  const [mediaSuggestions, setMediaSuggestions] = useState<string[]>([]);
+  const [formError, setFormError] = useState('');
+  const [productFieldSuggestMsg, setProductFieldSuggestMsg] = useState('');
+  const [suggestingProductField, setSuggestingProductField] = useState<
+    'features' | 'differentiators' | null
+  >(null);
+  const [lastProductSuggestField, setLastProductSuggestField] = useState<
+    'features' | 'differentiators' | null
+  >(null);
+  const [urlAnalyzeResetKey, setUrlAnalyzeResetKey] = useState(0);
+  const [urlAnalyzeDirty, setUrlAnalyzeDirty] = useState(false);
+  const [isCreatingLoading, setIsCreatingLoading] = useState(false);
+  const resultSectionRef = useRef<HTMLDivElement>(null);
+  const scrollToResultLockRef = useRef(false);
 
   useEffect(() => {
-    const draft = loadContentDraft(userId, 'ad');
-    setForm(draft ?? defaultContentFormState);
+    const draft = loadAdWorkspaceDraft(userId);
+    if (draft) {
+      setForm(draft.form);
+      setContent(draft.content);
+      setVariants(draft.variants);
+      setHooks(draft.hooks);
+      setCtas(draft.ctas);
+      setLastGeneratedAt(draft.lastGeneratedAt);
+      setScoreResult((draft.scoreResult as ContentScoreResult | null) ?? null);
+      setPolicy((draft.policy as PolicyCheckResult | null) ?? null);
+      setVideoAnalysis((draft.videoAnalysis as VideoAnalysisResult | null) ?? null);
+      setHeadline(draft.headline ?? '');
+      setShortDescription(draft.shortDescription ?? '');
+      setMediaSuggestions(draft.mediaSuggestions ?? []);
+    } else {
+      setForm(defaultContentFormState);
+    }
     setDraftLoaded(true);
   }, [userId]);
+
+  useEffect(() => {
+    if (!draftLoaded || isCreatingLoading) return;
+    const timer = window.setTimeout(() => {
+      saveAdWorkspaceDraft(
+        {
+          form,
+          content,
+          variants,
+          hooks,
+          ctas,
+          headline: headline || undefined,
+          shortDescription: shortDescription || undefined,
+          mediaSuggestions: mediaSuggestions.length ? mediaSuggestions : undefined,
+          lastGeneratedAt,
+          scoreResult,
+          policy,
+          videoAnalysis,
+        },
+        userId,
+      );
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [
+    draftLoaded,
+    isCreatingLoading,
+    form,
+    content,
+    variants,
+    hooks,
+    ctas,
+    headline,
+    shortDescription,
+    mediaSuggestions,
+    lastGeneratedAt,
+    scoreResult,
+    policy,
+    videoAnalysis,
+    userId,
+  ]);
+
+  useEffect(() => {
+    if (!draftLoaded) return;
+    const orgName = user?.organization?.name?.trim();
+    if (!orgName) return;
+    setForm((prev) => {
+      if (prev.brandName.trim()) return prev;
+      return { ...prev, brandName: orgName };
+    });
+  }, [draftLoaded, user?.organization?.name]);
 
   useEffect(() => {
     if (!historyEditItem || historyEditItem.tab !== 'ad') return;
@@ -448,14 +868,31 @@ export function AdStudioTabPanel({
     setForm((prev) => ({ ...prev, ...patch }));
   }, []);
 
+  const isGeneratingResult = isCreatingLoading || generate.isPending;
+
   const isBusy =
-    generate.isPending ||
+    isGeneratingResult ||
     analyzeVideo.isPending ||
     checkPolicy.isPending ||
     score.isPending ||
     rewrite.isPending ||
     suggestInsights.isPending ||
     suggestCta.isPending;
+
+  useEffect(() => {
+    if (!isCreatingLoading) {
+      scrollToResultLockRef.current = false;
+      return;
+    }
+    if (scrollToResultLockRef.current) return;
+    scrollToResultLockRef.current = true;
+    const frame = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        resultSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [isCreatingLoading]);
 
   const handleSuggestCta = useCallback(async () => {
     if (!form.productService.trim()) return;
@@ -486,25 +923,130 @@ export function AdStudioTabPanel({
     if (!form.productService.trim()) return;
     setSuggestMsg('');
     const payload = {
-      productService: form.productService,
+      productService:
+        form.productDetails.name.trim() || form.productService.trim(),
       targetAudience: form.targetAudience || undefined,
       platform: form.platform,
       adObjective: form.adObjective || undefined,
     };
     try {
       const result = await suggestInsights.mutateAsync(payload);
-      updateForm({ painPoints: result.painPoints, benefits: result.benefits });
+      updateForm({
+        painPoints: result.painPoints,
+        benefits: result.benefits,
+        productDetails: {
+          ...form.productDetails,
+          benefits: result.benefits,
+          ...(result.features ? { features: result.features } : {}),
+          ...(result.differentiators
+            ? { differentiators: result.differentiators }
+            : {}),
+        },
+      });
       setSuggestMsg(result.source === 'ai' ? 'Đã gợi ý bằng AI' : 'Đã gợi ý (template)');
     } catch {
       const local = suggestAdInsightsLocal(payload);
-      updateForm({ painPoints: local.painPoints, benefits: local.benefits });
+      updateForm({
+        painPoints: local.painPoints,
+        benefits: local.benefits,
+        productDetails: {
+          ...form.productDetails,
+          benefits: local.benefits,
+          features: local.features || form.productDetails.features,
+          differentiators: local.differentiators || form.productDetails.differentiators,
+        },
+      });
       setSuggestMsg('Đã gợi ý (offline — restart API để dùng AI đầy đủ)');
     }
     setTimeout(() => setSuggestMsg(''), 3000);
-  }, [form.productService, form.targetAudience, form.platform, form.adObjective, suggestInsights, updateForm]);
+  }, [
+    form.productService,
+    form.productDetails,
+    form.targetAudience,
+    form.platform,
+    form.adObjective,
+    suggestInsights,
+    updateForm,
+  ]);
+
+  const handleSuggestProductField = useCallback(
+    async (field: 'features' | 'differentiators') => {
+      const name =
+        form.productDetails.name.trim() || form.productService.trim();
+      if (!name) return;
+      setSuggestingProductField(field);
+      setLastProductSuggestField(field);
+      setProductFieldSuggestMsg('');
+      const payload = {
+        productService: name,
+        targetAudience: form.targetAudience || undefined,
+        platform: form.platform,
+        adObjective: form.adObjective || undefined,
+      };
+      const apply = (result: {
+        features?: string;
+        differentiators?: string;
+        source: 'ai' | 'template';
+      }) => {
+        const value =
+          field === 'features'
+            ? result.features?.trim() || ''
+            : result.differentiators?.trim() || '';
+        if (!value) return false;
+        updateForm({
+          productDetails: {
+            ...form.productDetails,
+            [field]: value,
+          },
+        });
+        setProductFieldSuggestMsg(
+          result.source === 'ai' ? 'Đã gợi ý bằng AI' : 'Đã gợi ý (template)',
+        );
+        return true;
+      };
+      try {
+        const result = await suggestInsights.mutateAsync(payload);
+        if (!apply(result)) {
+          apply(suggestAdInsightsLocal(payload));
+        }
+      } catch {
+        apply({ ...suggestAdInsightsLocal(payload), source: 'template' });
+        setProductFieldSuggestMsg('Đã gợi ý (offline)');
+      } finally {
+        setSuggestingProductField(null);
+        setTimeout(() => setProductFieldSuggestMsg(''), 3000);
+      }
+    },
+    [
+      form.productDetails,
+      form.productService,
+      form.targetAudience,
+      form.platform,
+      form.adObjective,
+      suggestInsights,
+      updateForm,
+    ],
+  );
+
+  const subjectName =
+    form.adPostKind === 'service'
+      ? form.serviceDetails.name.trim() || form.productService.trim()
+      : form.productDetails.name.trim() || form.productService.trim();
 
   const handleGenerate = useCallback(async () => {
-    if (!form.productService.trim()) return;
+    if (!subjectName) return;
+    if (isCreatingLoading || generate.isPending) return;
+    const exclusiveErr = assertAdFormExclusive(form);
+    if (exclusiveErr) {
+      setFormError(exclusiveErr);
+      return;
+    }
+    setFormError('');
+    const exclusiveForm = normalizeAdFormExclusive(form);
+    if (exclusiveForm !== form) {
+      setForm(exclusiveForm);
+    }
+    setIsCreatingLoading(true);
     setContent('');
     setPolicy(null);
     setScoreResult(null);
@@ -512,22 +1054,32 @@ export function AdStudioTabPanel({
     setCtas([]);
     setVariants([]);
     setVideoAnalysis(null);
-    const result = await generate.mutateAsync({ form, mode: 'ad' });
-    setLastGeneratedAt(new Date().toISOString());
-    setContent(result.content);
-    setPolicy(result.policy);
-    setScoreResult(result.score);
-    setHooks(result.hooks ?? []);
-    setCtas(result.ctas ?? []);
-    setVariants([]);
-    if (form.videoUrl.trim() || form.transcript.trim()) {
-      const analysis = await analyzeVideo.mutateAsync({
-        videoUrl: form.videoUrl || undefined,
-        transcript: form.transcript || undefined,
-      });
-      setVideoAnalysis(analysis);
+    setHeadline('');
+    setShortDescription('');
+    setMediaSuggestions([]);
+    try {
+      const result = await generate.mutateAsync({ form: exclusiveForm, mode: 'ad' });
+      setLastGeneratedAt(new Date().toISOString());
+      setContent(result.content);
+      setPolicy(result.policy);
+      setScoreResult(result.score);
+      setHooks(result.hooks ?? []);
+      setCtas(result.ctas ?? []);
+      setHeadline(result.headline?.trim() || '');
+      setShortDescription(result.shortDescription?.trim() || '');
+      setMediaSuggestions(result.mediaSuggestions ?? []);
+      setVariants([]);
+      if (form.videoUrl.trim() || form.transcript.trim()) {
+        const analysis = await analyzeVideo.mutateAsync({
+          videoUrl: form.videoUrl || undefined,
+          transcript: form.transcript || undefined,
+        });
+        setVideoAnalysis(analysis);
+      }
+    } finally {
+      setIsCreatingLoading(false);
     }
-  }, [form, generate, analyzeVideo]);
+  }, [form, subjectName, generate, analyzeVideo, isCreatingLoading]);
 
   const handleCheckPolicy = useCallback(async () => {
     if (!content.trim()) return;
@@ -569,12 +1121,30 @@ export function AdStudioTabPanel({
 
   const handleSave = useCallback(() => {
     saveContentDraft(form, userId, 'ad');
+    saveAdWorkspaceDraft(
+      {
+        form,
+        content,
+        variants,
+        hooks,
+        ctas,
+        headline: headline || undefined,
+        shortDescription: shortDescription || undefined,
+        mediaSuggestions: mediaSuggestions.length ? mediaSuggestions : undefined,
+        lastGeneratedAt,
+        scoreResult,
+        policy,
+        videoAnalysis,
+      },
+      userId,
+      { force: true },
+    );
     if (content.trim()) {
       saveContentHistoryItem(
         {
           id: createHistoryId(),
           tab: 'ad',
-          title: form.productService.slice(0, 60) || 'Content',
+          title: (subjectName || form.productService).slice(0, 60) || 'Content',
           content,
           contentScore: safeScore(scoreResult?.total),
           policyScore: safeScore(policy?.safetyScore),
@@ -588,11 +1158,92 @@ export function AdStudioTabPanel({
     }
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
-  }, [form, userId, content, scoreResult, policy, variants, onHistoryChange]);
+  }, [
+    form,
+    userId,
+    content,
+    scoreResult,
+    policy,
+    variants,
+    hooks,
+    ctas,
+    headline,
+    shortDescription,
+    mediaSuggestions,
+    lastGeneratedAt,
+    videoAnalysis,
+    subjectName,
+    onHistoryChange,
+  ]);
 
   const handleSample = useCallback(() => {
     setForm(sampleAdFormState);
   }, []);
+
+  const handleReset = useCallback(() => {
+    const dirty = !!(
+      content.trim() ||
+      form.productService.trim() ||
+      form.targetAudience.trim() ||
+      form.painPoints.trim() ||
+      form.benefits.trim() ||
+      form.offer.trim() ||
+      form.cta.trim() ||
+      form.brandName.trim() ||
+      Object.values(form.productDetails).some((v) => String(v).trim()) ||
+      Object.values(form.serviceDetails).some((v) => String(v).trim()) ||
+      urlAnalyzeDirty ||
+      headline.trim() ||
+      shortDescription.trim() ||
+      mediaSuggestions.length ||
+      variants.length ||
+      hooks.length ||
+      ctas.length
+    );
+    if (dirty && !window.confirm('Làm mới form và xóa kết quả hiện tại?')) return;
+    setContent('');
+    setPolicy(null);
+    setScoreResult(null);
+    setVideoAnalysis(null);
+    setVariants([]);
+    setHooks([]);
+    setCtas([]);
+    setHeadline('');
+    setShortDescription('');
+    setMediaSuggestions([]);
+    setFormError('');
+    setLastGeneratedAt(undefined);
+    setSuggestMsg('');
+    setCtaSuggestMsg('');
+    setCtaAlternatives([]);
+    setProductFieldSuggestMsg('');
+    setSuggestingProductField(null);
+    setLastProductSuggestField(null);
+    setCopyMsg('');
+    setSaved(false);
+    setContentPreviewOpen(false);
+    setUrlAnalyzeDirty(false);
+    setUrlAnalyzeResetKey((k) => k + 1);
+    clearAdWorkspaceDraft(userId);
+    const empty = emptyAdWorkspaceDraft();
+    if (user?.organization?.name?.trim()) {
+      empty.form = { ...empty.form, brandName: user.organization.name.trim() };
+    }
+    setForm(empty.form);
+    saveAdWorkspaceDraft(empty, userId, { force: true });
+  }, [
+    content,
+    form,
+    userId,
+    user?.organization?.name,
+    urlAnalyzeDirty,
+    headline,
+    shortDescription,
+    mediaSuggestions.length,
+    variants.length,
+    hooks.length,
+    ctas.length,
+  ]);
 
   const handleCopy = useCallback(async () => {
     if (!content) return;
@@ -615,7 +1266,7 @@ export function AdStudioTabPanel({
   if (!draftLoaded) return <LoadingState message="Đang tải nháp..." />;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pb-24">
       {aiStatus?.aiConfigured && (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
           AI đã sẵn sàng — model <strong>{aiStatus.model}</strong>
@@ -629,7 +1280,7 @@ export function AdStudioTabPanel({
         </div>
       )}
 
-      {hasResult && scoreResult && !generate.isPending && (
+      {hasResult && scoreResult && !isGeneratingResult && (
         <KpiBar
           contentScore={scoreResult.total}
           policy={policy}
@@ -648,22 +1299,40 @@ export function AdStudioTabPanel({
               form={form}
               onChange={updateForm}
               onSuggestInsights={handleSuggestInsights}
-              suggestingInsights={suggestInsights.isPending}
+              suggestingInsights={suggestInsights.isPending && !suggestingProductField}
               suggestMsg={suggestMsg}
               onSuggestCta={handleSuggestCta}
               suggestingCta={suggestCta.isPending}
               ctaSuggestMsg={ctaSuggestMsg}
               ctaAlternatives={ctaAlternatives}
+              onSuggestProductField={(field) => void handleSuggestProductField(field)}
+              suggestingProductField={suggestingProductField}
+              productFieldSuggestMsg={productFieldSuggestMsg}
+              lastProductSuggestField={lastProductSuggestField}
+              urlAnalyzeResetKey={urlAnalyzeResetKey}
+              onUrlAnalyzeDirtyChange={setUrlAnalyzeDirty}
             />
           </div>
-          <div className="flex flex-wrap gap-2 border-t bg-slate-50 p-4">
-            <Button onClick={handleGenerate} disabled={isBusy || !form.productService.trim()}>
-              {generate.isPending ? (
+          <div className="fixed bottom-0 left-0 right-0 z-40 flex h-[60px] flex-wrap items-center gap-2 border-t border-white/10 bg-[#2E594F] px-4 shadow-[0_-6px_16px_rgba(15,23,42,0.12)] lg:left-64">
+            <Button
+              onClick={() => void handleGenerate()}
+              disabled={isBusy || !subjectName}
+            >
+              {isGeneratingResult ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
                 <Sparkles className="mr-2 h-4 w-4" />
               )}
-              Tạo content
+              Tạo bài viết
+            </Button>
+            <Button
+              variant="outline"
+              className="border-[#0A3D30] bg-[#0A3D30] text-white hover:bg-[#083028] hover:text-white [&_svg]:text-white"
+              onClick={handleReset}
+              aria-label="Làm mới form"
+            >
+              <RefreshCw className="mr-2 h-4 w-4" />
+              Làm mới
             </Button>
             <Button
               variant="outline"
@@ -681,25 +1350,30 @@ export function AdStudioTabPanel({
               {saved ? 'Đã lưu!' : 'Lưu'}
             </Button>
           </div>
+          {formError ? (
+            <p className="border-t border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900">
+              {formError}
+            </p>
+          ) : null}
         </div>
 
-        <div className="space-y-4 min-h-[320px]">
-          {generate.isPending && (
+        <div ref={resultSectionRef} className="min-h-[320px] scroll-mt-24 space-y-4">
+          {isGeneratingResult && (
             <ContentGeneratingLoader
               title="Đang viết bài"
-              subtitle="AI đang viết content quảng cáo — vui lòng đợi trong giây lát"
+              subtitle="AI viết content quảng cáo vui lòng đợi trong giây lát"
             />
           )}
 
-          {!hasResult && !generate.isPending && (
+          {!hasResult && !isGeneratingResult && (
             <EmptyState
               className="text-white [&_svg]:text-white"
               title="Chưa có content"
-              description="Nhập form bên trái và bấm Tạo content để xem kết quả, điểm số và cảnh báo chính sách."
+              description="Nhập form bên trái và bấm Tạo bài viết để xem kết quả, điểm số và cảnh báo chính sách."
             />
           )}
 
-          {hasResult && !generate.isPending && (
+          {hasResult && !isGeneratingResult && (
             <>
               <div className="content-result-box rounded-xl border border-slate-200 bg-white text-slate-900 shadow-sm">
                 <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
@@ -726,7 +1400,7 @@ export function AdStudioTabPanel({
                     </Button>
                     <SendToAutoPostButton
                       tab="ad"
-                      title={form.productService}
+                      title={subjectName || form.productService}
                       content={content}
                       contentScore={scoreResult?.total}
                       variant="ghost"
@@ -861,6 +1535,39 @@ export function AdStudioTabPanel({
                 </div>
               )}
 
+              {(headline || shortDescription || mediaSuggestions.length > 0) && (
+                <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-2 text-sm">
+                  {headline ? (
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                        Headline
+                      </p>
+                      <p className="font-semibold text-slate-900">{headline}</p>
+                    </div>
+                  ) : null}
+                  {shortDescription ? (
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                        Mô tả ngắn
+                      </p>
+                      <p className="text-slate-800">{shortDescription}</p>
+                    </div>
+                  ) : null}
+                  {mediaSuggestions.length > 0 ? (
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                        Gợi ý hình ảnh / video
+                      </p>
+                      <ul className="mt-1 list-disc space-y-1 pl-4 text-slate-800">
+                        {mediaSuggestions.map((m, i) => (
+                          <li key={i}>{m}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
               {(hooks.length > 0 || ctas.length > 0) && (
                 <div className="grid gap-3 sm:grid-cols-2">
                   {hooks.length > 0 && (
@@ -899,7 +1606,7 @@ export function AdStudioTabPanel({
       <ContentPreviewDialog
         open={contentPreviewOpen}
         onOpenChange={setContentPreviewOpen}
-        title={form.productService}
+        title={subjectName || form.productService}
         category="Quảng Cáo Bán Hàng"
         score={scoreResult?.total}
         createdAt={lastGeneratedAt}

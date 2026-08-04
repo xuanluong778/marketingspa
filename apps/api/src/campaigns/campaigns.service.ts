@@ -5,6 +5,8 @@ import { CreateCampaignDto } from './dto/create-campaign.dto';
 import { Queue } from 'bullmq';
 import { CAMPAIGN_QUEUE } from '../queue/queue.constants';
 import { EventsGateway } from '../events/events.gateway';
+import { QueueEnqueueService } from '../common/services/queue-enqueue.service';
+import { TenantOwnershipService } from '../common/services/tenant-ownership.service';
 
 @Injectable()
 export class CampaignsService {
@@ -12,6 +14,8 @@ export class CampaignsService {
     private readonly prisma: PrismaService,
     @Inject(CAMPAIGN_QUEUE) private readonly campaignQueue: Queue,
     private readonly events: EventsGateway,
+    private readonly queueEnqueue: QueueEnqueueService,
+    private readonly tenant: TenantOwnershipService,
   ) {}
 
   findAll(organizationId: string) {
@@ -32,6 +36,9 @@ export class CampaignsService {
   }
 
   async create(organizationId: string, dto: CreateCampaignDto) {
+    for (const customerId of dto.contactIds) {
+      await this.tenant.assertCustomer(organizationId, customerId);
+    }
     return this.prisma.campaign.create({
       data: {
         name: dto.name,
@@ -61,7 +68,7 @@ export class CampaignsService {
       data: { status: MarketingCampaignStatus.RUNNING },
     });
 
-    await this.campaignQueue.add('send-campaign', {
+    await this.queueEnqueue.add(this.campaignQueue, 'send-campaign', {
       campaignId: id,
       organizationId,
     });
