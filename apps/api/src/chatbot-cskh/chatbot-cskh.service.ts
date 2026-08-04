@@ -447,7 +447,12 @@ export class ChatbotCskhService {
   }
 
   async listConversations(organizationId: string, limit = 50) {
-    return this.prisma.chatbotConversation.findMany({
+    // Backfill nhẹ tên/avatar khi còn đủ pageId + PSID
+    await this.backfillMessengerProfiles(organizationId, 8).catch((e) =>
+      this.logger.warn(`backfillMessengerProfiles: ${e instanceof Error ? e.message : String(e)}`),
+    );
+
+    const rows = await this.prisma.chatbotConversation.findMany({
       where: { organizationId },
       include: {
         bot: { select: { id: true, botName: true } },
@@ -457,6 +462,23 @@ export class ChatbotCskhService {
       orderBy: { updatedAt: 'desc' },
       take: Math.min(limit, 200),
     });
+
+    const pageIds = [
+      ...new Set(
+        rows
+          .filter((r) => r.channel === 'facebook' && r.channelRef)
+          .map((r) => r.channelRef as string),
+      ),
+    ];
+    const pages = pageIds.length
+      ? await this.prisma.chatbotFacebookPage.findMany({
+          where: { organizationId, pageId: { in: pageIds } },
+          select: { pageId: true, pageName: true, pagePictureUrl: true },
+        })
+      : [];
+    const pageMap = new Map(pages.map((p) => [p.pageId, p]));
+
+    return rows.map((c) => this.serializeConversation(c, pageMap.get(c.channelRef || '')));
   }
 
   async getConversation(organizationId: string, id: string) {
@@ -468,17 +490,201 @@ export class ChatbotCskhService {
       },
     });
     if (!conv) throw new NotFoundException('Không tìm thấy hội thoại');
-    return {
-      ...conv,
-      messages: conv.messages.map((m) => ({
+
+    const fanpage =
+      conv.channel === 'facebook' && conv.channelRef
+        ? await this.prisma.chatbotFacebookPage.findFirst({
+            where: { organizationId, pageId: conv.channelRef },
+            select: { pageId: true, pageName: true, pagePictureUrl: true },
+          })
+        : null;
+
+    return this.serializeConversation(conv, fanpage || undefined, true);
+  }
+
+  private serializeConversation(
+    conv: {
+      id: string;
+      organizationId: string;
+      botId: string;
+      sessionId: string;
+      visitorName: string | null;
+      visitorPhone: string | null;
+      visitorAvatarUrl?: string | null;
+      channel: string;
+      externalUserId: string | null;
+      channelRef: string | null;
+      status: string;
+      humanTakeover: boolean;
+      updatedAt: Date;
+      createdAt: Date;
+      lastUserMessageAt?: Date | null;
+      bot?: { id: string; botName: string } | null;
+      messages?: Array<{
+        id: string;
+        role: string;
+        message: string;
+        status: string | null;
+        direction?: string | null;
+        senderType?: string | null;
+        externalMessageId?: string | null;
+        errorCode: string | null;
+        createdAt: Date;
+      }>;
+      _count?: { messages: number };
+    },
+    fanpage?: { pageId: string; pageName: string; pagePictureUrl: string | null } | null,
+    includeAllMessages = false,
+  ) {
+    const psid = conv.externalUserId || null;
+    const customerName =
+      conv.visitorName && !/^Khách Messenger$/i.test(conv.visitorName)
+        ? conv.visitorName
+        : psid
+          ? `PSID …${psid.slice(-4)}`
+          : conv.visitorName;
+
+    const messages = (conv.messages || []).map((m) => {
+      const direction =
+        m.direction ||
+        (m.role === 'user' ? 'INBOUND' : m.role === 'assistant' || m.role === 'system' ? 'OUTBOUND' : null);
+      const senderType =
+        m.senderType ||
+        (m.role === 'user'
+          ? 'CUSTOMER'
+          : m.role === 'assistant'
+            ? 'BOT'
+            : m.role === 'system'
+              ? 'SYSTEM'
+              : null);
+      return {
         id: m.id,
         role: m.role,
         message: m.message,
         status: m.status,
+        direction,
+        senderType,
+        externalMessageId: m.externalMessageId ?? null,
         errorCode: m.errorCode,
         createdAt: m.createdAt,
-      })),
+      };
+    });
+
+    return {
+      id: conv.id,
+      organizationId: conv.organizationId,
+      botId: conv.botId,
+      sessionId: conv.sessionId,
+      visitorName: customerName,
+      visitorPhone: conv.visitorPhone,
+      visitorAvatarUrl: conv.visitorAvatarUrl ?? null,
+      channel: conv.channel,
+      externalUserId: psid,
+      channelRef: conv.channelRef,
+      status: conv.status,
+      humanTakeover: conv.humanTakeover,
+      updatedAt: conv.updatedAt,
+      createdAt: conv.createdAt,
+      lastUserMessageAt: conv.lastUserMessageAt ?? null,
+      bot: conv.bot ?? undefined,
+      _count: conv._count,
+      customer: {
+        name: customerName,
+        avatarUrl: conv.visitorAvatarUrl ?? null,
+        psid,
+      },
+      fanpage:
+        conv.channel === 'facebook'
+          ? {
+              pageId: fanpage?.pageId || conv.channelRef,
+              pageName: fanpage?.pageName || null,
+              avatarUrl: fanpage?.pagePictureUrl || null,
+            }
+          : null,
+      messages: includeAllMessages || messages.length ? messages : messages,
     };
+  }
+
+  /**
+   * Backfill tên/avatar Messenger cho hội thoại còn «Khách Messenger» khi đủ pageId+PSID.
+   * Không log token.
+   */
+  async backfillMessengerProfiles(organizationId: string, limit = 10) {
+    const rows = await this.prisma.chatbotConversation.findMany({
+      where: {
+        organizationId,
+        channel: 'facebook',
+        externalUserId: { not: null },
+        channelRef: { not: null },
+        OR: [
+          { visitorName: null },
+          { visitorName: 'Khách Messenger' },
+          { visitorName: { startsWith: 'PSID' } },
+          { visitorAvatarUrl: null },
+        ],
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: Math.min(limit, 30),
+    });
+    if (!rows.length) return { updated: 0 };
+
+    let updated = 0;
+    for (const row of rows) {
+      const pageId = row.channelRef!;
+      const psid = row.externalUserId!;
+      const page = await this.prisma.chatbotFacebookPage.findFirst({
+        where: { organizationId, pageId, status: 'connected' },
+      });
+      if (!page) continue;
+      const token = this.facebookWebhook.decodePageToken(page.pageAccessTokenEncrypted);
+      if (!token) continue;
+
+      try {
+        const profile = await this.facebookWebhook.resolveMessengerProfile(pageId, psid, token);
+        if (!profile?.name && !profile?.profilePic) {
+          if (!row.visitorName || row.visitorName === 'Khách Messenger') {
+            await this.prisma.chatbotConversation.update({
+              where: { id: row.id },
+              data: { visitorName: `PSID …${psid.slice(-4)}` },
+            });
+            updated += 1;
+          }
+          continue;
+        }
+        await this.prisma.chatbotConversation.update({
+          where: { id: row.id },
+          data: {
+            ...(profile.name ? { visitorName: profile.name.slice(0, 190) } : {}),
+            ...(profile.profilePic ? { visitorAvatarUrl: profile.profilePic.slice(0, 2000) } : {}),
+          },
+        });
+        updated += 1;
+
+        if (!page.pagePictureUrl) {
+          const pUrl = new URL(
+            `https://graph.facebook.com/${
+              this.config.get<string>('META_API_VERSION') || 'v21.0'
+            }/${encodeURIComponent(pageId)}`,
+          );
+          pUrl.searchParams.set('fields', 'picture.width(200).height(200)');
+          pUrl.searchParams.set('access_token', token);
+          const pRes = await fetch(pUrl.toString());
+          const pData = (await pRes.json().catch(() => ({}))) as {
+            picture?: { data?: { url?: string } };
+          };
+          const pic = pData.picture?.data?.url;
+          if (pic) {
+            await this.prisma.chatbotFacebookPage.update({
+              where: { id: page.id },
+              data: { pagePictureUrl: pic.slice(0, 2000) },
+            });
+          }
+        }
+      } catch {
+        /* ignore single row */
+      }
+    }
+    return { updated };
   }
 
   /** Nhân viên tiếp quản — dừng bot, gán NV, cập nhật lead CRM nếu có */
@@ -487,10 +693,14 @@ export class ChatbotCskhService {
     conversationId: string,
     opts: { employeeId?: string; resumeBot?: boolean } = {},
   ) {
-    const conv = await this.getConversation(organizationId, conversationId);
+    const raw = await this.prisma.chatbotConversation.findFirst({
+      where: { id: conversationId, organizationId },
+    });
+    if (!raw) throw new NotFoundException('Không tìm thấy hội thoại');
+
     if (opts.resumeBot) {
       const updated = await this.prisma.chatbotConversation.update({
-        where: { id: conv.id },
+        where: { id: raw.id },
         data: {
           humanTakeover: false,
           status: 'OPEN',
@@ -498,16 +708,18 @@ export class ChatbotCskhService {
       });
       await this.prisma.chatbotMessage.create({
         data: {
-          conversationId: conv.id,
+          conversationId: raw.id,
           role: 'system',
           message: 'Đã bật lại AI cho hội thoại này.',
+          direction: 'OUTBOUND',
+          senderType: 'SYSTEM',
         },
       });
-      return updated;
+      return this.getConversation(organizationId, updated.id);
     }
 
     const updated = await this.prisma.chatbotConversation.update({
-      where: { id: conv.id },
+      where: { id: raw.id },
       data: {
         humanTakeover: true,
         status: 'NEEDS_STAFF',
@@ -515,22 +727,24 @@ export class ChatbotCskhService {
       },
     });
 
-    if (conv.linkedLeadId && opts.employeeId) {
+    if (raw.linkedLeadId && opts.employeeId) {
       await this.prisma.lead.updateMany({
-        where: { id: conv.linkedLeadId, organizationId },
+        where: { id: raw.linkedLeadId, organizationId },
         data: { assignedToId: opts.employeeId },
       });
     }
 
     await this.prisma.chatbotMessage.create({
       data: {
-        conversationId: conv.id,
+        conversationId: raw.id,
         role: 'system',
         message: 'Nhân viên đã tiếp quản hội thoại. Bot tạm dừng.',
+        direction: 'OUTBOUND',
+        senderType: 'SYSTEM',
       },
     });
 
-    return updated;
+    return this.getConversation(organizationId, updated.id);
   }
 
   async listLeads(organizationId: string, limit = 50) {

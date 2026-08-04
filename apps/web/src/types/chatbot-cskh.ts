@@ -63,13 +63,29 @@ export interface ChatbotConversation {
   humanTakeover?: boolean;
   visitorName?: string | null;
   visitorPhone?: string | null;
+  visitorAvatarUrl?: string | null;
+  externalUserId?: string | null;
+  channelRef?: string | null;
   updatedAt: string;
   bot?: { id: string; botName: string };
+  customer?: {
+    name?: string | null;
+    avatarUrl?: string | null;
+    psid?: string | null;
+  };
+  fanpage?: {
+    pageId?: string | null;
+    pageName?: string | null;
+    avatarUrl?: string | null;
+  } | null;
   messages?: Array<{
     id: string;
     role: string;
     message: string;
     status?: string | null;
+    direction?: string | null;
+    senderType?: string | null;
+    externalMessageId?: string | null;
     errorCode?: string | null;
     createdAt: string;
   }>;

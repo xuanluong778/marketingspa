@@ -2876,6 +2876,8 @@ model ChatbotConversation {
   sessionId         String                    @map("session_id")
   visitorName       String?                   @map("visitor_name")
   visitorPhone      String?                   @map("visitor_phone")
+  /// Avatar Messenger (Graph profile_pic) — không lưu token
+  visitorAvatarUrl  String?                   @map("visitor_avatar_url") @db.VarChar(2000)
   channel           String                    @default("website")
   externalUserId    String?                   @map("external_user_id")
   channelRef        String?                   @map("channel_ref")
@@ -2896,6 +2898,7 @@ model ChatbotConversation {
 
   @@unique([botId, sessionId])
   @@index([organizationId, updatedAt])
+  @@index([organizationId, channelRef, externalUserId])
   @@map("chatbot_conversations")
 }
 
@@ -2906,6 +2909,10 @@ model ChatbotMessage {
   message        String   @db.Text
   /// Messenger pipeline: RECEIVED → PROCESSING → SENT (or FAILED)
   status         String?  @map("status")
+  /// INBOUND | OUTBOUND
+  direction      String?  @map("direction") @db.VarChar(16)
+  /// CUSTOMER | BOT | PAGE | STAFF | SYSTEM
+  senderType     String?  @map("sender_type") @db.VarChar(16)
   /// Meta message mid / event id — durable webhook dedupe
   externalMessageId String? @map("external_message_id") @db.VarChar(128)
   /// Machine-readable error: MISSING_SCOPE | TOKEN_EXPIRED | OPENAI_ERROR | MESSENGER_SEND_FAILED | …
@@ -2981,6 +2988,8 @@ model ChatbotFacebookPage {
   pageId                  String   @map("page_id")
   pageName                String   @map("page_name")
   pageAccessTokenEncrypted String  @map("page_access_token_encrypted") @db.Text
+  /// URL ảnh đại diện Fanpage (Graph picture) — không lộ token
+  pagePictureUrl          String?  @map("page_picture_url") @db.VarChar(2000)
   aiEnabled               Boolean  @default(true) @map("ai_enabled")
   status                  String   @default("connected")
   webhookSubscribed       Boolean  @default(false) @map("webhook_subscribed")

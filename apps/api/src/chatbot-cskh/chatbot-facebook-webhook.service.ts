@@ -63,6 +63,7 @@ type FacebookPageWithBot = {
   pageId: string;
   pageName: string;
   pageAccessTokenEncrypted: string;
+  pagePictureUrl?: string | null;
   aiEnabled: boolean;
   status: string;
   webhookSubscribed: boolean;
@@ -682,8 +683,14 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
       return;
     }
 
-    // Bỏ echo / delivery / read — không phải tin khách
+    // Echo từ Page/Bot: chỉ dedupe/cập nhật mid, không tạo hội thoại khách
     if (event.message?.is_echo) {
+      await this.handleEchoOutbound({
+        fbPage,
+        eventId,
+        text: String(event.message?.text || '').trim(),
+        recipientPsid: String(event.recipient?.id || '').trim(),
+      });
       this.skippedCount += 1;
       return;
     }
@@ -832,6 +839,8 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
           role: 'user',
           message: storedText,
           status: 'RECEIVED',
+          direction: 'INBOUND',
+          senderType: 'CUSTOMER',
           externalMessageId,
         },
       });
@@ -846,6 +855,17 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
       throw err;
     }
 
+    const pageToken =
+      this.decodePageToken(fbPage.pageAccessTokenEncrypted) || this.getMessengerPageToken();
+    const profile = pageToken
+      ? await this.resolveMessengerProfile(fbPage.pageId, psid, pageToken)
+      : null;
+
+    const placeholderName =
+      !conversation.visitorName ||
+      /^Khách Messenger$/i.test(conversation.visitorName) ||
+      /^PSID\b/i.test(conversation.visitorName);
+
     await this.prisma.chatbotConversation.update({
       where: { id: conversation.id },
       data: {
@@ -853,6 +873,12 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
         channel: 'facebook',
         channelRef: fbPage.pageId,
         externalUserId: psid,
+        ...(profile?.name
+          ? { visitorName: profile.name.slice(0, 190) }
+          : placeholderName
+            ? { visitorName: `PSID …${psid.slice(-4)}` }
+            : {}),
+        ...(profile?.profilePic ? { visitorAvatarUrl: profile.profilePic.slice(0, 2000) } : {}),
         status:
           conversation.status === ChatbotConversationStatus.CLOSED
             ? ChatbotConversationStatus.OPEN
@@ -860,12 +886,22 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
       },
     });
 
+    if (pageToken) {
+      await this.ensurePagePicture(fbPage, pageToken);
+    }
+
+    const displayName =
+      profile?.name ||
+      conversation.visitorName ||
+      `PSID …${psid.slice(-4)}`;
+
     await this.upsertMessengerContact({
       organizationId: fbPage.organizationId,
       pageId: fbPage.pageId,
       psid,
       conversationId: conversation.id,
-      displayName: conversation.visitorName || 'Khách Messenger',
+      displayName,
+      avatarUrl: profile?.profilePic || null,
     });
 
     try {
@@ -873,7 +909,7 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
         conversationId: conversation.id,
         channel: 'facebook',
         preview: text.slice(0, 120),
-        visitorName: conversation.visitorName || undefined,
+        visitorName: displayName,
         pageName: fbPage.pageName || undefined,
         botId: fbPage.botId,
       });
@@ -890,7 +926,190 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
         .catch(() => undefined);
     }
 
-    return { conversation, isDuplicate: false as const };
+    const refreshed = await this.prisma.chatbotConversation.findUnique({
+      where: { id: conversation.id },
+    });
+    return { conversation: refreshed || conversation, isDuplicate: false as const };
+  }
+
+  private async handleEchoOutbound(params: {
+    fbPage: FacebookPageWithBot;
+    eventId: string;
+    text: string;
+    recipientPsid: string;
+  }) {
+    const { fbPage, eventId, text, recipientPsid } = params;
+    if (!recipientPsid || !eventId) return;
+
+    const sessionId = `fb:${fbPage.pageId}:${recipientPsid}`.slice(0, 64);
+    const conversation = await this.prisma.chatbotConversation.findUnique({
+      where: { botId_sessionId: { botId: fbPage.botId, sessionId } },
+    });
+    if (!conversation) return;
+
+    const existing = await this.prisma.chatbotMessage.findFirst({
+      where: {
+        conversationId: conversation.id,
+        OR: [
+          { externalMessageId: eventId.slice(0, 128) },
+          ...(text
+            ? [
+                {
+                  role: 'assistant' as const,
+                  status: 'SENT',
+                  message: text.slice(0, 2000),
+                  createdAt: { gte: new Date(Date.now() - 120_000) },
+                  externalMessageId: null,
+                },
+              ]
+            : []),
+        ],
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (existing) {
+      if (!existing.externalMessageId) {
+        await this.prisma.chatbotMessage
+          .update({
+            where: { id: existing.id },
+            data: {
+              externalMessageId: eventId.slice(0, 128),
+              status: 'SENT',
+              direction: 'OUTBOUND',
+              senderType: existing.senderType || 'BOT',
+              errorCode: null,
+            },
+          })
+          .catch(() => undefined);
+      }
+      return;
+    }
+
+    if (!text) return;
+    try {
+      await this.prisma.chatbotMessage.create({
+        data: {
+          conversationId: conversation.id,
+          role: 'assistant',
+          message: text.slice(0, 2000),
+          status: 'SENT',
+          direction: 'OUTBOUND',
+          senderType: 'PAGE',
+          externalMessageId: eventId.slice(0, 128),
+        },
+      });
+      try {
+        this.events.broadcastChatbotMessageNew(fbPage.organizationId, {
+          conversationId: conversation.id,
+          channel: 'facebook',
+          preview: text.slice(0, 120),
+          pageName: fbPage.pageName || undefined,
+          botId: fbPage.botId,
+        });
+      } catch {
+        /* ignore */
+      }
+    } catch (err) {
+      if (!(err instanceof Error && /unique|Unique constraint/i.test(err.message))) {
+        this.logger.warn(`Echo outbound persist failed: ${(err as Error).message}`.slice(0, 160));
+      }
+    }
+  }
+
+  /**
+   * Lấy tên/avatar khách bằng Page Token (không log token).
+   * 1) User Profile API (name, profile_pic)
+   * 2) Fallback: Page conversations participants (thường khả dụng khi User Profile bị 100/33)
+   */
+  async resolveMessengerProfile(
+    pageId: string,
+    psid: string,
+    pageToken: string,
+  ): Promise<{ name?: string; profilePic?: string } | null> {
+    let name: string | undefined;
+    let profilePic: string | undefined;
+
+    try {
+      const url = new URL(
+        `https://graph.facebook.com/${this.graphVersion()}/${encodeURIComponent(psid)}`,
+      );
+      url.searchParams.set('fields', 'name,profile_pic');
+      url.searchParams.set('access_token', pageToken);
+      const res = await fetch(url.toString());
+      const data = (await res.json().catch(() => ({}))) as {
+        name?: string;
+        profile_pic?: string;
+        error?: unknown;
+      };
+      if (res.ok && !data.error) {
+        name = data.name?.trim() || undefined;
+        profilePic = data.profile_pic?.trim() || undefined;
+      }
+    } catch {
+      /* try fallback */
+    }
+
+    if (!name) {
+      try {
+        const url = new URL(
+          `https://graph.facebook.com/${this.graphVersion()}/${encodeURIComponent(pageId)}/conversations`,
+        );
+        url.searchParams.set('fields', 'participants');
+        url.searchParams.set('limit', '30');
+        url.searchParams.set('access_token', pageToken);
+        const res = await fetch(url.toString());
+        const data = (await res.json().catch(() => ({}))) as {
+          data?: Array<{ participants?: { data?: Array<{ id?: string; name?: string }> } }>;
+          error?: unknown;
+        };
+        if (res.ok && !data.error) {
+          for (const thread of data.data || []) {
+            for (const part of thread.participants?.data || []) {
+              if (part.id === psid && part.name?.trim()) {
+                name = part.name.trim();
+                break;
+              }
+            }
+            if (name) break;
+          }
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+
+    if (!name && !profilePic) return null;
+    return { name, profilePic };
+  }
+
+  private async ensurePagePicture(fbPage: FacebookPageWithBot, pageToken: string) {
+    if (fbPage.pagePictureUrl) return;
+    try {
+      const url = new URL(
+        `https://graph.facebook.com/${this.graphVersion()}/${encodeURIComponent(fbPage.pageId)}`,
+      );
+      url.searchParams.set('fields', 'name,picture.width(200).height(200)');
+      url.searchParams.set('access_token', pageToken);
+      const res = await fetch(url.toString());
+      const data = (await res.json().catch(() => ({}))) as {
+        name?: string;
+        picture?: { data?: { url?: string } };
+        error?: unknown;
+      };
+      if (!res.ok || data.error) return;
+      const pic = data.picture?.data?.url?.trim();
+      if (!pic && !data.name) return;
+      await this.prisma.chatbotFacebookPage.update({
+        where: { id: fbPage.id },
+        data: {
+          ...(data.name ? { pageName: data.name.slice(0, 190) } : {}),
+          ...(pic ? { pagePictureUrl: pic.slice(0, 2000) } : {}),
+        },
+      });
+    } catch {
+      /* ignore */
+    }
   }
 
   private async upsertMessengerContact(params: {
@@ -899,6 +1118,7 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
     psid: string;
     conversationId: string;
     displayName: string;
+    avatarUrl?: string | null;
   }) {
     const scopeKey = `messenger_page:${params.pageId}`.slice(0, 191);
     try {
@@ -916,6 +1136,7 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
           integrationScopeKey: scopeKey,
           externalUserId: params.psid,
           displayName: params.displayName,
+          avatarUrl: params.avatarUrl || undefined,
           chatbotConversationId: params.conversationId,
           lastInboundAt: new Date(),
           metadata: { pageId: params.pageId, source: 'chatbot_cskh' },
@@ -924,6 +1145,7 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
           chatbotConversationId: params.conversationId,
           lastInboundAt: new Date(),
           displayName: params.displayName,
+          ...(params.avatarUrl ? { avatarUrl: params.avatarUrl } : {}),
         },
       });
     } catch (err) {
@@ -977,6 +1199,8 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
         role: 'assistant',
         message: '…',
         status: 'PROCESSING',
+        direction: 'OUTBOUND',
+        senderType: 'BOT',
       },
     });
 
@@ -1089,7 +1313,8 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
       return;
     }
 
-    const sent = await this.sendText(fbPage.pageId, pageToken, psid, aiResult.reply);
+    const sendResult = await this.sendText(fbPage.pageId, pageToken, psid, aiResult.reply);
+    const sent = sendResult.ok;
     if (!sent) {
       const keep =
         this.lastWebhookError === CSKH_FB_ERROR.TOKEN_EXPIRED ||
@@ -1108,6 +1333,11 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
       data: {
         message: aiResult.reply.slice(0, 2000),
         status: sent ? 'SENT' : 'FAILED',
+        direction: 'OUTBOUND',
+        senderType: 'BOT',
+        externalMessageId: sendResult.messageId
+          ? sendResult.messageId.slice(0, 128)
+          : undefined,
         errorCode: sent
           ? null
           : this.classifyErrorCode(this.lastWebhookError) || CSKH_FB_ERROR.MESSENGER_SEND_FAILED,
@@ -1158,7 +1388,7 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
         externalUserId: psid,
         channelRef: pageId,
         status: ChatbotConversationStatus.OPEN,
-        visitorName: 'Khách Messenger',
+        visitorName: `PSID …${psid.slice(-4)}`,
       },
     });
   }
@@ -1205,8 +1435,8 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
     pageToken: string,
     psid: string,
     text: string,
-  ): Promise<boolean> {
-    if (!pageToken) return false;
+  ): Promise<{ ok: boolean; messageId?: string }> {
+    if (!pageToken) return { ok: false };
     try {
       const url = `https://graph.facebook.com/${this.graphVersion()}/me/messages?access_token=${encodeURIComponent(pageToken)}`;
       const res = await fetch(url, {
@@ -1218,17 +1448,22 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
           message: { text: String(text || '').slice(0, 2000) },
         }),
       });
-      if (!res.ok) {
-        const body = await res.text();
-        this.logger.warn(`Send FB message failed page=${pageId}: ${body.slice(0, 300)}`);
-        this.lastWebhookError = this.classifyMessengerSendFailure(body);
-        return false;
+      const body = (await res.json().catch(() => ({}))) as {
+        message_id?: string;
+        error?: { message?: string; code?: number };
+      };
+      if (!res.ok || body.error) {
+        this.logger.warn(
+          `Send FB message failed page=${pageId}: ${JSON.stringify(body).slice(0, 300)}`,
+        );
+        this.lastWebhookError = this.classifyMessengerSendFailure(JSON.stringify(body));
+        return { ok: false };
       }
-      return true;
+      return { ok: true, messageId: body.message_id };
     } catch (err) {
       this.logger.warn(`Send FB message exception page=${pageId}: ${(err as Error).message}`);
       this.lastWebhookError = CSKH_FB_ERROR.MESSENGER_SEND_FAILED;
-      return false;
+      return { ok: false };
     }
   }
 }

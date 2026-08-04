@@ -610,18 +610,51 @@ export default function ChatbotCskhPage() {
                 onClick={() => setInboxId(c.id)}
                 className={`w-full text-left rounded-lg border p-3 ${inboxId === c.id ? 'border-primary' : ''}`}
               >
-                <p className="font-medium">
-                  {c.visitorName ||
-                    (c.channel === 'facebook' ? 'Khách Messenger' : null) ||
-                    c.visitorPhone ||
-                    c.sessionId.slice(0, 8)}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {c.bot?.botName} ·{' '}
-                  {c.channel === 'facebook' ? 'Messenger' : c.channel} ·{' '}
-                  {formatDateTime(c.updatedAt)}
-                </p>
-                <p className="text-sm line-clamp-1 mt-1">{c.messages?.[0]?.message}</p>
+                <div className="flex items-start gap-2">
+                  {c.customer?.avatarUrl || c.visitorAvatarUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={c.customer?.avatarUrl || c.visitorAvatarUrl || ''}
+                      alt=""
+                      className="h-9 w-9 rounded-full object-cover shrink-0"
+                    />
+                  ) : (
+                    <div className="h-9 w-9 rounded-full bg-muted shrink-0" />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium truncate">
+                      {c.customer?.name ||
+                        c.visitorName ||
+                        (c.customer?.psid || c.externalUserId
+                          ? `PSID …${(c.customer?.psid || c.externalUserId || '').slice(-4)}`
+                          : null) ||
+                        c.visitorPhone ||
+                        c.sessionId.slice(0, 8)}
+                    </p>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {c.fanpage?.pageName ||
+                        (c.channel === 'facebook' ? 'Messenger' : c.channel)}
+                      {c.fanpage?.pageId ? ` · ID ${c.fanpage.pageId}` : ''}
+                      {' · '}
+                      {formatDateTime(c.updatedAt)}
+                    </p>
+                    <p className="text-sm line-clamp-1 mt-1">
+                      {c.messages?.[0]?.senderType === 'BOT' || c.messages?.[0]?.role === 'assistant'
+                        ? 'Bot: '
+                        : ''}
+                      {c.messages?.[0]?.message}
+                    </p>
+                  </div>
+                  {c.fanpage?.avatarUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={c.fanpage.avatarUrl}
+                      alt=""
+                      className="h-7 w-7 rounded-full object-cover shrink-0"
+                      title={c.fanpage.pageName || c.fanpage.pageId || 'Fanpage'}
+                    />
+                  ) : null}
+                </div>
               </button>
             ))}
           </div>
@@ -630,56 +663,106 @@ export default function ChatbotCskhPage() {
               <p className="text-muted-foreground text-sm">Chọn hội thoại để xem chi tiết</p>
             )}
             {inboxId && conversation.data && (
-              <div className="mb-3 flex flex-wrap items-center gap-2 border-b pb-2">
-                <span className="text-xs text-muted-foreground">
-                  {conversation.data.humanTakeover
-                    ? 'AI đang tạm dừng (human takeover)'
-                    : 'AI đang trả lời tự động'}
-                </span>
-                {conversation.data.humanTakeover ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={takeover.isPending}
-                    onClick={() => takeover.mutate({ id: inboxId, resumeBot: true })}
-                  >
-                    Bật lại AI
-                  </Button>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={takeover.isPending}
-                    onClick={() => takeover.mutate({ id: inboxId, resumeBot: false })}
-                  >
-                    Nhân viên tiếp quản
-                  </Button>
-                )}
+              <div className="mb-3 space-y-2 border-b pb-2">
+                <div className="flex items-center gap-2">
+                  {conversation.data.customer?.avatarUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={conversation.data.customer.avatarUrl}
+                      alt=""
+                      className="h-8 w-8 rounded-full object-cover"
+                    />
+                  ) : null}
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium truncate">
+                      {conversation.data.customer?.name || conversation.data.visitorName || 'Khách'}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground truncate">
+                      {conversation.data.customer?.psid
+                        ? `PSID …${conversation.data.customer.psid.slice(-6)}`
+                        : null}
+                      {conversation.data.fanpage?.pageName
+                        ? ` · Fanpage ${conversation.data.fanpage.pageName}`
+                        : ''}
+                      {conversation.data.fanpage?.pageId
+                        ? ` (${conversation.data.fanpage.pageId})`
+                        : ''}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    {conversation.data.humanTakeover
+                      ? 'AI đang tạm dừng (human takeover)'
+                      : 'AI đang trả lời tự động'}
+                  </span>
+                  {conversation.data.humanTakeover ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={takeover.isPending}
+                      onClick={() => takeover.mutate({ id: inboxId, resumeBot: true })}
+                    >
+                      Bật lại AI
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={takeover.isPending}
+                      onClick={() => takeover.mutate({ id: inboxId, resumeBot: false })}
+                    >
+                      Nhân viên tiếp quản
+                    </Button>
+                  )}
+                </div>
               </div>
             )}
-            {conversation.data?.messages?.map((m) => (
-              <div key={m.id} className={`mb-2 text-sm ${m.role === 'user' ? 'text-right' : ''}`}>
-                <span
-                  className={`inline-block rounded-lg px-3 py-2 ${m.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}
+            {conversation.data?.messages?.map((m) => {
+              const inbound = m.direction === 'INBOUND' || m.role === 'user';
+              const outbound =
+                m.direction === 'OUTBOUND' || m.role === 'assistant' || m.role === 'system';
+              return (
+                <div
+                  key={m.id}
+                  className={`mb-2 text-sm ${inbound ? 'text-right' : ''}`}
                 >
-                  {m.message}
-                </span>
-                {m.status ? (
-                  <p className="mt-0.5 text-[10px] text-muted-foreground">
-                    {m.status}
-                    {m.errorCode === 'MESSENGER_STANDARD_ACCESS'
-                      ? ' · Chưa Advanced Access (chỉ Admin/Dev/Tester)'
-                      : m.errorCode === 'MISSING_SCOPE'
-                        ? ' · Thiếu scope — reconnect OAuth'
-                        : m.errorCode === 'TOKEN_EXPIRED'
-                          ? ' · Token hết hạn'
-                          : m.errorCode
-                            ? ` · ${m.errorCode}`
-                            : ''}
+                  <p className="mb-0.5 text-[10px] text-muted-foreground">
+                    {m.senderType === 'BOT' || m.role === 'assistant'
+                      ? 'Bot / Fanpage'
+                      : m.senderType === 'CUSTOMER' || m.role === 'user'
+                        ? 'Khách'
+                        : m.senderType || m.role}
+                    {m.direction ? ` · ${m.direction}` : ''}
                   </p>
-                ) : null}
-              </div>
-            ))}
+                  <span
+                    className={`inline-block rounded-lg px-3 py-2 ${
+                      inbound
+                        ? 'bg-primary text-primary-foreground'
+                        : outbound
+                          ? 'bg-muted'
+                          : 'bg-muted'
+                    }`}
+                  >
+                    {m.message}
+                  </span>
+                  {m.status ? (
+                    <p className="mt-0.5 text-[10px] text-muted-foreground">
+                      {m.status}
+                      {m.errorCode === 'MESSENGER_STANDARD_ACCESS'
+                        ? ' · Chưa Advanced Access (chỉ Admin/Dev/Tester)'
+                        : m.errorCode === 'MISSING_SCOPE'
+                          ? ' · Thiếu scope — reconnect OAuth'
+                          : m.errorCode === 'TOKEN_EXPIRED'
+                            ? ' · Token hết hạn'
+                            : m.errorCode
+                              ? ` · ${m.errorCode}`
+                              : ''}
+                    </p>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
         </TabsContent>
 
