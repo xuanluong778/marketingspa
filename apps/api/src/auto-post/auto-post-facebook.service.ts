@@ -6,6 +6,7 @@ import {
   NotFoundException,
   Optional,
   UnauthorizedException,
+  forwardRef,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -31,6 +32,7 @@ import {
 } from './auto-post-meta-pages.util';
 import { MetaFanpageService } from '../meta-fanpage/meta-fanpage.service';
 import { ChannelConnectionsService } from '../messaging/channel-connections.service';
+import { ChatbotCskhService } from '../chatbot-cskh/chatbot-cskh.service';
 import {
   assertCanUseServerEnvFanpage,
   canUseServerEnvFanpage,
@@ -64,6 +66,8 @@ export class AutoPostFacebookService {
     private readonly meta: AutoPostMetaService,
     private readonly metaFanpage: MetaFanpageService,
     private readonly channelConnections: ChannelConnectionsService,
+    @Inject(forwardRef(() => ChatbotCskhService))
+    private readonly chatbotCskh: ChatbotCskhService,
     private readonly usage: MetaGraphUsageService,
     private readonly pageDetails: AutoPostFacebookPageDetailsService,
     private readonly metrics: MetaGraphMetricsService,
@@ -1094,6 +1098,16 @@ export class AutoPostFacebookService {
           }`.slice(0, 220),
         );
       }
+    }
+
+    try {
+      await this.chatbotCskh.ensureChatbotPagesFromAutoPost(organizationId, userId);
+    } catch (e) {
+      this.logger.warn(
+        `ensureChatbotPagesFromAutoPost failed: ${
+          e instanceof Error ? e.message : String(e)
+        }`.slice(0, 220),
+      );
     }
   }
 

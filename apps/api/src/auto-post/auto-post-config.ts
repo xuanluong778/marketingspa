@@ -14,12 +14,14 @@ export const AUTO_POST_TYPE_LABELS: Record<AutoPostType, string> = {
   INBOX_BOOKING: 'Bài kéo inbox/đặt lịch',
 };
 
-/** Default Facebook Login scopes (Standard Access). */
+/** Default Facebook Login scopes (Standard Access) — include Messenger for Chatbot E2E. */
 export const AUTO_POST_META_SCOPES = [
   'public_profile',
   'pages_show_list',
   'pages_read_engagement',
   'pages_manage_posts',
+  'pages_messaging',
+  'pages_manage_metadata',
 ];
 
 /**

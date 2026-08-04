@@ -64,7 +64,13 @@ export interface ChatbotConversation {
   visitorPhone?: string | null;
   updatedAt: string;
   bot?: { id: string; botName: string };
-  messages?: Array<{ id: string; role: string; message: string; createdAt: string }>;
+  messages?: Array<{
+    id: string;
+    role: string;
+    message: string;
+    status?: string | null;
+    createdAt: string;
+  }>;
   _count?: { messages: number };
 }
 

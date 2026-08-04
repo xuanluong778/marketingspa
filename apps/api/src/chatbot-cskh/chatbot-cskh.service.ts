@@ -7,7 +7,12 @@ import {
   forwardRef,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { ChatbotBotStatus, ChatbotSourceType, Prisma } from '@marketingspa/database';
+import {
+  AutoPostFacebookConnectionStatus,
+  ChatbotBotStatus,
+  ChatbotSourceType,
+  Prisma,
+} from '@marketingspa/database';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
@@ -22,6 +27,7 @@ import {
 } from './dto/chatbot-cskh.dto';
 import { buildEmbedCode, defaultGreeting, resolveEmbedApiUrl } from './utils/chatbot-constants';
 import { encodeStoredSecret } from '../common/utils/token-security.util';
+import { decryptSecret } from '../common/utils/encryption.util';
 import { ChatbotFacebookWebhookService } from './chatbot-facebook-webhook.service';
 import {
   formatDiagramNodeContent,
@@ -585,7 +591,7 @@ export class ChatbotCskhService {
     const subscribed = await this.facebookWebhook.subscribePageWebhook(pageId, pageAccessToken);
     if (!subscribed) {
       throw new BadRequestException(
-        'Không subscribe được webhook messages/messaging_postbacks. Kiểm tra quyền pages_manage_metadata / pages_messaging và Callback URL Meta App.',
+        'Không subscribe được webhook (messages, messaging_postbacks, message_deliveries, message_reads). Kiểm tra quyền pages_manage_metadata / pages_messaging và Callback URL Meta App.',
       );
     }
 
@@ -688,16 +694,174 @@ export class ChatbotCskhService {
 
   /**
    * Đồng bộ mọi Fanpage/OA đã kết nối (Chatbot + Content OAuth) → MessagingChannelConnection
-   * để Nhắn tin hàng loạt dùng chung kênh.
+   * để Nhắn tin hàng loạt dùng chung kênh. Đồng thời bridge Auto Post → ChatbotFacebookPage
+   * + subscribed_apps để webhook Messenger tới được Chatbot CSKH.
    */
   async syncMessagingFromChatbotPages(organizationId: string, userId?: string) {
     const result = await this.channelConnections.syncFromOrgSources(organizationId, userId);
-    if (result.synced === 0 && result.failed === 0) {
+    const bridge = await this.ensureChatbotPagesFromAutoPost(organizationId, userId);
+    if (result.synced === 0 && result.failed === 0 && bridge.linked === 0 && bridge.failed === 0) {
       throw new BadRequestException(
         'Chưa có Fanpage/Zalo OA nào để đồng bộ. Kết nối Fanpage tại Chatbot CSKH hoặc Nội dung → Kết nối kênh trước.',
       );
     }
-    return result;
+    return { ...result, chatbotBridge: bridge };
+  }
+
+  /**
+   * Source of truth Auto Post → ChatbotFacebookPage (idempotent) + Graph subscribed_apps.
+   * Không tạo bản ghi trùng; không log token.
+   */
+  async ensureChatbotPagesFromAutoPost(organizationId: string, userId?: string) {
+    const results: Array<{
+      pageId: string;
+      pageName: string | null;
+      ok: boolean;
+      error?: string;
+      webhookSubscribed?: boolean;
+    }> = [];
+
+    const bot = await this.prisma.chatbotBot.findFirst({
+      where: { organizationId, status: ChatbotBotStatus.ACTIVE },
+      orderBy: { updatedAt: 'desc' },
+    });
+    if (!bot) {
+      return { linked: 0, failed: 0, results, skippedReason: 'no_active_bot' as const };
+    }
+
+    const encryptionKey = this.config.get<string>('ENCRYPTION_KEY');
+    if (!encryptionKey || encryptionKey.length < 16) {
+      throw new BadRequestException('ENCRYPTION_KEY chưa được cấu hình trên server');
+    }
+
+    const autoPages = await this.prisma.autoPostFacebookPage.findMany({
+      where: {
+        connection: {
+          organizationId,
+          status: AutoPostFacebookConnectionStatus.CONNECTED,
+        },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    for (const page of autoPages) {
+      // Bỏ pageId giả (test fixture)
+      if (!/^\d{5,}$/.test(page.pageId)) {
+        results.push({
+          pageId: page.pageId,
+          pageName: page.pageName,
+          ok: false,
+          error: 'invalid_page_id',
+        });
+        continue;
+      }
+      try {
+        let token = '';
+        try {
+          token = decryptSecret(page.encryptedPageAccessToken, encryptionKey).trim();
+        } catch {
+          token = '';
+        }
+        if (!token) {
+          results.push({
+            pageId: page.pageId,
+            pageName: page.pageName,
+            ok: false,
+            error: 'missing_token',
+          });
+          continue;
+        }
+
+        const probe = await this.facebookWebhook.validatePageToken(page.pageId, token);
+        if (!probe.ok) {
+          results.push({
+            pageId: page.pageId,
+            pageName: page.pageName,
+            ok: false,
+            error: probe.error || 'token_invalid',
+          });
+          continue;
+        }
+
+        const subscribed = await this.facebookWebhook.subscribePageWebhook(page.pageId, token);
+        const pageName = probe.pageName || page.pageName;
+        const tokenStored = encodeStoredSecret(token, encryptionKey);
+
+        const existing = await this.prisma.chatbotFacebookPage.findUnique({
+          where: { pageId: page.pageId },
+        });
+        if (existing && existing.organizationId !== organizationId) {
+          results.push({
+            pageId: page.pageId,
+            pageName,
+            ok: false,
+            error: 'page_owned_by_other_org',
+          });
+          continue;
+        }
+
+        await this.prisma.chatbotFacebookPage.upsert({
+          where: { pageId: page.pageId },
+          create: {
+            organizationId,
+            botId: bot.id,
+            pageId: page.pageId,
+            pageName,
+            pageAccessTokenEncrypted: tokenStored,
+            aiEnabled: true,
+            status: 'connected',
+            webhookSubscribed: subscribed,
+          },
+          update: {
+            organizationId,
+            botId: bot.id,
+            pageName,
+            pageAccessTokenEncrypted: tokenStored,
+            status: 'connected',
+            webhookSubscribed: subscribed,
+          },
+        });
+
+        try {
+          await this.channelConnections.upsertMessengerFromChatbot(
+            organizationId,
+            {
+              pageId: page.pageId,
+              pageAccessToken: token,
+              pageName,
+              subscribeWebhook: subscribed,
+            },
+            userId,
+          );
+        } catch (e) {
+          this.logger.warn(
+            `ensureChatbotPages messaging upsert failed page=••••${page.pageId.slice(-4)}: ${
+              e instanceof Error ? e.message : String(e)
+            }`,
+          );
+        }
+
+        results.push({
+          pageId: page.pageId,
+          pageName,
+          ok: true,
+          webhookSubscribed: subscribed,
+        });
+      } catch (e) {
+        results.push({
+          pageId: page.pageId,
+          pageName: page.pageName,
+          ok: false,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+
+    return {
+      linked: results.filter((r) => r.ok).length,
+      failed: results.filter((r) => !r.ok).length,
+      results,
+    };
   }
 
   async getUsageSnapshot(organizationId: string) {

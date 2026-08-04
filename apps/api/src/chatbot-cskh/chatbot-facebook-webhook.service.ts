@@ -372,7 +372,10 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
         `https://graph.facebook.com/${this.graphVersion()}/${pageId}/subscribed_apps`,
       );
       url.searchParams.set('access_token', pageAccessToken);
-      url.searchParams.set('subscribed_fields', 'messages,messaging_postbacks');
+      url.searchParams.set(
+        'subscribed_fields',
+        'messages,messaging_postbacks,message_deliveries,message_reads',
+      );
 
       const res = await fetch(url.toString(), { method: 'POST' });
       const data = (await res.json().catch(() => ({}))) as {
@@ -386,7 +389,9 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
         );
         this.lastWebhookError = data.error?.message || 'subscribe_failed';
       } else {
-        this.logger.log(`Subscribed page=${pageId} fields=messages,messaging_postbacks`);
+        this.logger.log(
+          `Subscribed page=${pageId} fields=messages,messaging_postbacks,message_deliveries,message_reads`,
+        );
       }
       return ok;
     } catch (err) {
@@ -626,6 +631,7 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
         conversationId: conversation.id,
         role: 'user',
         message: storedText,
+        status: 'RECEIVED',
       },
     });
 
@@ -693,12 +699,21 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
       return;
     }
 
+    const processingMsg = await this.prisma.chatbotMessage.create({
+      data: {
+        conversationId,
+        role: 'assistant',
+        message: '…',
+        status: 'PROCESSING',
+      },
+    });
+
     const [sources, history, settings] = await Promise.all([
       this.prisma.chatbotKnowledgeSource.findMany({
         where: { botId: fbPage.botId, status: { in: ['active', 'ready'] } },
       }),
       this.prisma.chatbotMessage.findMany({
-        where: { conversationId },
+        where: { conversationId, id: { not: processingMsg.id } },
         orderBy: { createdAt: 'asc' },
         take: 20,
       }),
@@ -745,14 +760,6 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
       await this.markNeedsStaff(conversationId);
     }
 
-    await this.prisma.chatbotMessage.create({
-      data: {
-        conversationId,
-        role: 'assistant',
-        message: aiResult.reply.slice(0, 2000),
-      },
-    });
-
     if (aiResult.usedAi) {
       const month = new Date().toISOString().slice(0, 7);
       await this.prisma.chatbotUsage.upsert({
@@ -777,6 +784,14 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
     if (!sent) {
       this.lastWebhookError = 'send_failed';
     }
+
+    await this.prisma.chatbotMessage.update({
+      where: { id: processingMsg.id },
+      data: {
+        message: aiResult.reply.slice(0, 2000),
+        status: sent ? 'SENT' : 'FAILED',
+      },
+    });
 
     try {
       this.events.broadcastChatbotMessageNew(fbPage.organizationId, {

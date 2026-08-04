@@ -2904,6 +2904,8 @@ model ChatbotMessage {
   conversationId String   @map("conversation_id")
   role           String
   message        String   @db.Text
+  /// Messenger pipeline: RECEIVED → PROCESSING → SENT (or FAILED)
+  status         String?  @map("status")
   createdAt      DateTime @default(now()) @map("created_at")
 
   conversation ChatbotConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)

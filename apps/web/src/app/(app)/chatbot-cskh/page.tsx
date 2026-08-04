@@ -590,6 +590,9 @@ export default function ChatbotCskhPage() {
                 >
                   {m.message}
                 </span>
+                {m.status ? (
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">{m.status}</p>
+                ) : null}
               </div>
             ))}
           </div>
