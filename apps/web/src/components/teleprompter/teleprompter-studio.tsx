@@ -16,6 +16,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { TeleprompterScriptEditor } from '@/components/teleprompter/teleprompter-script-editor';
+import { TeleprompterRecorder } from '@/components/teleprompter/teleprompter-recorder';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -225,7 +226,8 @@ export function TeleprompterStudio() {
   );
 
   useEffect(() => {
-    const onFullscreenChange = () => setFullscreen(document.fullscreenElement === runnerRef.current);
+    const onFullscreenChange = () =>
+      setFullscreen(document.fullscreenElement === runnerRef.current);
     document.addEventListener('fullscreenchange', onFullscreenChange);
     return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
   }, []);
@@ -272,6 +274,16 @@ export function TeleprompterStudio() {
       });
     }, 1000);
   }, [countdownLeft, draft.countdown, draft.editedScript]);
+
+  /** Immediate play for recorder sync (no teleprompter countdown). */
+  const playImmediate = useCallback(() => {
+    if (countdownTimerRef.current !== null) {
+      window.clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+    setCountdownLeft(null);
+    setPlaying(true);
+  }, []);
 
   const pausePlayback = useCallback(() => {
     if (scrollRef.current) {
@@ -358,13 +370,28 @@ export function TeleprompterStudio() {
             className="border-slate-200 bg-white text-slate-900 placeholder:text-slate-400 focus-visible:ring-offset-white dark:border-slate-700 dark:bg-slate-950 dark:text-slate-50"
           />
           <div className="flex flex-wrap gap-2">
-            <Button type="button" size="sm" variant="outline" onClick={() => applyTool(stripScriptNoise)}>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => applyTool(stripScriptNoise)}
+            >
               Bỏ nhiễu
             </Button>
-            <Button type="button" size="sm" variant="outline" onClick={() => applyTool(autoSplitParagraphs)}>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => applyTool(autoSplitParagraphs)}
+            >
               Tách đoạn
             </Button>
-            <Button type="button" size="sm" variant="outline" onClick={() => applyTool(addBreathMarks)}>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => applyTool(addBreathMarks)}
+            >
               Dấu ngắt hơi
             </Button>
           </div>
@@ -401,7 +428,13 @@ export function TeleprompterStudio() {
               </Button>
             )}
             {playing && (
-              <Button type="button" size="sm" variant="secondary" data-tp-action="pause" onClick={pausePlayback}>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                data-tp-action="pause"
+                onClick={pausePlayback}
+              >
                 <Pause className="mr-1 h-3.5 w-3.5" />
                 Tạm dừng
               </Button>
@@ -412,7 +445,13 @@ export function TeleprompterStudio() {
               </span>
             )}
 
-            <Button type="button" size="sm" variant="outline" className={toolbarBtnDark} onClick={reset}>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className={toolbarBtnDark}
+              onClick={reset}
+            >
               <RotateCcw className="mr-1 h-3.5 w-3.5" />
               Chạy lại
             </Button>
@@ -460,7 +499,9 @@ export function TeleprompterStudio() {
                   <span className="hidden sm:inline">
                     Tốc độ {formatTeleprompterPlaybackSpeed(draft.playbackSpeed)}
                   </span>
-                  <span className="sm:hidden">{formatTeleprompterPlaybackSpeed(draft.playbackSpeed)}</span>
+                  <span className="sm:hidden">
+                    {formatTeleprompterPlaybackSpeed(draft.playbackSpeed)}
+                  </span>
                   <ChevronDown className="ml-1 h-3.5 w-3.5 opacity-70" aria-hidden />
                 </Button>
               </DropdownMenuTrigger>
@@ -478,7 +519,9 @@ export function TeleprompterStudio() {
                       'cursor-pointer focus:bg-white/10 focus:text-white',
                       draft.playbackSpeed === speed && 'bg-white/5',
                     )}
-                    onSelect={() => updateDraft({ playbackSpeed: speed as TeleprompterPlaybackSpeed })}
+                    onSelect={() =>
+                      updateDraft({ playbackSpeed: speed as TeleprompterPlaybackSpeed })
+                    }
                   >
                     {formatTeleprompterPlaybackSpeed(speed)}
                   </DropdownMenuItem>
@@ -576,7 +619,9 @@ export function TeleprompterStudio() {
         <div className="relative min-h-0 flex-1">
           {isCounting && (
             <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-black/40">
-              <span className="text-7xl font-bold text-white drop-shadow-lg sm:text-8xl">{countdownLeft}</span>
+              <span className="text-7xl font-bold text-white drop-shadow-lg sm:text-8xl">
+                {countdownLeft}
+              </span>
             </div>
           )}
           <div
@@ -632,6 +677,8 @@ export function TeleprompterStudio() {
           </div>
         </div>
       </section>
+
+      <TeleprompterRecorder onSyncPlay={playImmediate} onSyncPause={pausePlayback} />
     </main>
   );
 }
