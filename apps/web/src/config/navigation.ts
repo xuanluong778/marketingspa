@@ -37,8 +37,6 @@ export interface NavGroup {
   icon: LucideIcon;
   href?: string;
   items?: NavItem[];
-  /** Flyout submenu (hover desktop + click mobile). Default: inline expand. */
-  flyout?: boolean;
 }
 
 export const SETTINGS_TABS = ['account', 'knowledge', 'api', 'system'] as const;
@@ -165,7 +163,6 @@ export const sidebarNavGroups: NavGroup[] = [
     title: 'Cài đặt',
     href: '/settings',
     icon: Settings,
-    flyout: true,
     items: settingsNavItems,
   },
 ];

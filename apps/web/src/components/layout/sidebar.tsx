@@ -8,7 +8,6 @@ import { cn } from '@/lib/utils';
 import { sidebarNavGroups, type NavGroup, type NavItem } from '@/config/navigation';
 import { CONTENT_AUTO_POST_BASE } from '@/lib/content-auto-post-routes';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { NavFlyout } from '@/components/layout/nav-flyout';
 
 /** Canonicalize create-section for active match (`ads-check` → `facebook-check`). */
 function normalizeContentSection(section: string | null | undefined): string {
@@ -237,18 +236,6 @@ export function Sidebar({ onNavigate }: SidebarProps) {
                   <group.icon className="h-4 w-4 shrink-0" />
                   <span className="truncate">{group.title}</span>
                 </Link>
-              );
-            }
-
-            if (group.flyout && group.items?.length) {
-              return (
-                <NavFlyout
-                  key={group.title}
-                  group={group}
-                  active={active}
-                  isItemActive={isNavItemActive}
-                  onNavigate={onNavigate}
-                />
               );
             }
 
