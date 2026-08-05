@@ -630,6 +630,13 @@ model Organization {
   contentTeleprompterSources  ContentTeleprompterSource[]
   videoTranscriptions         VideoTranscription[]
   videoTranscriptionGlossaries VideoTranscriptionGlossary[]
+  workProjects                WorkProject[]
+  workTasks                   WorkTask[]
+  workTaskComments            WorkTaskComment[]
+  workAttachments             WorkAttachment[]
+  workTaskStatusHistories     WorkTaskStatusHistory[]
+  workTaskReviewEvents        WorkTaskReviewEvent[]
+  workNotifications           WorkNotification[]
 
   @@index([referredByAffiliateId])
   @@index([referredByCode])
@@ -853,6 +860,19 @@ model Employee {
   leaveRequests LeaveRequest[]
   overtimeRequests OvertimeRequest[]
   attendanceAdjustments AttendanceAdjustment[]
+  workTasksAssigned        WorkTaskAssignee[]
+  workTasksWatching        WorkTaskWatcher[]
+  workTasksCreated         WorkTask[] @relation("WorkTaskCreatedBy")
+  workTasksAssignedAsLead  WorkTask[] @relation("WorkTaskAssigner")
+  workTaskCommentsAuthored WorkTaskComment[] @relation("WorkCommentAuthor")
+  workAttachmentsUploaded  WorkAttachment[]  @relation("WorkAttachmentUploader")
+  workStatusHistoryActors  WorkTaskStatusHistory[] @relation("WorkStatusHistoryActor")
+  workReviewSubmissions    WorkTaskReviewEvent[] @relation("WorkReviewSubmitter")
+  workReviewDecisions      WorkTaskReviewEvent[] @relation("WorkReviewer")
+  workNotificationsRecv    WorkNotification[] @relation("WorkNotificationRecipient")
+  workNotificationsActor   WorkNotification[] @relation("WorkNotificationActor")
+  workTasksLastSubmitted   WorkTask[] @relation("WorkTaskLastSubmitter")
+  workTasksLastReviewed    WorkTask[] @relation("WorkTaskLastReviewer")
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -4030,3 +4050,266 @@ model AffiliateAuditLog {
   @@index([action, createdAt])
   @@map("affiliate_audit_logs")
 }
+
+// ─── Work management (Công việc & Dự án) ─────────────────────────────────────
+
+model WorkProject {
+  id             String    @id @default(uuid())
+  organizationId String    @map("organization_id")
+  name           String    @db.VarChar(200)
+  description    String?   @db.Text
+  isArchived     Boolean   @default(false) @map("is_archived")
+  createdById    String?   @map("created_by_id")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  columns      WorkBoardColumn[]
+  tasks        WorkTask[]
+  attachments  WorkAttachment[]
+
+  @@index([organizationId, isArchived])
+  @@map("work_projects")
+}
+
+model WorkBoardColumn {
+  id         String   @id @default(uuid())
+  projectId  String   @map("project_id")
+  key        String   @db.VarChar(32)
+  name       String   @db.VarChar(80)
+  sortOrder  Int      @default(0) @map("sort_order")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  project WorkProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks   WorkTask[]
+
+  @@unique([projectId, key])
+  @@index([projectId, sortOrder])
+  @@map("work_board_columns")
+}
+
+model WorkTask {
+  id               String    @id @default(uuid())
+  organizationId   String    @map("organization_id")
+  projectId        String    @map("project_id")
+  columnId         String    @map("column_id")
+  title            String    @db.VarChar(300)
+  description      String?   @db.Text
+  /// Người giao việc
+  assignerId       String?   @map("assigner_id")
+  createdById      String?   @map("created_by_id")
+  startDate        DateTime? @map("start_date") @db.Date
+  deadline         DateTime? @db.Date
+  /// LOW | MEDIUM | HIGH | URGENT
+  priority         String    @default("MEDIUM") @db.VarChar(16)
+  labels           String[]  @default([])
+  progress         Int       @default(0)
+  sortOrder        Int       @default(0) @map("sort_order")
+  isArchived       Boolean   @default(false) @map("is_archived")
+  deletedAt        DateTime? @map("deleted_at")
+  copiedFromId     String?   @map("copied_from_id")
+  /// Số lần bị yêu cầu sửa (REQUEST_FIX)
+  revisionCount    Int       @default(0) @map("revision_count")
+  lastSubmittedById String?  @map("last_submitted_by_id")
+  lastSubmittedAt  DateTime? @map("last_submitted_at")
+  lastReviewedById String?   @map("last_reviewed_by_id")
+  lastReviewedAt   DateTime? @map("last_reviewed_at")
+  lastReviewNote   String?   @map("last_review_note") @db.Text
+  /// APPROVE | REQUEST_FIX
+  lastReviewAction String?   @map("last_review_action") @db.VarChar(32)
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project      WorkProject          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  column       WorkBoardColumn      @relation(fields: [columnId], references: [id], onDelete: Restrict)
+  assigner     Employee?            @relation("WorkTaskAssigner", fields: [assignerId], references: [id], onDelete: SetNull)
+  createdBy    Employee?            @relation("WorkTaskCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  lastSubmittedBy Employee?         @relation("WorkTaskLastSubmitter", fields: [lastSubmittedById], references: [id], onDelete: SetNull)
+  lastReviewedBy  Employee?         @relation("WorkTaskLastReviewer", fields: [lastReviewedById], references: [id], onDelete: SetNull)
+  assignees    WorkTaskAssignee[]
+  watchers     WorkTaskWatcher[]
+  checklist    WorkChecklistItem[]
+  comments     WorkTaskComment[]
+  attachments  WorkAttachment[]
+  statusHistory WorkTaskStatusHistory[]
+  reviewEvents WorkTaskReviewEvent[]
+
+  @@index([organizationId, projectId, deletedAt])
+  @@index([projectId, columnId, sortOrder])
+  @@index([organizationId, isArchived, deletedAt])
+  @@index([assignerId])
+  @@map("work_tasks")
+}
+
+model WorkTaskAssignee {
+  taskId     String   @map("task_id")
+  employeeId String   @map("employee_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  task     WorkTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, employeeId])
+  @@index([employeeId])
+  @@map("work_task_assignees")
+}
+
+model WorkTaskWatcher {
+  taskId     String   @map("task_id")
+  employeeId String   @map("employee_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  task     WorkTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, employeeId])
+  @@index([employeeId])
+  @@map("work_task_watchers")
+}
+
+model WorkChecklistItem {
+  id        String   @id @default(uuid())
+  taskId    String   @map("task_id")
+  title     String   @db.VarChar(300)
+  isDone    Boolean  @default(false) @map("is_done")
+  sortOrder Int      @default(0) @map("sort_order")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  task WorkTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, sortOrder])
+  @@map("work_checklist_items")
+}
+
+/// Bình luận / trả lời trên công việc (@mention + emoji unicode trong body)
+model WorkTaskComment {
+  id             String    @id @default(uuid())
+  organizationId String    @map("organization_id")
+  taskId         String    @map("task_id")
+  parentId       String?   @map("parent_id")
+  authorId       String    @map("author_id")
+  body           String    @db.Text
+  /// employeeIds được @mention
+  mentionIds     String[]  @default([]) @map("mention_ids")
+  editedAt       DateTime? @map("edited_at")
+  deletedAt      DateTime? @map("deleted_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  task         WorkTask          @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  parent       WorkTaskComment?  @relation("WorkCommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies      WorkTaskComment[] @relation("WorkCommentReplies")
+  author       Employee          @relation("WorkCommentAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, taskId, createdAt])
+  @@index([parentId])
+  @@index([authorId])
+  @@map("work_task_comments")
+}
+
+/// File đính kèm task hoặc kho tài liệu dự án (không ghi đè — tên lưu uuid)
+model WorkAttachment {
+  id             String    @id @default(uuid())
+  organizationId String    @map("organization_id")
+  projectId      String    @map("project_id")
+  taskId         String?   @map("task_id")
+  originalName   String    @map("original_name") @db.VarChar(500)
+  storedName     String    @map("stored_name") @db.VarChar(80)
+  fileKey        String    @map("file_key") @db.VarChar(400)
+  mimeType       String    @map("mime_type") @db.VarChar(120)
+  sizeBytes      Int       @map("size_bytes")
+  /// image | pdf | doc | sheet | video | zip
+  kind           String    @db.VarChar(16)
+  uploadedById   String?   @map("uploaded_by_id")
+  deletedAt      DateTime? @map("deleted_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  project      WorkProject  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  task         WorkTask?    @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  uploadedBy   Employee?    @relation("WorkAttachmentUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+
+  @@unique([organizationId, storedName])
+  @@index([organizationId, projectId, deletedAt])
+  @@index([taskId, deletedAt])
+  @@index([uploadedById])
+  @@map("work_attachments")
+}
+
+/// Lịch sử chuyển cột / trạng thái công việc
+model WorkTaskStatusHistory {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  taskId         String   @map("task_id")
+  fromColumnKey  String?  @map("from_column_key") @db.VarChar(32)
+  toColumnKey    String   @map("to_column_key") @db.VarChar(32)
+  fromColumnId   String?  @map("from_column_id")
+  toColumnId     String   @map("to_column_id")
+  /// MOVE | SUBMIT_REVIEW | APPROVE | REQUEST_FIX
+  action         String   @db.VarChar(32)
+  actorId        String?  @map("actor_id")
+  note           String?  @db.Text
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  task         WorkTask     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  actor        Employee?    @relation("WorkStatusHistoryActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([taskId, createdAt])
+  @@index([organizationId, createdAt])
+  @@map("work_task_status_histories")
+}
+
+/// Sự kiện duyệt: Gửi duyệt / Duyệt / Yêu cầu sửa
+model WorkTaskReviewEvent {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  taskId         String   @map("task_id")
+  /// SUBMIT | APPROVE | REQUEST_FIX
+  type           String   @db.VarChar(32)
+  submittedById  String?  @map("submitted_by_id")
+  reviewedById   String?  @map("reviewed_by_id")
+  note           String?  @db.Text
+  revisionNumber Int      @default(0) @map("revision_number")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  task         WorkTask     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  submittedBy  Employee?    @relation("WorkReviewSubmitter", fields: [submittedById], references: [id], onDelete: SetNull)
+  reviewedBy   Employee?    @relation("WorkReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([taskId, createdAt])
+  @@index([organizationId, createdAt])
+  @@map("work_task_review_events")
+}
+
+/// Thông báo nội bộ module công việc
+model WorkNotification {
+  id             String    @id @default(uuid())
+  organizationId String    @map("organization_id")
+  recipientId    String    @map("recipient_id")
+  actorId        String?   @map("actor_id")
+  /// TASK_ASSIGNED | MENTION | COMMENT | FILE | SUBMIT_REVIEW | APPROVED | REQUEST_FIX
+  type           String    @db.VarChar(32)
+  title          String    @db.VarChar(300)
+  body           String?   @db.Text
+  taskId         String?   @map("task_id")
+  projectId      String?   @map("project_id")
+  isRead         Boolean   @default(false) @map("is_read")
+  readAt         DateTime? @map("read_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  recipient    Employee     @relation("WorkNotificationRecipient", fields: [recipientId], references: [id], onDelete: Cascade)
+  actor        Employee?    @relation("WorkNotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([recipientId, isRead, createdAt])
+  @@index([organizationId, createdAt])
+  @@map("work_notifications")
+}
+

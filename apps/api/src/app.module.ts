@@ -11,6 +11,7 @@ import { EventsModule } from './events/events.module';
 import { OrganizationsModule } from './organizations/organizations.module';
 import { EmployeesModule } from './employees/employees.module';
 import { HrmModule } from './hrm/hrm.module';
+import { WorkManagementModule } from './work-management/work-management.module';
 import { CustomersModule } from './customers/customers.module';
 import { LeadsModule } from './leads/leads.module';
 import { AppointmentsModule } from './appointments/appointments.module';
@@ -58,6 +59,7 @@ import { VideoTranscriptionModule } from './video-transcription/video-transcript
     OrganizationsModule,
     EmployeesModule,
     HrmModule,
+    WorkManagementModule,
     CustomersModule,
     LeadsModule,
     AppointmentsModule,

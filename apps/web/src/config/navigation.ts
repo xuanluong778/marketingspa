@@ -146,6 +146,7 @@ export const sidebarNavGroups: NavGroup[] = [
       { title: 'Ca làm việc', href: '/hrm/shifts', icon: Clock },
       { title: 'Bảng công', href: '/hrm/attendance', icon: CalendarRange },
       { title: 'Phép & OT', href: '/hrm/leave', icon: CalendarDays },
+      { title: 'Công việc & Dự án', href: '/work-management', icon: Target },
     ],
   },
   {
@@ -184,6 +185,9 @@ export function getPageTitle(pathname: string): string {
   }
   if (pathname === '/admin' || pathname.startsWith('/admin/')) {
     return 'Quản trị viên';
+  }
+  if (pathname === '/work-management' || pathname.startsWith('/work-management/')) {
+    return 'Công việc & Dự án';
   }
   if (pathname === '/hrm/employees' || pathname.startsWith('/hrm/employees/')) {
     return 'Quản Lý Nhân Sự';

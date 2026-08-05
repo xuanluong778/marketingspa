@@ -56,7 +56,19 @@ export const HRM_PERMISSION_DEFS = [
   { code: 'hrm.leave.approve', name: 'Duyệt phép / OT', module: 'hrm' },
 ] as const;
 
-export const ALL_PERMISSION_DEFS = [...CORE_PERMISSION_DEFS, ...HRM_PERMISSION_DEFS] as const;
+export const WORK_PERMISSION_DEFS = [
+  { code: 'work.project.read', name: 'Xem dự án', module: 'work' },
+  { code: 'work.project.write', name: 'Sửa dự án', module: 'work' },
+  { code: 'work.task.read', name: 'Xem công việc', module: 'work' },
+  { code: 'work.task.write', name: 'Sửa / kéo thả công việc', module: 'work' },
+  { code: 'work.task.manage', name: 'Lưu trữ / xóa công việc', module: 'work' },
+] as const;
+
+export const ALL_PERMISSION_DEFS = [
+  ...CORE_PERMISSION_DEFS,
+  ...HRM_PERMISSION_DEFS,
+  ...WORK_PERMISSION_DEFS,
+] as const;
 
 export function canonicalizeRoleCode(code: string): string {
   return ROLE_CODE_ALIASES[code] ?? code;
@@ -67,6 +79,8 @@ export function defaultPermissionCodesForRole(roleCode: string): string[] {
   const all = ALL_PERMISSION_DEFS.map((p) => p.code);
   const hrmRead = HRM_PERMISSION_DEFS.filter((p) => p.code.endsWith('.read')).map((p) => p.code);
   const hrmAll = HRM_PERMISSION_DEFS.map((p) => p.code);
+  const workAll = WORK_PERMISSION_DEFS.map((p) => p.code);
+  const workStaff = ['work.project.read', 'work.project.write', 'work.task.read', 'work.task.write'];
   const crmRead = ['customer.read', 'lead.read', 'order.read', 'report.view'];
   const crmWrite = ['customer.write', 'lead.write'];
 
@@ -74,9 +88,10 @@ export function defaultPermissionCodesForRole(roleCode: string): string[] {
     case SYSTEM_ROLES.OWNER:
       return all;
     case SYSTEM_ROLES.MANAGER:
+      // Trưởng phòng: full work + HRM (trừ settings)
       return all.filter((c) => c !== 'settings.manage');
     case SYSTEM_ROLES.HR:
-      return [...hrmAll, 'report.view', 'customer.read'];
+      return [...hrmAll, ...workAll, 'report.view', 'customer.read'];
     case SYSTEM_ROLES.MARKETING:
       return [
         'customer.read',
@@ -85,9 +100,10 @@ export function defaultPermissionCodesForRole(roleCode: string): string[] {
         'campaign.send',
         'report.view',
         'hrm.employee.read',
+        ...workStaff,
       ];
     case SYSTEM_ROLES.SALE:
-      return [...crmRead, ...crmWrite, 'hrm.employee.read'];
+      return [...crmRead, ...crmWrite, 'hrm.employee.read', ...workStaff];
     case SYSTEM_ROLES.TECHNICIAN:
       return [
         'hrm.employee.read',
@@ -96,6 +112,7 @@ export function defaultPermissionCodesForRole(roleCode: string): string[] {
         'hrm.leave.write',
         'lead.read',
         'customer.read',
+        ...workStaff,
       ];
     default:
       return hrmRead.slice(0, 1);
