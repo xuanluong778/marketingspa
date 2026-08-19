@@ -13,6 +13,8 @@ import {
   getOrgMessagingPolicy,
 } from './messaging-campaign-eligibility';
 import { refreshCampaignAggregates } from './messaging-campaign-helpers';
+import { dispatchFunnelAutomation } from './dispatch-funnel-automation';
+import { AutomationTriggerType } from '@marketingspa/database';
 
 /**
  * Xử lý inbound reply / opt-out sau khi identity đã upsert.
@@ -212,6 +214,26 @@ export async function handleInboundCustomerMessage(params: {
         },
       );
     }
+  }
+
+  void dispatchFunnelAutomation(params.organizationId, AutomationTriggerType.MESSAGE_RECEIVED, {
+    leadId: identity.leadId,
+    customerId: identity.customerId,
+    context: { text: params.text?.slice(0, 200) ?? '' },
+    dedupeKey: `MESSAGE_RECEIVED:${identity.id}:${params.timestamp.toISOString()}`,
+  }).catch(() => undefined);
+
+  {
+    const { applyFunnelScoreEvent } = await import('./apply-funnel-score');
+    void applyFunnelScoreEvent({
+      organizationId: params.organizationId,
+      leadId: identity.leadId,
+      customerId: identity.customerId,
+      eventType: 'CHATBOT_REPLY',
+      text: params.text,
+      source: 'messaging_inbound',
+      redis: params.redis,
+    }).catch(() => undefined);
   }
 
   return { handled: true, replied: replied.length > 0, optOut: false };

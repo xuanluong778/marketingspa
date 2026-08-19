@@ -28,6 +28,8 @@ async function bootstrap() {
   });
   // Meta deauthorize / data-deletion gửi application/x-www-form-urlencoded
   app.useBodyParser('urlencoded', { extended: true });
+  // Amazon SES/SNS event notifications often use text/plain JSON
+  app.useBodyParser('text', { type: ['text/plain'] });
 
   app.setGlobalPrefix('api/v1');
   app.use(cookieParser());

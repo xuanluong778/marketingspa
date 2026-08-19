@@ -608,6 +608,11 @@ function PricingPageInner() {
                   Tiết kiệm {formatCurrency(savings)} so với mua 2 gói 6 tháng
                 </p>
               )}
+              {Number(plan.creditGrant) > 0 && (
+                <p className="mt-2 text-sm text-heading">
+                  Tặng {Number(plan.creditGrant).toLocaleString('vi-VN')} AI Credit
+                </p>
+              )}
               <ul className="mt-5 flex-1 space-y-2 text-sm text-white/95">
                 {FEATURE_ROWS.map((f) => (
                   <li key={f.label} className="flex gap-2">
@@ -660,10 +665,14 @@ function PricingPageInner() {
               <tr className="border-t bg-muted/30">
                 <td className="px-4 py-2.5 font-medium">Giá</td>
                 <td className="px-4 py-2.5 text-center font-medium">
-                  {formatCurrency(sorted.find((p) => p.durationMonths === 6)?.priceVnd as number || 3900000)}
+                  {sorted.find((p) => p.durationMonths === 6)
+                    ? formatCurrency(Number(sorted.find((p) => p.durationMonths === 6)!.priceVnd))
+                    : '—'}
                 </td>
                 <td className="px-4 py-2.5 text-center font-medium">
-                  {formatCurrency(sorted.find((p) => p.durationMonths === 12)?.priceVnd as number || 5500000)}
+                  {sorted.find((p) => p.durationMonths === 12)
+                    ? formatCurrency(Number(sorted.find((p) => p.durationMonths === 12)!.priceVnd))
+                    : '—'}
                 </td>
               </tr>
             </tbody>

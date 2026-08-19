@@ -64,10 +64,18 @@ export const WORK_PERMISSION_DEFS = [
   { code: 'work.task.manage', name: 'Lưu trữ / xóa công việc', module: 'work' },
 ] as const;
 
+/** AI Assistant / Trợ lý Bạch Cốt Tinh — tách Chatbot CSKH */
+export const ASSISTANT_PERMISSION_DEFS = [
+  { code: 'assistant.use', name: 'Dùng Trợ lý Bạch Cốt Tinh', module: 'assistant' },
+  { code: 'assistant.admin', name: 'Quản trị Trợ lý Bạch Cốt Tinh', module: 'assistant' },
+  { code: 'chatbot.inbox.read', name: 'Đọc inbox CSKH/Fanpage (observe)', module: 'chatbot' },
+] as const;
+
 export const ALL_PERMISSION_DEFS = [
   ...CORE_PERMISSION_DEFS,
   ...HRM_PERMISSION_DEFS,
   ...WORK_PERMISSION_DEFS,
+  ...ASSISTANT_PERMISSION_DEFS,
 ] as const;
 
 export function canonicalizeRoleCode(code: string): string {
@@ -88,10 +96,10 @@ export function defaultPermissionCodesForRole(roleCode: string): string[] {
     case SYSTEM_ROLES.OWNER:
       return all;
     case SYSTEM_ROLES.MANAGER:
-      // Trưởng phòng: full work + HRM (trừ settings)
+      // Trưởng phòng: full work + HRM + assistant (trừ settings)
       return all.filter((c) => c !== 'settings.manage');
     case SYSTEM_ROLES.HR:
-      return [...hrmAll, ...workAll, 'report.view', 'customer.read'];
+      return [...hrmAll, ...workAll, 'report.view', 'customer.read', 'assistant.use'];
     case SYSTEM_ROLES.MARKETING:
       return [
         'customer.read',
@@ -100,10 +108,18 @@ export function defaultPermissionCodesForRole(roleCode: string): string[] {
         'campaign.send',
         'report.view',
         'hrm.employee.read',
+        'assistant.use',
         ...workStaff,
       ];
     case SYSTEM_ROLES.SALE:
-      return [...crmRead, ...crmWrite, 'hrm.employee.read', ...workStaff];
+      return [
+        ...crmRead,
+        ...crmWrite,
+        'hrm.employee.read',
+        'assistant.use',
+        'chatbot.inbox.read',
+        ...workStaff,
+      ];
     case SYSTEM_ROLES.TECHNICIAN:
       return [
         'hrm.employee.read',

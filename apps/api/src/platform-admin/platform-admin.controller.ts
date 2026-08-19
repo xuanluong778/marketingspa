@@ -18,6 +18,7 @@ import { PlatformAdminService } from './platform-admin.service';
 import { PlatformAdminOpsService } from './platform-admin-ops.service';
 import {
   AdminAuditQueryDto,
+  AdminCreditAdjustDto,
   AdminExtendSubscriptionDto,
   AdminGiftTimeDto,
   AdminJobsQueryDto,
@@ -135,6 +136,17 @@ export class PlatformAdminController {
     return this.admin.extendSubscription(user, id, dto, ip);
   }
 
+  @Post('subscriptions/:id/gift-time')
+  @HttpCode(200)
+  giftSubscriptionTime(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: AdminGiftTimeDto,
+    @ClientIp() ip?: string,
+  ) {
+    return this.admin.giftTimeToSubscription(user, id, dto, ip);
+  }
+
   @Post('subscriptions/:id/upgrade-12m')
   upgrade12m(
     @CurrentUser() user: AuthUser,
@@ -174,5 +186,32 @@ export class PlatformAdminController {
   @Get('audit-logs')
   auditLogs(@Query() query: AdminAuditQueryDto) {
     return this.ops.listAuditLogs(query);
+  }
+
+  @Get('credits')
+  listCredits(@Query() query: AdminListQueryDto) {
+    return this.admin.listCreditOrgs(query);
+  }
+
+  @Get('credits/:organizationId/history')
+  creditHistory(
+    @Param('organizationId') organizationId: string,
+    @Query() query: AdminListQueryDto,
+  ) {
+    return this.admin.listCreditHistory(organizationId, {
+      page: query.page,
+      pageSize: query.pageSize,
+    });
+  }
+
+  @Post('credits/:organizationId/adjust')
+  @HttpCode(200)
+  adjustCredit(
+    @CurrentUser() user: AuthUser,
+    @Param('organizationId') organizationId: string,
+    @Body() dto: AdminCreditAdjustDto,
+    @ClientIp() ip?: string,
+  ) {
+    return this.admin.adjustCredit(user, organizationId, dto, ip);
   }
 }

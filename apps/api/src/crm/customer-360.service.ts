@@ -34,7 +34,7 @@ export class Customer360Service {
             leadSource: true,
             assignedTo: true,
             attribution: true,
-            funnelStage: true,
+            stage: true,
           },
         }),
         this.prisma.appointment.findMany({

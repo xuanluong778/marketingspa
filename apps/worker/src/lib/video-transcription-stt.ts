@@ -2,12 +2,14 @@
  * High-quality audio extract + two-pass STT for video transcription worker.
  */
 import { spawn } from 'child_process';
-import { existsSync, readFileSync, statSync } from 'fs';
+import { existsSync, readdirSync, readFileSync, statSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import {
   VIDEO_TRANSCRIPTION_LIMITS,
   buildSttPrompt,
   detectSuspiciousSegments,
+  isTranscriptTooShortForDuration,
+  stripPromptEchoArtifacts,
   type TranscriptSegment,
 } from '@marketingspa/shared';
 
@@ -92,8 +94,14 @@ const YT_DLP_YOUTUBE_STRATEGIES: YtDlpDownloadStrategy[] = [
 ];
 
 const YT_DLP_FACEBOOK_STRATEGIES: YtDlpDownloadStrategy[] = [
+  // Prefer separate DASH audio+video then merge — progressive "hd/sd" can have weak/weird tracks
   {
-    label: 'fb-mp4',
+    label: 'fb-ba-bv-merge',
+    format: 'ba+bv/bestaudio+bestvideo/best',
+    merge: 'mp4',
+  },
+  {
+    label: 'fb-mp4-progressive',
     format: 'best[ext=mp4]/best[height<=720]/best',
   },
   {
@@ -122,15 +130,20 @@ function strategiesForPlatform(platform: RemoteVideoPlatform): YtDlpDownloadStra
 }
 
 export function pass1Model(): string {
-  return process.env.OPENAI_TRANSCRIBE_PASS1_MODEL?.trim() || 'whisper-1';
-}
-
-export function pass2Model(): string {
+  // Prefer high-quality transcript model first; whisper used as coverage fallback
   return (
-    process.env.OPENAI_TRANSCRIBE_PASS2_MODEL?.trim() ||
+    process.env.OPENAI_TRANSCRIBE_PASS1_MODEL?.trim() ||
     process.env.OPENAI_TRANSCRIBE_MODEL?.trim() ||
     'gpt-4o-transcribe'
   );
+}
+
+export function pass2Model(): string {
+  return process.env.OPENAI_TRANSCRIBE_PASS2_MODEL?.trim() || 'whisper-1';
+}
+
+export function passFallbackModel(): string {
+  return process.env.OPENAI_TRANSCRIBE_FALLBACK_MODEL?.trim() || 'gpt-4o-mini-transcribe';
 }
 
 export function cmdTimeoutForDuration(durationSec: number, baseMs: number): number {
@@ -234,6 +247,82 @@ export async function probeAudioMeta(mediaPath: string): Promise<{
     };
   } catch {
     return { codec: null, bitRate: null, sampleRate: null, channels: null };
+  }
+}
+
+/** True if media has at least one video stream (full video download leak detector). */
+export async function probeHasVideoStream(mediaPath: string): Promise<boolean> {
+  try {
+    const { stdout } = await runCmd(
+      ffprobeBin(),
+      [
+        '-v',
+        'error',
+        '-select_streams',
+        'v:0',
+        '-show_entries',
+        'stream=codec_type,codec_name',
+        '-of',
+        'json',
+        mediaPath,
+      ],
+      { timeoutMs: 60_000 },
+    );
+    const parsed = JSON.parse(stdout) as {
+      streams?: Array<{ codec_type?: string; codec_name?: string }>;
+    };
+    return Array.isArray(parsed.streams) && parsed.streams.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+const VIDEO_SOURCE_EXTS = new Set([
+  '.mp4',
+  '.mkv',
+  '.mov',
+  '.avi',
+  '.m4v',
+  '.flv',
+  '.ts',
+  '.webm',
+]);
+const AUDIO_ONLY_EXTS = new Set([
+  '.m4a',
+  '.mp3',
+  '.aac',
+  '.ogg',
+  '.opus',
+  '.wav',
+  '.flac',
+  '.weba',
+]);
+
+export function isLikelyAudioOnlyExt(fileName: string): boolean {
+  const ext = fileName.includes('.')
+    ? `.${fileName.split('.').pop()!.toLowerCase()}`
+    : '';
+  if (AUDIO_ONLY_EXTS.has(ext)) return true;
+  // .webm can be either — treat as not audio-only until probed
+  if (ext === '.webm') return false;
+  return !VIDEO_SOURCE_EXTS.has(ext);
+}
+
+/** Remove leftover source.* (and partials) so keepVideo=false never reuses old video. */
+export function purgeSourceFiles(workDir: string): void {
+  if (!existsSync(workDir)) return;
+  try {
+    for (const f of readdirSync(workDir)) {
+      if (f.startsWith('source.') || f.endsWith('.part') || f.endsWith('.ytdl')) {
+        try {
+          unlinkSync(join(workDir, f));
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+  } catch {
+    /* ignore */
   }
 }
 
@@ -394,12 +483,18 @@ export async function downloadRemoteVideo(
       const { readdirSync } = await import('fs');
       const files = readdirSync(workDir).filter((f) => f.startsWith('source.'));
       if (!files.length) throw new Error('yt-dlp không tạo được file nguồn');
+      const downloadedFile = join(workDir, files[0]!);
+      const fileSize = statSync(downloadedFile).size;
       console.log(
-        `[video-transcription] yt-dlp ok platform=${platform} strategy=${strategy.label}` +
-          ` node=${ytDlpNodeBinary()}` +
-          ` format=${strategy.format}`,
+        `[video-transcription] yt-dlp video ok` +
+          ` keepVideo=true` +
+          ` selectedFormat=${strategy.format}` +
+          ` downloadedFile=${files[0]}` +
+          ` fileSize=${fileSize}` +
+          ` platform=${platform}` +
+          ` strategy=${strategy.label}`,
       );
-      return join(workDir, files[0]!);
+      return downloadedFile;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       lastErr = err instanceof Error ? err : new Error(msg);
@@ -407,20 +502,113 @@ export async function downloadRemoteVideo(
         `[video-transcription] yt-dlp platform=${platform} strategy=${strategy.label} failed:`,
         msg.slice(0, 400),
       );
-      try {
-        const { readdirSync, unlinkSync } = await import('fs');
-        for (const f of readdirSync(workDir)) {
-          if (f.startsWith('source.') || f.endsWith('.part')) {
-            unlinkSync(join(workDir, f));
-          }
-        }
-      } catch {
-        /* ignore cleanup errors */
-      }
+      purgeSourceFiles(workDir);
     }
   }
 
   throw lastErr ?? new Error(`yt-dlp tải ${platform} thất bại`);
+}
+
+/**
+ * Download audio-only (no video stream / no merged video file) for STT.
+ * Never falls back to full-video formats — only audio strategies.
+ * Writes workDir/source.* (typically m4a/webm-audio/opus/mp3).
+ */
+export async function downloadRemoteAudio(
+  url: string,
+  workDir: string,
+  platform: RemoteVideoPlatform,
+  durationHint = 3600,
+  maxFileBytes: number,
+): Promise<string> {
+  // Ensure no prior full-video residue is reused
+  purgeSourceFiles(workDir);
+
+  const outTemplate = join(workDir, 'source.%(ext)s');
+  const timeoutMs = cmdTimeoutForDuration(durationHint, 45 * 60 * 1000);
+  // Strict audio-only selectors — NEVER best / bv / mp4 progressive video
+  const strategies: YtDlpDownloadStrategy[] = [
+    { label: `${platform}-bestaudio`, format: 'bestaudio/ba' },
+    { label: `${platform}-bestaudio-m4a`, format: 'bestaudio[ext=m4a]/ba[ext=m4a]/bestaudio' },
+    { label: `${platform}-bestaudio-webm`, format: 'bestaudio[ext=webm]/ba[ext=webm]/bestaudio' },
+    { label: `${platform}-worstaudio`, format: 'worstaudio/wa' },
+  ];
+  let lastErr: Error | null = null;
+
+  for (const strategy of strategies) {
+    try {
+      const args = [
+        ...buildYtDlpCommonArgs(),
+        '--max-filesize',
+        String(maxFileBytes),
+        // Force audio extraction preference without inventing video formats
+        '-f',
+        strategy.format,
+        // Never remux into video containers for STT path
+        '-o',
+        outTemplate,
+        '--',
+        url,
+      ];
+      console.log(
+        `[video-transcription] yt-dlp audio-only try` +
+          ` keepVideo=false` +
+          ` selectedFormat=${strategy.format}` +
+          ` platform=${platform}` +
+          ` strategy=${strategy.label}`,
+      );
+      await runCmd(ytDlpBin(), args, { timeoutMs, cwd: workDir });
+      const { readdirSync } = await import('fs');
+      const files = readdirSync(workDir).filter((f) => f.startsWith('source.'));
+      if (!files.length) throw new Error('yt-dlp không tạo được file audio');
+      const downloadedFile = join(workDir, files[0]!);
+      const fileSize = statSync(downloadedFile).size;
+      if (fileSize < 256) throw new Error('File audio rỗng');
+
+      // Reject pure video / containers with video streams
+      const name = files[0]!.toLowerCase();
+      if (name.endsWith('.mp4') || name.endsWith('.mkv') || name.endsWith('.mov') || name.endsWith('.avi')) {
+        // Some platforms mislabel; only accept if zero video streams
+        const hasV = await probeHasVideoStream(downloadedFile);
+        if (hasV) {
+          throw new Error(
+            `Audio-only download produced video container with video stream: ${files[0]}`,
+          );
+        }
+      } else if (name.endsWith('.webm') || name.endsWith('.m4a') || !isLikelyAudioOnlyExt(files[0]!)) {
+        const hasV = await probeHasVideoStream(downloadedFile);
+        if (hasV) {
+          throw new Error(`Downloaded file has video stream (reject): ${files[0]}`);
+        }
+      }
+
+      const hasVideo = await probeHasVideoStream(downloadedFile);
+      if (hasVideo) {
+        throw new Error(`Rejected download: video stream present in ${files[0]}`);
+      }
+
+      console.log(
+        `[video-transcription] yt-dlp audio-only ok` +
+          ` keepVideo=false` +
+          ` selectedFormat=${strategy.format}` +
+          ` downloadedFile=${files[0]}` +
+          ` fileSize=${fileSize}` +
+          ` platform=${platform}` +
+          ` strategy=${strategy.label}`,
+      );
+      return downloadedFile;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      lastErr = err instanceof Error ? err : new Error(msg);
+      console.warn(
+        `[video-transcription] yt-dlp audio platform=${platform} strategy=${strategy.label} failed:`,
+        msg.slice(0, 400),
+      );
+      purgeSourceFiles(workDir);
+    }
+  }
+
+  throw lastErr ?? new Error(`yt-dlp tải audio ${platform} thất bại (không fallback video)`);
 }
 
 /** @deprecated use downloadRemoteVideo */
@@ -532,31 +720,49 @@ export async function transcribeChunkPass1(params: {
   prompt: string;
 }): Promise<SttResult> {
   const model = pass1Model();
-  // Prefer whisper-1 verbose for segment confidence; fallback gpt-4o-mini-transcribe
   try {
+    // gpt-4o-transcribe / mini: plain text; whisper: verbose segments when selected
+    const useVerbose = model.includes('whisper');
     return await callOpenAiTranscribe({
       audioPath: params.audioPath,
-      model: model.includes('whisper') ? model : 'whisper-1',
+      model,
       language: params.language,
       prompt: params.prompt,
-      verbose: true,
+      verbose: useVerbose,
       filename: 'chunk.wav',
       mimeType: 'audio/wav',
     });
   } catch (err) {
     console.warn(
-      '[video-transcription] pass1 whisper failed:',
+      '[video-transcription] pass1 primary failed:',
       err instanceof Error ? err.message : err,
     );
-    return callOpenAiTranscribe({
-      audioPath: params.audioPath,
-      model: 'gpt-4o-mini-transcribe',
-      language: params.language,
-      prompt: params.prompt,
-      verbose: false,
-      filename: 'chunk.wav',
-      mimeType: 'audio/wav',
-    });
+    // Fallback chain: gpt-4o-mini → whisper-1 verbose
+    try {
+      return await callOpenAiTranscribe({
+        audioPath: params.audioPath,
+        model: passFallbackModel(),
+        language: params.language,
+        prompt: params.prompt,
+        verbose: false,
+        filename: 'chunk.wav',
+        mimeType: 'audio/wav',
+      });
+    } catch (err2) {
+      console.warn(
+        '[video-transcription] pass1 mini failed:',
+        err2 instanceof Error ? err2.message : err2,
+      );
+      return callOpenAiTranscribe({
+        audioPath: params.audioPath,
+        model: 'whisper-1',
+        language: params.language,
+        prompt: params.prompt,
+        verbose: true,
+        filename: 'chunk.wav',
+        mimeType: 'audio/wav',
+      });
+    }
   }
 }
 
@@ -565,15 +771,28 @@ export async function transcribeChunkPass2(params: {
   language: string;
   prompt: string;
 }): Promise<SttResult> {
-  return callOpenAiTranscribe({
-    audioPath: params.audioPath,
-    model: pass2Model(),
-    language: params.language,
-    prompt: params.prompt,
-    verbose: false,
-    filename: 'retry.wav',
-    mimeType: 'audio/wav',
-  });
+  // Pass2 used for suspicious windows OR full-chunk recovery: prefer whisper verbose
+  try {
+    return await callOpenAiTranscribe({
+      audioPath: params.audioPath,
+      model: pass2Model().includes('whisper') ? pass2Model() : 'whisper-1',
+      language: params.language,
+      prompt: params.prompt,
+      verbose: true,
+      filename: 'retry.wav',
+      mimeType: 'audio/wav',
+    });
+  } catch {
+    return callOpenAiTranscribe({
+      audioPath: params.audioPath,
+      model: passFallbackModel(),
+      language: params.language,
+      prompt: params.prompt,
+      verbose: false,
+      filename: 'retry.wav',
+      mimeType: 'audio/wav',
+    });
+  }
 }
 
 export async function twoPassTranscribeChunk(params: {
@@ -592,12 +811,22 @@ export async function twoPassTranscribeChunk(params: {
   result: SttResult;
   retries: Array<{ start: number; end: number; reason: string; model: string }>;
 }> {
+  const audioBytes = existsSync(params.chunkWavPath) ? statSync(params.chunkWavPath).size : 0;
+  const durationHint = Math.max(0.1, params.chunkEndSec - params.chunkStartSec);
+
+  console.log(
+    `[video-transcription] STT start chunk=${params.chunkIndex}` +
+      ` audioPath=${params.chunkWavPath}` +
+      ` audioBytes=${audioBytes}` +
+      ` duration=${durationHint.toFixed(2)}s` +
+      ` pass1=${pass1Model()} pass2=${pass2Model()}`,
+  );
+
+  // Prefer empty-ish prompt; no title/đoạn labels (Whisper echoes them)
   const prompt = buildSttPrompt({
     glossary: params.glossary,
     previousTail: params.previousTail,
-    videoTitle: params.videoTitle,
-    chunkIndex: params.chunkIndex,
-    chunkCount: params.chunkCount,
+    // do not pass videoTitle / chunk labels into Whisper bias
   });
 
   const pass1 = await transcribeChunkPass1({
@@ -606,72 +835,134 @@ export async function twoPassTranscribeChunk(params: {
     prompt,
   });
 
-  const retries: Array<{ start: number; end: number; reason: string; model: string }> = [];
-  let text = pass1.text;
-  const segments = pass1.segments.length
+  let text = stripPromptEchoArtifacts(pass1.text);
+  let segments = pass1.segments.length
     ? pass1.segments
-    : [{ start: 0, end: params.chunkEndSec - params.chunkStartSec, text: pass1.text }];
+    : text
+      ? [{ start: 0, end: durationHint, text }]
+      : [];
+  let model = pass1.model;
 
-  const suspicious = detectSuspiciousSegments(segments, params.glossary);
-  for (let i = 0; i < suspicious.length; i++) {
-    const win = suspicious[i]!;
-    // Absolute times on full audio
-    const absStart = params.chunkStartSec + win.start;
-    const absEnd = Math.min(params.chunkEndSec, params.chunkStartSec + win.end);
-    const dur = Math.max(20, Math.min(40, absEnd - absStart));
-    const retryPath = join(params.chunksDir, `retry-${params.chunkIndex}-${i}.wav`);
-    try {
-      await sliceAudioWav({
-        audioPath: params.fullAudioPath,
-        outPath: retryPath,
-        startSec: absStart,
-        durationSec: dur,
-      });
-      const ctxPrompt = buildSttPrompt({
-        glossary: params.glossary,
-        previousTail: `${params.previousTail} ${text}`.slice(-400),
-        videoTitle: params.videoTitle,
-        chunkIndex: params.chunkIndex,
-        chunkCount: params.chunkCount,
-      });
-      const pass2 = await transcribeChunkPass2({
-        audioPath: retryPath,
-        language: params.language,
-        prompt: `${ctxPrompt} Đoạn nghi ngờ: "${win.text.slice(0, 120)}"`,
-      });
-      if (pass2.text.trim()) {
-        if (text.includes(win.text)) {
-          text = text.replace(win.text, pass2.text.trim());
-        } else {
-          // Replace by relative segment text if present
-          text = `${text} ${pass2.text.trim()}`.replace(/\s+/g, ' ').trim();
-        }
-        retries.push({
-          start: absStart,
-          end: absStart + dur,
-          reason: win.reason,
-          model: pass2.model,
+  console.log(
+    `[video-transcription] STT pass1 chunk=${params.chunkIndex}` +
+      ` model=${pass1.model}` +
+      ` rawLen=${(pass1.text || '').length}` +
+      ` cleanedLen=${text.length}` +
+      ` segments=${pass1.segments.length}` +
+      ` preview=${JSON.stringify(text.slice(0, 80))}`,
+  );
+
+  const retries: Array<{ start: number; end: number; reason: string; model: string }> = [];
+
+  // Full-chunk recovery when transcript is abnormally short for duration
+  if (isTranscriptTooShortForDuration(text, durationHint) || !text) {
+    console.warn(
+      `[video-transcription] STT too-short chunk=${params.chunkIndex}` +
+        ` len=${text.length} dur=${durationHint.toFixed(1)}s — retry whisper / mini`,
+    );
+    const recoverModels = ['whisper-1', passFallbackModel(), 'gpt-4o-transcribe'].filter(
+      (m, i, a) => a.indexOf(m) === i && m !== pass1.model,
+    );
+    for (const m of recoverModels) {
+      try {
+        const recovered = await callOpenAiTranscribe({
+          audioPath: params.chunkWavPath,
+          model: m,
+          language: params.language,
+          prompt: '', // no prompt bias on recovery
+          verbose: m.includes('whisper'),
+          filename: 'chunk.wav',
+          mimeType: 'audio/wav',
         });
+        const recText = stripPromptEchoArtifacts(recovered.text);
         console.log(
-          `[video-transcription] pass2 retry chunk=${params.chunkIndex}` +
-            ` ${absStart.toFixed(1)}-${(absStart + dur).toFixed(1)}s` +
-            ` reason=${win.reason} model=${pass2.model}`,
+          `[video-transcription] STT recover chunk=${params.chunkIndex}` +
+            ` model=${m} rawLen=${(recovered.text || '').length} cleanedLen=${recText.length}` +
+            ` segments=${(recovered.segments || []).length}` +
+            ` preview=${JSON.stringify(recText.slice(0, 80))}`,
+        );
+        if (recText.length > text.length) {
+          text = recText;
+          segments = recovered.segments.length
+            ? recovered.segments
+            : [{ start: 0, end: durationHint, text: recText }];
+          model = recovered.model;
+          retries.push({
+            start: params.chunkStartSec,
+            end: params.chunkEndSec,
+            reason: 'FULL_CHUNK_TOO_SHORT',
+            model: m,
+          });
+        }
+        if (!isTranscriptTooShortForDuration(text, durationHint) && text) break;
+      } catch (err) {
+        console.warn(
+          `[video-transcription] recover model=${m} failed:`,
+          err instanceof Error ? err.message : err,
         );
       }
-    } catch (err) {
-      console.warn(
-        `[video-transcription] pass2 failed chunk=${params.chunkIndex}:`,
-        err instanceof Error ? err.message : err,
-      );
     }
   }
+
+  // Windowed pass2 only when we already have reasonable body text
+  if (!isTranscriptTooShortForDuration(text, durationHint) && segments.length) {
+    const suspicious = detectSuspiciousSegments(segments, params.glossary);
+    for (let i = 0; i < suspicious.length; i++) {
+      const win = suspicious[i]!;
+      const absStart = params.chunkStartSec + win.start;
+      const absEnd = Math.min(params.chunkEndSec, params.chunkStartSec + win.end);
+      const dur = Math.max(20, Math.min(40, absEnd - absStart));
+      const retryPath = join(params.chunksDir, `retry-${params.chunkIndex}-${i}.wav`);
+      try {
+        await sliceAudioWav({
+          audioPath: params.fullAudioPath,
+          outPath: retryPath,
+          startSec: absStart,
+          durationSec: dur,
+        });
+        const pass2 = await transcribeChunkPass2({
+          audioPath: retryPath,
+          language: params.language,
+          prompt: buildSttPrompt({
+            glossary: params.glossary,
+            previousTail: `${params.previousTail} ${text}`.slice(-200),
+          }),
+        });
+        const p2 = stripPromptEchoArtifacts(pass2.text);
+        if (p2.trim() && win.text && text.includes(win.text)) {
+          text = text.replace(win.text, p2.trim());
+          retries.push({
+            start: absStart,
+            end: absStart + dur,
+            reason: win.reason,
+            model: pass2.model,
+          });
+        }
+      } catch (err) {
+        console.warn(
+          `[video-transcription] pass2 window failed chunk=${params.chunkIndex}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+  }
+
+  text = stripPromptEchoArtifacts(text);
+
+  console.log(
+    `[video-transcription] STT final chunk=${params.chunkIndex}` +
+      ` model=${model}` +
+      ` textLen=${text.length}` +
+      ` segments=${segments.length}` +
+      ` retries=${retries.length}`,
+  );
 
   return {
     result: {
       text,
       language: pass1.language,
       segments,
-      model: retries.length ? `${pass1.model}+${pass2Model()}` : pass1.model,
+      model: retries.length ? `${model}+recover` : model,
     },
     retries,
   };

@@ -25,6 +25,13 @@ export class CreatePaymentOrderDto {
   planCode!: string;
 }
 
+export class CreateCreditOrderDto {
+  @IsString()
+  @MinLength(3)
+  @MaxLength(64)
+  packageCode!: string;
+}
+
 export class AdminPaymentOrdersQueryDto {
   @IsOptional()
   @Type(() => Number)
@@ -140,4 +147,11 @@ export class AdminUpdateTrialSettingsDto {
   @Min(1)
   @Max(1000)
   aiDailyQuota?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(100000)
+  creditGrant?: number;
 }

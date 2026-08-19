@@ -1,124 +1,112 @@
 'use client';
 
-import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Suspense, useMemo } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/shared/page-header';
-import { LoadingState, ErrorState, EmptyState } from '@/components/shared/page-state';
-import { FunnelFilterBar } from '@/components/funnel/funnel-filters';
-import { useFunnelStats, defaultFunnelFilters } from '@/hooks/use-funnel';
-import { useBranches, useLeadSources } from '@/hooks/use-crm';
-import { useEmployees, useAdCampaigns } from '@/hooks/use-queries';
-import { CONVERSION_LABELS } from '@/types/funnel';
-import { cn } from '@/lib/utils';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { FunnelCreatePanel } from '@/components/funnel/funnel-create-panel';
+import { FunnelMinePanel } from '@/components/funnel/funnel-mine-panel';
+import { FunnelCanvasPanel } from '@/components/funnel/funnel-canvas-panel';
+import { FunnelAnalyticsPanel } from '@/components/funnel/funnel-analytics-dashboard';
+import { FunnelJourneyPanel } from '@/components/funnel/funnel-journey-panel';
+import { LoadingState } from '@/components/shared/page-state';
+import { useFunnelRecommendations } from '@/hooks/use-funnel-builder';
+import {
+  funnelHref,
+  resolveFunnelAdvancedPane,
+  resolveFunnelMainTab,
+  shouldOpenFunnelAdvanced,
+  type FunnelMainTab,
+} from '@/lib/funnel-tabs';
 
-const STEP_COLORS = [
-  'bg-blue-500',
-  'bg-cyan-500',
-  'bg-amber-500',
-  'bg-purple-500',
-  'bg-green-500',
-  'bg-gray-400',
-];
+function FunnelCustomers({
+  initialFunnelId,
+  initialLeadId,
+}: {
+  initialFunnelId?: string | null;
+  initialLeadId?: string | null;
+}) {
+  const { data: recommendations } = useFunnelRecommendations();
+  return (
+    <FunnelJourneyPanel
+      recommendations={recommendations ?? []}
+      initialFunnelId={initialFunnelId}
+      initialLeadId={initialLeadId}
+    />
+  );
+}
 
-export default function FunnelPage() {
-  const [filters, setFilters] = useState(defaultFunnelFilters);
-  const { data, isLoading, isError, refetch } = useFunnelStats(filters);
-  const { data: branches } = useBranches();
-  const { data: leadSourcesData } = useLeadSources();
-  const { data: employeesData } = useEmployees();
-  const { data: campaignsData } = useAdCampaigns();
+function FunnelPageInner() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const rawTab = searchParams.get('tab');
+  const activeTab = useMemo(() => resolveFunnelMainTab(rawTab), [rawTab]);
+  const draftId = searchParams.get('draft');
+  const advancedOpen = shouldOpenFunnelAdvanced(rawTab, searchParams.get('advanced'));
+  const advancedPane = resolveFunnelAdvancedPane(rawTab, searchParams.get('advancedPane'));
 
-  const branchList = Array.isArray(branches) ? branches : [];
-  const leadSources = leadSourcesData?.items ?? [];
-  const employees = employeesData?.items ?? [];
-  const campaigns = campaignsData?.items ?? [];
-
-  if (isLoading) return <LoadingState />;
-  if (isError) return <ErrorState onRetry={refetch} />;
-
-  const max = Math.max(...(data?.steps.map((s) => s.count) ?? [0]), 1);
-  const hasData = data && data.totalLeads > 0;
+  function changeTab(next: string) {
+    const tab = next as FunnelMainTab;
+    router.replace(funnelHref({ tab }), { scroll: false });
+  }
 
   return (
     <div>
       <PageHeader
         title="Phễu Marketing"
-        description="Theo dõi hành trình khách từ lead đến mua dịch vụ"
-      />
+        description="Phễu đang chạy hiện trên cùng. Tạo, kích hoạt và theo dõi lead theo tổ chức."
+      >
+        <Button onClick={() => router.replace(funnelHref({ tab: 'create', create: true }))}>
+          Tạo phễu
+        </Button>
+      </PageHeader>
 
-      <FunnelFilterBar
-        filters={filters}
-        onChange={setFilters}
-        leadSources={leadSources}
-        branches={branchList}
-        employees={employees}
-        campaigns={campaigns}
-      />
-
-      {!hasData ? (
-        <EmptyState
-          title="Chưa có dữ liệu phễu"
-          description="Thử mở rộng khoảng thời gian hoặc bỏ bộ lọc"
-        />
-      ) : (
-        <div className="grid gap-6 lg:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">
-                Số lượng theo giai đoạn
-                <span className="text-sm font-normal text-muted-foreground ml-2">
-                  ({data.totalLeads} lead trong kỳ)
-                </span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-5">
-              {data.steps.map((step, i) => (
-                <div key={step.status} className="space-y-2">
-                  <div className="flex justify-between items-center text-sm">
-                    <span className="flex items-center gap-2 font-medium">
-                      <span className={cn('w-2.5 h-2.5 rounded-full', STEP_COLORS[i])} />
-                      {step.label}
-                    </span>
-                    <span className="text-xl font-bold">{step.count}</span>
-                  </div>
-                  <div className="h-2.5 rounded-full bg-muted overflow-hidden">
-                    <div
-                      className={cn('h-full rounded-full transition-all', STEP_COLORS[i])}
-                      style={{ width: `${(step.count / max) * 100}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Tỷ lệ chuyển đổi</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {CONVERSION_LABELS.map(({ key, label }) => {
-                const rate = data.conversions[key];
-                return (
-                  <div
-                    key={key}
-                    className="flex items-center justify-between p-3 rounded-lg bg-muted/50"
-                  >
-                    <span className="text-sm font-medium">{label}</span>
-                    <span className="text-2xl font-bold text-primary">
-                      {rate != null ? `${rate}%` : '—'}
-                    </span>
-                  </div>
-                );
-              })}
-              <p className="text-xs text-muted-foreground pt-2">
-                Tính trên lead tạo trong khoảng {new Date(data.from).toLocaleDateString('vi-VN')} —{' '}
-                {new Date(data.to).toLocaleDateString('vi-VN')}
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      <Tabs value={activeTab} onValueChange={changeTab}>
+        <TabsList className="mb-4 grid h-auto w-full grid-cols-2 gap-1 sm:inline-flex sm:w-auto">
+          <TabsTrigger value="mine">Phễu của tôi</TabsTrigger>
+          <TabsTrigger value="create">Tạo phễu</TabsTrigger>
+          <TabsTrigger value="customers">Khách hàng</TabsTrigger>
+          <TabsTrigger value="analytics">Phân tích</TabsTrigger>
+        </TabsList>
+        <TabsContent value="mine">
+          {draftId ? (
+            <FunnelCanvasPanel
+              advancedOpen={advancedOpen}
+              advancedPane={advancedPane}
+            />
+          ) : (
+            <FunnelMinePanel advancedOpen={advancedOpen} advancedPane={advancedPane} />
+          )}
+        </TabsContent>
+        <TabsContent value="create">
+          <FunnelCreatePanel
+            initialGoal={searchParams.get('goal')}
+            initialMethod={
+              searchParams.get('source') === 'templates' || rawTab === 'templates'
+                ? 'templates'
+                : undefined
+            }
+          />
+        </TabsContent>
+        <TabsContent value="customers">
+          <FunnelCustomers
+            initialFunnelId={searchParams.get('funnel')}
+            initialLeadId={searchParams.get('lead')}
+          />
+        </TabsContent>
+        <TabsContent value="analytics">
+          <FunnelAnalyticsPanel />
+        </TabsContent>
+      </Tabs>
     </div>
+  );
+}
+
+export default function FunnelPage() {
+  return (
+    <Suspense fallback={<LoadingState message="Đang tải phễu…" />}>
+      <FunnelPageInner />
+    </Suspense>
   );
 }

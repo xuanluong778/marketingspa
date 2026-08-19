@@ -263,6 +263,34 @@ function LeadsPageContent() {
     if (highlightId) setDrawerLeadId(highlightId);
   }, [highlightId]);
 
+  useEffect(() => {
+    const fromUrl: LeadFilters = {};
+    const keys = [
+      'pipelineStatus',
+      'pipelineStatusIn',
+      'qualification',
+      'qualificationIn',
+      'leadSourceId',
+      'assignedToId',
+      'branchId',
+      'createdFrom',
+      'createdTo',
+      'search',
+    ] as const;
+    let has = false;
+    for (const key of keys) {
+      const v = searchParams.get(key);
+      if (v) {
+        fromUrl[key] = v;
+        has = true;
+      }
+    }
+    if (has) {
+      setFilters((prev) => ({ ...prev, ...fromUrl }));
+      setPage(1);
+    }
+  }, [searchParams]);
+
   const allSelected =
     !!data?.items?.length && data.items.every((r) => selectedIds.includes(r.id));
 

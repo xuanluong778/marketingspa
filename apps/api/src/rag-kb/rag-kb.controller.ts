@@ -6,11 +6,15 @@ import {
   Param,
   Patch,
   Post,
+  Query,
+  Res,
+  StreamableFile,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import type { Response } from 'express';
 import { JwtAuthGuard } from '../common/guards/auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -30,8 +34,8 @@ export class RagKbController {
   constructor(private readonly service: RagKbService) {}
 
   @Get()
-  list(@CurrentUser() user: AuthUser) {
-    return this.service.list(user.organizationId);
+  list(@CurrentUser() user: AuthUser, @Query('botId') botId?: string) {
+    return this.service.list(user.organizationId, botId || null);
   }
 
   @Post()
@@ -95,6 +99,31 @@ export class RagKbController {
     file: { originalname?: string; buffer?: Buffer } | undefined,
   ) {
     return this.service.importFile(user.organizationId, id, file || {});
+  }
+
+  @Get(':id/documents/:docId')
+  getDocument(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('docId') docId: string,
+  ) {
+    return this.service.getDocument(user.organizationId, id, docId);
+  }
+
+  @Get(':id/documents/:docId/download')
+  async downloadDocument(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('docId') docId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const file = await this.service.downloadDocument(user.organizationId, id, docId);
+    res.setHeader('Content-Type', file.mimeType);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename*=UTF-8''${encodeURIComponent(file.filename)}`,
+    );
+    return new StreamableFile(Buffer.from(file.body, 'utf8'));
   }
 
   @Delete(':id/documents/:docId')

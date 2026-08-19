@@ -5,8 +5,8 @@ import { Sidebar } from './sidebar';
 import { Topbar } from './topbar';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { RealtimeProvider } from '@/providers/realtime-provider';
-import { RealtimeNotifications } from '@/components/realtime/realtime-notifications';
 import { TrialBanner } from '@/components/billing/trial-banner';
+import { AssistantWidget } from '@/components/assistant/assistant-widget';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -36,7 +36,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <main className="flex-1 overflow-y-auto p-4 md:p-6">{children}</main>
         </div>
       </div>
-      <RealtimeNotifications />
+      {/* Floating Trợ lý Bạch Cốt Tinh — permission-gated inside widget; z above shell chrome */}
+      <AssistantWidget />
     </RealtimeProvider>
   );
 }

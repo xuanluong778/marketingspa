@@ -27,6 +27,9 @@ export class TenantOwnershipService {
   assertAdCampaign(organizationId: string, id?: string | null) { return this.assertById('adCampaign', organizationId, id); }
   assertAdSet(organizationId: string, id?: string | null) { return this.assertById('adSet', organizationId, id); }
   assertAdCreative(organizationId: string, id?: string | null) { return this.assertById('adCreative', organizationId, id); }
+  assertFunnel(organizationId: string, id?: string | null) {
+    return this.assertById('funnelRecommendation', organizationId, id);
+  }
 
   async validateBranchBoundRelations(organizationId: string, rel: Record<string, any> = {}) {
     const branchId = rel.branchId ?? null;
@@ -34,7 +37,7 @@ export class TenantOwnershipService {
     const pairs: Array<[string, string]> = [
       ['customerId', 'customer'], ['leadId', 'lead'], ['employeeId', 'employee'],
       ['assignedToId', 'employee'], ['serviceId', 'service'], ['leadSourceId', 'leadSource'],
-      ['funnelStageId', 'funnelStage'], ['adCampaignId', 'adCampaign'],
+      ['stageId', 'funnelStage'], ['pipelineId', 'funnelPipeline'], ['adCampaignId', 'adCampaign'],
     ];
     for (const [key, model] of pairs) {
       if (rel[key]) await this.assertById(model, organizationId, rel[key], branchId);

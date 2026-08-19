@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, apiUpload } from '@/lib/api-client';
 import { invalidateFanpageConnectionCaches } from '@/lib/invalidate-fanpage-connection-caches';
 import type {
@@ -7,14 +7,17 @@ import type {
   ChatbotConversation,
   ChatbotEmbedInfo,
   ChatbotFacebookPage,
+  ChatbotInboxPage,
   ChatbotKnowledgeSource,
   ChatbotLead,
   ChatbotOverview,
   ChatbotSettings,
   ChatbotOpenAiStatus,
+  ChatbotUnreadSummary,
 } from '@/types/chatbot-cskh';
 
 const KEY = ['chatbot-cskh'];
+const INBOX_PAGE_SIZE = 25;
 
 export function useChatbotOverview() {
   return useQuery({
@@ -45,20 +48,109 @@ export function useChatbotChannels() {
   });
 }
 
-export function useChatbotInbox() {
-  return useQuery({
-    queryKey: [...KEY, 'inbox'],
-    queryFn: () => apiClient<ChatbotConversation[]>('/chatbot-cskh/inbox'),
-    refetchInterval: 8_000,
+/** Danh sách hội thoại — bắt buộc botId (Project); filter channel/channelId phía API. */
+export function useChatbotInbox(opts?: {
+  enabled?: boolean;
+  pageSize?: number;
+  botId?: string | null;
+  channel?: 'all' | 'facebook' | 'website' | null;
+  channelId?: string | null;
+}) {
+  const pageSize = opts?.pageSize ?? INBOX_PAGE_SIZE;
+  const botId = opts?.botId || null;
+  const channel = opts?.channel && opts.channel !== 'all' ? opts.channel : null;
+  const channelId = opts?.channelId || null;
+  const enabled = opts?.enabled !== false && Boolean(botId);
+  return useInfiniteQuery({
+    queryKey: [...KEY, 'inbox', pageSize, botId, channel, channelId],
+    queryFn: ({ pageParam }) => {
+      const qs = new URLSearchParams({ limit: String(pageSize) });
+      if (pageParam) qs.set('cursor', pageParam);
+      if (botId) qs.set('botId', botId);
+      if (channel) qs.set('channel', channel);
+      if (channelId) qs.set('channelId', channelId);
+      return apiClient<ChatbotInboxPage>(`/chatbot-cskh/inbox?${qs}`);
+    },
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+    enabled,
+    staleTime: 20_000,
+    refetchInterval: (query) => (query.state.data ? 30_000 : false),
+    refetchOnWindowFocus: true,
   });
 }
 
+export function useChatbotUnreadSummary(
+  limit = 15,
+  opts?: { botId?: string | null; channel?: string | null; channelId?: string | null },
+) {
+  const botId = opts?.botId || null;
+  const channel = opts?.channel || null;
+  const channelId = opts?.channelId || null;
+  return useQuery({
+    queryKey: [...KEY, 'inbox-unread', limit, botId, channel, channelId],
+    queryFn: () => {
+      const qs = new URLSearchParams({ limit: String(limit) });
+      if (botId) qs.set('botId', botId);
+      if (channel) qs.set('channel', channel);
+      if (channelId) qs.set('channelId', channelId);
+      return apiClient<ChatbotUnreadSummary>(`/chatbot-cskh/inbox/unread-summary?${qs}`);
+    },
+    refetchInterval: 30_000,
+    staleTime: 5_000,
+    refetchOnWindowFocus: true,
+  });
+}
+
+export function useChatbotInboxChannelOptions(botId: string | null) {
+  return useQuery({
+    queryKey: [...KEY, 'inbox-channel-options', botId || 'all'],
+    queryFn: () => {
+      const qs = new URLSearchParams();
+      if (botId) qs.set('botId', botId);
+      return apiClient<{
+        fanpages: Array<{
+          pageId: string;
+          pageName: string | null;
+          status?: string;
+          botId: string;
+          botName?: string;
+        }>;
+        websites: Array<{ domain: string; botId: string; botName?: string }>;
+        projectFanpageCount?: number;
+        projectWebsiteCount?: number;
+      }>(`/chatbot-cskh/inbox/channel-options?${qs}`);
+    },
+    // Luôn fetch (kể cả chưa chọn bot) để hiện đủ Fanpage/Website org
+    enabled: true,
+    staleTime: 15_000,
+  });
+}
+
+export function useMarkChatbotConversationRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiClient<{ ok: boolean; conversationId: string; staffReadAt: string }>(
+        `/chatbot-cskh/inbox/${id}/read`,
+        { method: 'POST' },
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: [...KEY, 'inbox'] });
+      void qc.invalidateQueries({ queryKey: [...KEY, 'inbox-unread'] });
+    },
+  });
+}
+
+/** Chỉ fetch messages khi đã chọn hội thoại. */
 export function useChatbotConversation(id: string | null) {
   return useQuery({
-    queryKey: [...KEY, 'inbox', id],
+    queryKey: [...KEY, 'inbox', 'detail', id],
     queryFn: () => apiClient<ChatbotConversation>(`/chatbot-cskh/inbox/${id}`),
     enabled: !!id,
-    refetchInterval: id ? 3_000 : false,
+    staleTime: 8_000,
+    // Soft poll — socket invalidates the active thread
+    refetchInterval: id ? 15_000 : false,
   });
 }
 
@@ -121,6 +213,7 @@ export function useChatbotFacebookWebhookStatus() {
         aiEnabled?: boolean;
         requiredScopes?: string[];
         hints?: string[];
+        visitorAvatarAccess?: 'ok' | 'blocked' | 'unknown' | 'no_data';
         pages?: Array<{
           id: string;
           pageIdMasked: string;

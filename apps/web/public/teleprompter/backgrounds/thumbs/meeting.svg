@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="wall" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f4f6f8"/>
+      <stop offset="100%" stop-color="#e2e8ef"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="720" fill="url(#wall)"/>
+  <rect x="0" y="500" width="1280" height="220" fill="#d0d7e0"/>
+  <!-- conference table -->
+  <ellipse cx="640" cy="560" rx="480" ry="70" fill="#9aa8b8"/>
+  <ellipse cx="640" cy="548" rx="470" ry="55" fill="#b4c0ce"/>
+  <!-- chairs back -->
+  <g fill="#6d7c8d">
+    <rect x="240" y="470" width="70" height="50" rx="10"/>
+    <rect x="360" y="455" width="70" height="55" rx="10"/>
+    <rect x="850" y="455" width="70" height="55" rx="10"/>
+    <rect x="970" y="470" width="70" height="50" rx="10"/>
+  </g>
+  <!-- screen -->
+  <rect x="390" y="100" width="500" height="280" rx="10" fill="#1e293b"/>
+  <rect x="410" y="120" width="460" height="220" rx="4" fill="#334155"/>
+  <rect x="450" y="180" width="200" height="16" rx="3" fill="#94a3b8" opacity="0.5"/>
+  <rect x="450" y="220" width="300" height="12" rx="3" fill="#64748b" opacity="0.45"/>
+  <rect x="450" y="250" width="260" height="12" rx="3" fill="#64748b" opacity="0.35"/>
+</svg>

@@ -11,6 +11,7 @@ import type Redis from 'ioredis';
 import {
   AD_URL_ANALYZE_LIMITS,
   AD_URL_ANALYZE_STAGE_LABELS,
+  CREDIT_FEATURE_CODES,
   adUrlAnalyzeQueuePayloadSchema,
   adUrlAnalyzeRedisKey,
   type AdUrlAnalyzeJobPublic,
@@ -24,6 +25,7 @@ import { REDIS_CLIENT } from '../redis/redis.constants';
 import { AD_URL_ANALYZE_QUEUE } from '../queue/queue.constants';
 import { RateLimitService } from '../common/services/rate-limit.service';
 import { QueueEnqueueService } from '../common/services/queue-enqueue.service';
+import { CreditService } from '../credit/credit.service';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 
 @Injectable()
@@ -33,6 +35,7 @@ export class AdUrlAnalyzeService {
     @Inject(AD_URL_ANALYZE_QUEUE) private readonly queue: Queue,
     private readonly rateLimit: RateLimitService,
     private readonly queueEnqueue: QueueEnqueueService,
+    private readonly credit: CreditService,
   ) {}
 
   private async save(job: AdUrlAnalyzeJobPublic): Promise<void> {
@@ -79,6 +82,18 @@ export class AdUrlAnalyzeService {
         throw new BadRequestException({ message: e.message, code: e.code });
       }
       throw e;
+    }
+
+    const cost = await this.credit.getFeatureCost(CREDIT_FEATURE_CODES.AI_ANALYSIS);
+    const ok = await this.credit.checkAvailable(user.organizationId, cost);
+    if (!ok) {
+      const bal = await this.credit.getBalance(user.organizationId);
+      throw new BadRequestException({
+        code: 'INSUFFICIENT_CREDITS',
+        message: 'Không đủ AI Credit',
+        required: cost,
+        available: bal.available,
+      });
     }
 
     const id = randomUUID();

@@ -13,6 +13,11 @@ export class CreateRagKbDto {
   @IsOptional()
   @IsBoolean()
   isDefault?: boolean;
+
+  /** Project/Bot sở hữu KB — chống lẫn brand trong cùng org */
+  @IsOptional()
+  @IsString()
+  botId?: string;
 }
 
 export class UpdateRagKbDto {
@@ -25,6 +30,9 @@ export class UpdateRagKbDto {
   @IsOptional()
   @IsString()
   name?: string;
+  @IsOptional()
+  @IsString()
+  botId?: string | null;
 }
 
 export class ImportRagKbTextDto {

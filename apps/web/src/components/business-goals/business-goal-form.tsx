@@ -1,8 +1,6 @@
 'use client';
 
-import { Banknote, Target, Users, Wallet } from 'lucide-react';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { AccordionItem } from '@/components/business-goals/accordion-item';
+import { HelpCircle } from 'lucide-react';
 import { CategorySelect } from '@/components/business-goals/category-select';
 import { CostLineList } from '@/components/business-goals/cost-line-list';
 import { FieldHint, FieldLabel } from '@/components/business-goals/field-hint';
@@ -15,392 +13,312 @@ import {
   MARKETING_COST_OPTIONS,
   VARIABLE_COST_OPTIONS,
 } from '@/config/business-goals-options';
-import {
-  computeTotalRevenue,
-  computeTotalVariableCost,
-  type BusinessGoalFormState,
-} from '@/lib/business-goal-form';
-import { BG_BOX_INNER, BG_BOX_MUTED } from '@/components/business-goals/business-goals-theme';
-import { formatMoneyDisplay } from '@/lib/money-input';
+import { type BusinessGoalFormState, safeNumber } from '@/lib/business-goal-form';
 import { cn } from '@/lib/utils';
 
 interface BusinessGoalFormProps {
   state: BusinessGoalFormState;
   onChange: (state: BusinessGoalFormState) => void;
-  inputMode: 'quick' | 'detailed';
-  onInputModeChange: (mode: 'quick' | 'detailed') => void;
+  inputMode?: 'quick' | 'detailed';
+  onInputModeChange?: (mode: 'quick' | 'detailed') => void;
 }
 
-function ReadOnlyMoney({ label, value, hint }: { label: string; value: number; hint?: string }) {
+function FieldBlock({
+  htmlFor,
+  label,
+  tip,
+  hint,
+  children,
+}: {
+  htmlFor?: string;
+  label: string;
+  tip: string;
+  hint: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className={cn('rounded-lg px-3 py-2.5 space-y-1', BG_BOX_INNER)}>
-      <p className={cn('text-xs', BG_BOX_MUTED)}>{label}</p>
-      <p className="text-base font-semibold text-white">{formatMoneyDisplay(value)}</p>
-      {hint && <p className={cn('text-xs', BG_BOX_MUTED)}>{hint}</p>}
+    <div className="space-y-1.5">
+      <div className="flex items-start gap-1.5">
+        <FieldLabel htmlFor={htmlFor}>{label}</FieldLabel>
+        <span title={tip} className="mt-0.5 shrink-0 cursor-help text-white/50 hover:text-white/80">
+          <HelpCircle className="h-3.5 w-3.5" aria-hidden />
+          <span className="sr-only">{tip}</span>
+        </span>
+      </div>
+      {children}
+      <FieldHint>{hint}</FieldHint>
     </div>
   );
 }
 
-export function BusinessGoalForm({
-  state,
-  onChange,
-  inputMode,
-  onInputModeChange,
-}: BusinessGoalFormProps) {
+export function BusinessGoalForm({ state, onChange }: BusinessGoalFormProps) {
   const patch = (partial: Partial<BusinessGoalFormState>) => onChange({ ...state, ...partial });
 
-  const totalRevenueAuto = state.transactionCount * state.avgRevenuePerTransaction;
-  const totalRevenue = computeTotalRevenue(state);
-  const totalVariable = computeTotalVariableCost(state);
+  const revenueDisplay = state.totalRevenueManualEnabled
+    ? safeNumber(state.totalRevenueManual) || safeNumber(state.targetRevenue)
+    : safeNumber(state.transactionCount) * safeNumber(state.avgRevenuePerTransaction);
+
+  const variableCostDisplay =
+    state.variableCostLines.length > 0
+      ? state.variableCostLines.reduce((s, l) => s + l.amount, 0)
+      : state.totalVariableCostManualEnabled && state.totalVariableCostManual > 0
+        ? safeNumber(state.totalVariableCostManual)
+        : safeNumber(state.variableCostPerTransaction) * safeNumber(state.transactionCount);
+
+  const fixedDisplay =
+    state.fixedCostLines.length > 0
+      ? state.fixedCostLines.reduce((s, l) => s + l.amount, 0) +
+        state.marketingLines.reduce((s, l) => s + l.amount, 0)
+      : safeNumber(state.totalFixedCostManual) + safeNumber(state.totalMarketingManual);
+
+  const setTargetRevenue = (targetRevenue: number) => {
+    const avg = safeNumber(state.avgRevenuePerTransaction) || 1;
+    const tx = Math.max(1, Math.round(targetRevenue / avg));
+    const varTotal =
+      state.totalVariableCostManualEnabled && state.totalVariableCostManual > 0
+        ? safeNumber(state.totalVariableCostManual)
+        : Math.round(
+            (targetRevenue *
+              (avg > 0 ? safeNumber(state.variableCostPerTransaction) / avg : 0)) /
+              1,
+          ) || Math.round((targetRevenue * (variableCostDisplay / Math.max(1, revenueDisplay))) * 1);
+    // Prefer keeping same variable cost absolute if user set it; else keep rate
+    const keepVar = variableCostDisplay > 0 ? variableCostDisplay : varTotal;
+    patch({
+      targetRevenue,
+      totalRevenueManual: targetRevenue,
+      totalRevenueManualEnabled: true,
+      transactionCount: tx,
+      totalVariableCostManual: keepVar,
+      totalVariableCostManualEnabled: true,
+      variableCostLines: [],
+      variableCostPerTransaction: avg > 0 ? Math.round(keepVar / tx) : state.variableCostPerTransaction,
+    });
+  };
+
+  const setAvg = (avgRevenuePerTransaction: number) => {
+    const avg = Math.max(0, avgRevenuePerTransaction);
+    const target = revenueDisplay > 0 ? revenueDisplay : safeNumber(state.targetRevenue);
+    const tx = avg > 0 && target > 0 ? Math.max(1, Math.round(target / avg)) : state.transactionCount;
+    const revenue = avg * tx;
+    const varTotal = variableCostDisplay > 0 ? variableCostDisplay : Math.round(revenue * 0.33);
+    patch({
+      avgRevenuePerTransaction: avg,
+      avgSellingPrice: avg,
+      transactionCount: tx,
+      totalRevenueManual: state.totalRevenueManualEnabled ? target || revenue : state.totalRevenueManual,
+      targetRevenue: state.totalRevenueManualEnabled ? target || revenue : state.targetRevenue,
+      totalVariableCostManual: varTotal,
+      totalVariableCostManualEnabled: true,
+      variableCostPerTransaction: tx > 0 ? Math.round(varTotal / tx) : 0,
+      variableCostLines: [],
+    });
+  };
+
+  /** Chi phí biến đổi = tổng tiền (dễ hiểu hơn %) — map về form + calc hiện có */
+  const setVariableCostTotal = (totalVariableCostManual: number) => {
+    const rev = Math.max(1, revenueDisplay);
+    const avg = safeNumber(state.avgRevenuePerTransaction) || 1;
+    const tx = Math.max(1, safeNumber(state.transactionCount) || Math.round(rev / avg));
+    patch({
+      totalVariableCostManual: Math.max(0, totalVariableCostManual),
+      totalVariableCostManualEnabled: true,
+      variableCostLines: [],
+      variableCostPerTransaction: Math.round(Math.max(0, totalVariableCostManual) / tx),
+      transactionCount: tx,
+    });
+  };
+
+  const setFixed = (totalFixedCostManual: number) => {
+    patch({
+      totalFixedCostManual: Math.max(0, totalFixedCostManual),
+      totalFixedCostManualEnabled: true,
+      fixedCostLines: [],
+      totalMarketingManual: 0,
+      totalMarketingManualEnabled: true,
+      marketingLines: [],
+    });
+  };
 
   return (
-    <div className="space-y-4">
-      <Tabs value={inputMode} onValueChange={(v) => onInputModeChange(v as 'quick' | 'detailed')}>
-        <TabsList className="grid w-full grid-cols-2 bg-white/10 border border-white/10">
-          <TabsTrigger
-            value="quick"
-            className="text-white/70 data-[state=active]:bg-white/15 data-[state=active]:text-white"
-          >
-            Nhập nhanh
-          </TabsTrigger>
-          <TabsTrigger
-            value="detailed"
-            className="text-white/70 data-[state=active]:bg-white/15 data-[state=active]:text-white"
-          >
-            Nhập chi tiết
-          </TabsTrigger>
-        </TabsList>
+    <div className="space-y-5">
+      {/* 6 fields — always 1 column */}
+      <div className="grid grid-cols-1 gap-4">
+        <FieldBlock
+          htmlFor="bg-target-rev"
+          label="Doanh thu mục tiêu"
+          tip="Tổng tiền bạn muốn thu về từ bán hàng trong tháng."
+          hint="Tổng tiền bán hàng cần đạt trong 1 tháng, trước khi trừ chi phí."
+        >
+          <MoneyInput
+            id="bg-target-rev"
+            value={revenueDisplay}
+            onChange={setTargetRevenue}
+            placeholder="Ví dụ: 600.000.000"
+          />
+        </FieldBlock>
 
-        <TabsContent value="quick" className="mt-4 space-y-3">
-          <AccordionItem
-            title="Doanh thu"
-            icon={<Banknote className="h-4 w-4 text-emerald-600" />}
-            defaultOpen
-          >
-            <div className="pt-3 space-y-3">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <FieldLabel htmlFor="tx-count">Số giao dịch / khách mua</FieldLabel>
-                  <CountInput
-                    id="tx-count"
-                    value={state.transactionCount}
-                    onChange={(transactionCount) => patch({ transactionCount })}
-                    placeholder="Ví dụ: 100"
-                  />
-                  <FieldHint>Tổng số khách đã mua dịch vụ trong tháng.</FieldHint>
-                </div>
-                <div className="space-y-1.5">
-                  <FieldLabel htmlFor="avg-rev">Doanh thu trung bình / giao dịch</FieldLabel>
-                  <MoneyInput
-                    id="avg-rev"
-                    value={state.avgRevenuePerTransaction}
-                    onChange={(avgRevenuePerTransaction) =>
-                      patch({ avgRevenuePerTransaction, avgSellingPrice: avgRevenuePerTransaction })
-                    }
-                    placeholder="Ví dụ: 1.500.000"
-                  />
-                </div>
-              </div>
-              <ReadOnlyMoney
-                label="Tổng doanh thu (tự tính)"
-                value={totalRevenue}
-                hint={`${state.transactionCount.toLocaleString('vi-VN')} × ${state.avgRevenuePerTransaction.toLocaleString('vi-VN')}đ`}
-              />
-            </div>
-          </AccordionItem>
+        <FieldBlock
+          htmlFor="bg-avg"
+          label="Giá trị TB / đơn"
+          tip="Trung bình một khách mua bao nhiêu tiền mỗi lần."
+          hint="Trung bình một khách trả bao nhiêu tiền trong một giao dịch."
+        >
+          <MoneyInput
+            id="bg-avg"
+            value={state.avgRevenuePerTransaction}
+            onChange={setAvg}
+            placeholder="Ví dụ: 25.000"
+          />
+        </FieldBlock>
 
-          <AccordionItem
-            title="Chi phí"
-            icon={<Wallet className="h-4 w-4 text-violet-600" />}
-            defaultOpen
-          >
-            <div className="pt-3 space-y-3">
-              <div className="space-y-1.5">
-                <FieldLabel htmlFor="var-cost-tx">Chi phí biến đổi / giao dịch</FieldLabel>
-                <MoneyInput
-                  id="var-cost-tx"
-                  value={state.variableCostPerTransaction}
-                  onChange={(variableCostPerTransaction) => patch({ variableCostPerTransaction })}
-                  placeholder="Ví dụ: 500.000"
-                />
-                <FieldHint>Mỹ phẩm, vật tư, hoa hồng kỹ thuật viên cho mỗi khách.</FieldHint>
-              </div>
-              <ReadOnlyMoney
-                label="Tổng chi phí biến đổi (tự tính)"
-                value={totalVariable}
-                hint={`${state.transactionCount.toLocaleString('vi-VN')} × ${state.variableCostPerTransaction.toLocaleString('vi-VN')}đ`}
-              />
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <FieldLabel htmlFor="fixed-total">Chi phí cố định (tổng)</FieldLabel>
-                  <MoneyInput
-                    id="fixed-total"
-                    value={
-                      state.fixedCostLines.length > 0
-                        ? state.fixedCostLines.reduce((s, l) => s + l.amount, 0)
-                        : state.totalFixedCostManual
-                    }
-                    onChange={(totalFixedCostManual) =>
-                      patch({
-                        totalFixedCostManual,
-                        totalFixedCostManualEnabled: true,
-                        fixedCostLines: [],
-                      })
-                    }
-                    placeholder="Ví dụ: 80.000.000"
-                    disabled={state.fixedCostLines.length > 0}
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <FieldLabel htmlFor="mkt-total">Chi phí marketing (tổng)</FieldLabel>
-                  <MoneyInput
-                    id="mkt-total"
-                    value={
-                      state.marketingLines.length > 0
-                        ? state.marketingLines.reduce((s, l) => s + l.amount, 0)
-                        : state.totalMarketingManual
-                    }
-                    onChange={(totalMarketingManual) =>
-                      patch({
-                        totalMarketingManual,
-                        totalMarketingManualEnabled: true,
-                        marketingLines: [],
-                      })
-                    }
-                    placeholder="Ví dụ: 30.000.000"
-                    disabled={state.marketingLines.length > 0}
-                  />
-                </div>
-              </div>
-            </div>
-          </AccordionItem>
+        <FieldBlock
+          htmlFor="bg-var"
+          label="Chi phí biến đổi"
+          tip="Chi phí tăng khi bán nhiều: hàng hóa, nguyên vật liệu, hoa hồng…"
+          hint="Các chi phí tăng theo số lượng bán (hàng, bao bì, hoa hồng…)."
+        >
+          <MoneyInput
+            id="bg-var"
+            value={variableCostDisplay}
+            onChange={setVariableCostTotal}
+            placeholder="Ví dụ: 400.000.000"
+          />
+        </FieldBlock>
 
-          <AccordionItem
-            title="Lead & chuyển đổi"
-            icon={<Users className="h-4 w-4 text-blue-600" />}
-          >
-            <div className="pt-3 space-y-3">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <FieldLabel htmlFor="lead-count">Số khách hàng tiềm năng / lead</FieldLabel>
-                  <CountInput
-                    id="lead-count"
-                    value={state.leadCount}
-                    onChange={(leadCount) => patch({ leadCount })}
-                    placeholder="Ví dụ: 500"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <FieldLabel htmlFor="conv-rate">Tỷ lệ chuyển đổi lead</FieldLabel>
-                  <PercentInput
-                    id="conv-rate"
-                    value={state.leadConversionRate}
-                    onChange={(leadConversionRate) => patch({ leadConversionRate })}
-                    placeholder="Ví dụ: 20"
-                  />
-                </div>
-              </div>
-              <ReadOnlyMoney
-                label="Số giao dịch dự kiến từ lead"
-                value={Math.round(state.leadCount * (state.leadConversionRate / 100))}
-                hint="Lead × tỷ lệ chuyển đổi"
-              />
-            </div>
-          </AccordionItem>
+        <FieldBlock
+          htmlFor="bg-fixed"
+          label="Chi phí cố định"
+          tip="Chi phí hàng tháng gần như cố định dù bán nhiều hay ít."
+          hint="Lương, thuê mặt bằng… dù bán nhiều hay ít vẫn phải trả."
+        >
+          <MoneyInput
+            id="bg-fixed"
+            value={fixedDisplay}
+            onChange={setFixed}
+            placeholder="Ví dụ: 17.000.000"
+          />
+        </FieldBlock>
 
-          <AccordionItem title="Mục tiêu" icon={<Target className="h-4 w-4 text-orange-600" />}>
-            <div className="pt-3 space-y-3">
-              <div className="space-y-1.5">
-                <FieldLabel>Chọn mục tiêu</FieldLabel>
-                <CategorySelect
-                  value={state.goalType}
-                  onChange={(goalType) => patch({ goalType })}
-                  options={GOAL_TYPE_OPTIONS}
-                  otherNote={state.goalTypeNote}
-                  onOtherNoteChange={(goalTypeNote) => patch({ goalTypeNote })}
-                />
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <FieldLabel htmlFor="target-profit">Mục tiêu lợi nhuận mong muốn</FieldLabel>
-                  <MoneyInput
-                    id="target-profit"
-                    value={state.targetProfit}
-                    onChange={(targetProfit) => patch({ targetProfit })}
-                    placeholder="Ví dụ: 100.000.000"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <FieldLabel htmlFor="target-revenue">
-                    Hoặc mục tiêu doanh thu mong muốn
-                  </FieldLabel>
-                  <MoneyInput
-                    id="target-revenue"
-                    value={state.targetRevenue}
-                    onChange={(targetRevenue) => patch({ targetRevenue })}
-                    placeholder="Ví dụ: 300.000.000"
-                  />
-                </div>
-              </div>
-            </div>
-          </AccordionItem>
-        </TabsContent>
+        <FieldBlock
+          htmlFor="bg-conv"
+          label="Tỷ lệ chuyển đổi"
+          tip="Trong 100 khách tiềm năng, bao nhiêu người mua hàng."
+          hint="Ví dụ 15% = 100 khách hỏi thì khoảng 15 người mua."
+        >
+          <PercentInput
+            id="bg-conv"
+            value={state.leadConversionRate}
+            onChange={(leadConversionRate) => patch({ leadConversionRate })}
+            placeholder="Ví dụ: 15"
+          />
+        </FieldBlock>
 
-        <TabsContent value="detailed" className="mt-4 space-y-3">
-          <AccordionItem
-            title="Doanh thu"
-            icon={<Banknote className="h-4 w-4 text-emerald-600" />}
-            defaultOpen
-          >
-            <div className="pt-3 space-y-3">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <FieldLabel htmlFor="tx-count-d">Số giao dịch / khách mua</FieldLabel>
-                  <CountInput
-                    id="tx-count-d"
-                    value={state.transactionCount}
-                    onChange={(transactionCount) => patch({ transactionCount })}
-                    placeholder="Ví dụ: 100"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <FieldLabel htmlFor="avg-rev-d">Doanh thu trung bình / giao dịch</FieldLabel>
-                  <MoneyInput
-                    id="avg-rev-d"
-                    value={state.avgRevenuePerTransaction}
-                    onChange={(avgRevenuePerTransaction) =>
-                      patch({ avgRevenuePerTransaction, avgSellingPrice: avgRevenuePerTransaction })
-                    }
-                    placeholder="Ví dụ: 1.500.000"
-                  />
-                </div>
-              </div>
-              <ReadOnlyMoney label="Tổng doanh thu (tự tính)" value={totalRevenueAuto} />
-            </div>
-          </AccordionItem>
+        <FieldBlock
+          htmlFor="bg-profit"
+          label="Lợi nhuận mục tiêu"
+          tip="Số tiền lãi bạn muốn còn lại sau khi trả hết chi phí."
+          hint="Số tiền lãi mong muốn sau khi trả chi phí (trước thuế)."
+        >
+          <MoneyInput
+            id="bg-profit"
+            value={state.targetProfit}
+            onChange={(targetProfit) => patch({ targetProfit })}
+            placeholder="Ví dụ: 183.000.000"
+          />
+        </FieldBlock>
+      </div>
 
-          <AccordionItem
-            title="Chi phí"
-            icon={<Wallet className="h-4 w-4 text-violet-600" />}
-            defaultOpen
-          >
-            <div className="pt-3 space-y-4">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <FieldLabel>Giá vốn / chi phí biến đổi mỗi GD</FieldLabel>
-                  <MoneyInput
-                    value={state.variableCostPerTransaction}
-                    onChange={(variableCostPerTransaction) => patch({ variableCostPerTransaction })}
-                    placeholder="Ví dụ: 500.000"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <FieldLabel>Giá bán trung bình</FieldLabel>
-                  <MoneyInput
-                    value={state.avgSellingPrice}
-                    onChange={(avgSellingPrice) => patch({ avgSellingPrice })}
-                    placeholder="Ví dụ: 1.500.000"
-                  />
-                </div>
-              </div>
-
-              <CostLineList
-                label="Chi phí biến đổi chi tiết"
-                lines={state.variableCostLines}
-                options={VARIABLE_COST_OPTIONS}
-                defaultCategory="COSMETICS_USED"
-                addButtonLabel="Thêm dòng chi phí biến đổi"
-                onChange={(variableCostLines) => patch({ variableCostLines })}
-              />
-
-              <CostLineList
-                label="Chi phí cố định chi tiết"
-                lines={state.fixedCostLines}
-                options={FIXED_COST_OPTIONS}
-                defaultCategory="RENT"
-                addButtonLabel="Thêm dòng chi phí cố định"
-                onChange={(fixedCostLines) =>
-                  patch({ fixedCostLines, totalFixedCostManualEnabled: false })
+      {/* Advanced — default closed */}
+      <details className="group rounded-xl border border-white/10 bg-white/5">
+        <summary
+          className={cn(
+            'flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3',
+            'text-sm font-medium text-white marker:content-none [&::-webkit-details-marker]:hidden',
+          )}
+        >
+          <span>Xem thêm</span>
+          <span className="text-xs font-normal text-white/50 group-open:hidden">Mở</span>
+          <span className="hidden text-xs font-normal text-white/50 group-open:inline">Đóng</span>
+        </summary>
+        <div className="space-y-4 border-t border-white/10 px-4 pb-4 pt-3">
+          <p className="text-xs text-white/55">
+            Tùy chọn — kê chi tiết dòng chi phí / lead. Không cần mở cũng tính được kết quả.
+          </p>
+          <div className="grid grid-cols-1 gap-3">
+            <div className="space-y-1.5">
+              <FieldLabel htmlFor="bg-tx-adv">Số đơn (kế hoạch)</FieldLabel>
+              <CountInput
+                id="bg-tx-adv"
+                value={state.transactionCount}
+                onChange={(transactionCount) =>
+                  patch({ transactionCount, totalRevenueManualEnabled: false })
                 }
-              />
-
-              <CostLineList
-                label="Chi phí marketing chi tiết"
-                lines={state.marketingLines}
-                options={MARKETING_COST_OPTIONS}
-                defaultCategory="FACEBOOK_ADS"
-                addButtonLabel="Thêm dòng marketing"
-                onChange={(marketingLines) =>
-                  patch({ marketingLines, totalMarketingManualEnabled: false })
-                }
+                placeholder="Ví dụ: 24000"
               />
             </div>
-          </AccordionItem>
-
-          <AccordionItem
-            title="Lead & chuyển đổi"
-            icon={<Users className="h-4 w-4 text-blue-600" />}
-          >
-            <div className="pt-3 space-y-3">
-              <CategorySelect
-                value={state.leadSource}
-                onChange={(leadSource) => patch({ leadSource })}
-                options={LEAD_SOURCE_OPTIONS}
-                otherNote={state.leadSourceNote}
-                onOtherNoteChange={(leadSourceNote) => patch({ leadSourceNote })}
+            <div className="space-y-1.5">
+              <FieldLabel htmlFor="bg-leads-adv">Số lead hiện có</FieldLabel>
+              <CountInput
+                id="bg-leads-adv"
+                value={state.leadCount}
+                onChange={(leadCount) => patch({ leadCount })}
+                placeholder="Ví dụ: 500"
               />
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <FieldLabel>Số lead</FieldLabel>
-                  <CountInput
-                    value={state.leadCount}
-                    onChange={(leadCount) => patch({ leadCount })}
-                    placeholder="Ví dụ: 500"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <FieldLabel>Tỷ lệ chuyển đổi</FieldLabel>
-                  <PercentInput
-                    value={state.leadConversionRate}
-                    onChange={(leadConversionRate) => patch({ leadConversionRate })}
-                    placeholder="Ví dụ: 20"
-                  />
-                </div>
-              </div>
             </div>
-          </AccordionItem>
-
-          <AccordionItem title="Mục tiêu" icon={<Target className="h-4 w-4 text-orange-600" />}>
-            <div className="pt-3 space-y-3">
-              <CategorySelect
-                value={state.goalType}
-                onChange={(goalType) => patch({ goalType })}
-                options={GOAL_TYPE_OPTIONS}
-                otherNote={state.goalTypeNote}
-                onOtherNoteChange={(goalTypeNote) => patch({ goalTypeNote })}
-              />
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <FieldLabel>Mục tiêu lợi nhuận</FieldLabel>
-                  <MoneyInput
-                    value={state.targetProfit}
-                    onChange={(targetProfit) => patch({ targetProfit })}
-                    placeholder="Ví dụ: 100.000.000"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <FieldLabel>Mục tiêu doanh thu</FieldLabel>
-                  <MoneyInput
-                    value={state.targetRevenue}
-                    onChange={(targetRevenue) => patch({ targetRevenue })}
-                    placeholder="Ví dụ: 300.000.000"
-                  />
-                </div>
-              </div>
-            </div>
-          </AccordionItem>
-        </TabsContent>
-      </Tabs>
+          </div>
+          <CostLineList
+            label="Chi phí biến đổi chi tiết"
+            lines={state.variableCostLines}
+            options={VARIABLE_COST_OPTIONS}
+            defaultCategory="COSMETICS_USED"
+            addButtonLabel="Thêm dòng"
+            onChange={(variableCostLines) =>
+              patch({ variableCostLines, totalVariableCostManualEnabled: false })
+            }
+          />
+          <CostLineList
+            label="Chi phí cố định chi tiết"
+            lines={state.fixedCostLines}
+            options={FIXED_COST_OPTIONS}
+            defaultCategory="RENT"
+            addButtonLabel="Thêm dòng"
+            onChange={(fixedCostLines) =>
+              patch({ fixedCostLines, totalFixedCostManualEnabled: false })
+            }
+          />
+          <CostLineList
+            label="Marketing chi tiết"
+            lines={state.marketingLines}
+            options={MARKETING_COST_OPTIONS}
+            defaultCategory="FACEBOOK_ADS"
+            addButtonLabel="Thêm dòng"
+            onChange={(marketingLines) =>
+              patch({ marketingLines, totalMarketingManualEnabled: false })
+            }
+          />
+          <div className="space-y-2">
+            <FieldLabel>Nguồn lead</FieldLabel>
+            <CategorySelect
+              value={state.leadSource}
+              onChange={(leadSource) => patch({ leadSource })}
+              options={LEAD_SOURCE_OPTIONS}
+              otherNote={state.leadSourceNote}
+              onOtherNoteChange={(leadSourceNote) => patch({ leadSourceNote })}
+            />
+          </div>
+          <div className="space-y-2">
+            <FieldLabel>Loại mục tiêu</FieldLabel>
+            <CategorySelect
+              value={state.goalType}
+              onChange={(goalType) => patch({ goalType })}
+              options={GOAL_TYPE_OPTIONS}
+              otherNote={state.goalTypeNote}
+              onOtherNoteChange={(goalTypeNote) => patch({ goalTypeNote })}
+            />
+          </div>
+        </div>
+      </details>
     </div>
   );
 }

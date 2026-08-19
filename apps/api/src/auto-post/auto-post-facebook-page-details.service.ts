@@ -9,7 +9,7 @@ import {
   Optional,
   UnauthorizedException,
 } from '@nestjs/common';
-import { AutoPostFacebookConnectionStatus } from '@marketingspa/database';
+import { AutoPostFacebookConnectionStatus, Prisma } from '@marketingspa/database';
 import type Redis from 'ioredis';
 import { PrismaService } from '../prisma/prisma.service';
 import { decryptSecret, encryptSecret } from '../common/utils/encryption.util';
@@ -21,12 +21,15 @@ import { FanpageDetailsRedisCache } from './auto-post-facebook-page-details.cach
 import {
   buildPermissionsFlags,
   classifyMetaGraphError,
+  FANPAGE_DETAILS_PAGE_FIELDS,
   FANPAGE_DETAILS_SAFE_POST_FIELDS,
+  formatHoChiMinhDateTime,
   hasPagesReadEngagement,
   mapMetaPageToDetails,
   mapMetaPosts,
   mergeConnectionScopes,
   PERMISSION_DECLINED_MESSAGE,
+  snapshotHasTokenLeak,
   toLegacyErrorCode,
 } from './auto-post-facebook-page-details.logic';
 import {
@@ -67,8 +70,8 @@ export class AutoPostFacebookPageDetailsService {
   }
 
   /**
-   * Chi tiết Fanpage + bài gần đây (pages_read_engagement).
-   * Redis cache + single-flight; Meta lỗi không xóa connection / stale cache.
+   * Xem chi tiết = snapshot lần đồng bộ Graph gần nhất (không gọi Facebook).
+   * Query refresh=true vẫn live-fetch (tương thích test cũ) và persist nếu thành công.
    */
   async getPageDetails(
     userId: string,
@@ -77,51 +80,31 @@ export class AutoPostFacebookPageDetailsService {
     options?: { refresh?: boolean },
   ): Promise<FanpageDetailsResponse> {
     const refresh = Boolean(options?.refresh);
-
     if (refresh) {
-      await this.cache.invalidate(organizationId, fanpageId);
-    } else {
-      const hit = await this.cache.getFresh(organizationId, fanpageId);
-      if (hit) {
-        this.metrics.cacheHit();
-        return hit;
-      }
-      this.metrics.cacheMiss();
+      return this.syncPageDetails(userId, organizationId, fanpageId);
     }
 
+    const snapshot = await this.loadPersistedSnapshot(organizationId, fanpageId);
+    if (snapshot) {
+      this.metrics.cacheHit();
+      return snapshot;
+    }
+    return this.buildUnsyncedStub(userId, organizationId, fanpageId);
+  }
+
+  /**
+   * Đồng bộ live từ Graph bằng Page Access Token.
+   * Thành công → lưu lastSyncedAt + snapshot. Lỗi → giữ dữ liệu cũ, trả lỗi rõ.
+   */
+  async syncPageDetails(
+    userId: string,
+    organizationId: string,
+    fanpageId: string,
+  ): Promise<FanpageDetailsResponse> {
     try {
-      const value = await this.cache.withSingleFlight(
-        organizationId,
-        fanpageId,
-        async () => {
-          if (!refresh) {
-            const again = await this.cache.getFresh(organizationId, fanpageId);
-            if (again) {
-              this.metrics.cacheHit();
-              return { ...again, cached: false, dataSource: 'live' };
-            }
-          }
-          return this.fetchAndBuild(userId, organizationId, fanpageId);
-        },
-        () => this.metrics.singleFlightPrevented(),
-      );
-      return value;
+      return await this.fetchAndBuild(userId, organizationId, fanpageId);
     } catch (err) {
-      // Stale chỉ cho UI metadata/posts — không dùng để xác minh quyền/publish
-      const stale = await this.cache.getStale(organizationId, fanpageId);
-      if (stale) {
-        const classified = this.classifyThrown(err);
-        return {
-          ...stale,
-          cached: true,
-          stale: true,
-          dataSource: 'stale',
-          warnings: [
-            ...stale.warnings,
-            `Đang hiển thị dữ liệu đã lưu (cũ) — Meta: ${classified.message}. Không dùng để xác nhận quyền đăng bài.`,
-          ],
-        };
-      }
+      await this.recordSyncFailure(organizationId, fanpageId, err);
       this.rethrowAsHttp(err);
     }
   }
@@ -146,6 +129,7 @@ export class AutoPostFacebookPageDetailsService {
 
     let pageMeta: ReturnType<typeof mapMetaPageToDetails>;
     let recentPosts: ReturnType<typeof mapMetaPosts> = [];
+    let postsError: string | null = null;
 
     try {
       pageMeta = await this.fetchPageMetadata(resolved);
@@ -167,35 +151,198 @@ export class AutoPostFacebookPageDetailsService {
         // Token/page sai ảnh hưởng cả metadata đã lấy — báo lỗi cứng
         this.rethrowAsHttp(err);
       }
-      // Thiếu field engagement / rate limit / mạng: vẫn trả metadata + posts rỗng
+      postsError = classified.message;
       warnings.push(
         classified.code === 'permission_missing' || classified.code === 'permission_declined'
-          ? 'Đã tải thông tin Fanpage. Không đọc được thống kê tương tác bài viết (Meta hạn chế likes/comments). Metadata vẫn hiển thị.'
+          ? `Đã tải thông tin Fanpage. Không đọc được bài viết từ Facebook: ${classified.message}`
           : classified.code === 'rate_limited' || classified.code === 'META_RATE_LIMIT'
-            ? 'Không tải được bài đăng gần đây do giới hạn Facebook. Metadata Fanpage vẫn hiển thị.'
-            : 'Không tải được danh sách bài đăng gần đây. Metadata Fanpage vẫn hiển thị.',
+            ? `Không tải được bài đăng gần đây do giới hạn Facebook: ${classified.message}`
+            : `Không tải được danh sách bài đăng gần đây: ${classified.message}`,
       );
-      recentPosts = [];
+      const previous = await this.loadPersistedSnapshot(organizationId, fanpageId);
+      recentPosts = previous?.recentPosts ?? [];
     }
 
+    const apiVersion = this.meta.apiVersion;
+    const pageFields = FANPAGE_DETAILS_PAGE_FIELDS.join(',');
+    const postFields = FANPAGE_DETAILS_SAFE_POST_FIELDS.join(',');
+    const syncedAt = new Date();
+    const latestPostAt = this.latestPostDate(recentPosts);
     const response: FanpageDetailsResponse = {
       page: pageMeta!,
       recentPosts,
       permissions: {
         ...permissions,
-        // Chỉ đánh true khi scope/store hoặc env thật sự có quyền — không ép true sau Graph OK
         pages_read_engagement: permissions.pages_read_engagement || resolved.isEnvToken,
       },
-      refreshedAt: new Date().toISOString(),
+      refreshedAt: syncedAt.toISOString(),
       warnings,
       cached: false,
       stale: false,
       dataSource: 'live',
       pageTokenRefreshed: resolved.pageTokenRefreshed,
+      syncStatus: 'Đồng bộ thành công từ Facebook',
+      graphEndpoints: {
+        page: `GET https://graph.facebook.com/${apiVersion}/{page-id}?fields=${pageFields}`,
+        posts: `GET https://graph.facebook.com/${apiVersion}/{page-id}/published_posts?fields=${postFields}&limit=${FANPAGE_DETAILS_POST_LIMIT}`,
+      },
+      postsError,
+      lastSyncedAt: syncedAt.toISOString(),
+      lastPostCreatedAt: latestPostAt?.toISOString() ?? null,
+      lastSyncedAtDisplay: formatHoChiMinhDateTime(syncedAt),
+      lastPostCreatedAtDisplay: formatHoChiMinhDateTime(latestPostAt),
     };
 
+    await this.persistSuccessfulSync(organizationId, fanpageId, response, syncedAt, latestPostAt);
     await this.cache.set(organizationId, fanpageId, response);
     return response;
+  }
+
+  private latestPostDate(posts: Array<{ createdTime: string | null }>): Date | null {
+    for (const post of posts) {
+      if (!post.createdTime) continue;
+      const d = new Date(post.createdTime);
+      if (!Number.isNaN(d.getTime())) return d;
+    }
+    return null;
+  }
+
+  private async loadPersistedSnapshot(
+    organizationId: string,
+    fanpageId: string,
+  ): Promise<FanpageDetailsResponse | null> {
+    const row = await this.prisma.autoPostFacebookPage.findFirst({
+      where: { id: fanpageId, connection: { organizationId } },
+      select: {
+        lastSyncSnapshot: true,
+        lastSyncedAt: true,
+        lastPostCreatedAt: true,
+      },
+    });
+    if (!row?.lastSyncSnapshot || !row.lastSyncedAt) return null;
+    const raw = row.lastSyncSnapshot;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const snap = raw as unknown as FanpageDetailsResponse;
+    if (!snap.page || !Array.isArray(snap.recentPosts)) return null;
+    if (snapshotHasTokenLeak(snap)) {
+      this.logger.warn(`Dropped leaked snapshot org=${organizationId} fanpage=${fanpageId}`);
+      return null;
+    }
+    return {
+      ...snap,
+      cached: true,
+      stale: false,
+      dataSource: 'sync',
+      syncStatus: 'Đồng bộ thành công từ Facebook',
+      lastSyncedAt: row.lastSyncedAt.toISOString(),
+      lastPostCreatedAt: row.lastPostCreatedAt?.toISOString() ?? snap.lastPostCreatedAt ?? null,
+      lastSyncedAtDisplay: formatHoChiMinhDateTime(row.lastSyncedAt),
+      lastPostCreatedAtDisplay: formatHoChiMinhDateTime(
+        row.lastPostCreatedAt ?? snap.lastPostCreatedAt,
+      ),
+    };
+  }
+
+  private async buildUnsyncedStub(
+    _userId: string,
+    organizationId: string,
+    fanpageId: string,
+  ): Promise<FanpageDetailsResponse> {
+    const page = await this.prisma.autoPostFacebookPage.findFirst({
+      where: { id: fanpageId, connection: { organizationId } },
+      include: {
+        connection: { select: { scopes: true, organizationId: true } },
+      },
+    });
+    if (!page || page.connection.organizationId !== organizationId) {
+      throw new NotFoundException({
+        code: 'NOT_FOUND',
+        message: 'Fanpage không tồn tại hoặc không thuộc tổ chức của bạn.',
+      });
+    }
+    const permissions = buildPermissionsFlags(page.connection.scopes ?? []);
+    return {
+      page: {
+        id: page.id,
+        pageId: page.pageId,
+        name: page.pageName,
+        pictureUrl: page.pagePictureUrl,
+        coverUrl: null,
+        category: null,
+        about: null,
+        description: null,
+        website: null,
+        link: null,
+        username: null,
+        phone: null,
+        emails: null,
+        location: null,
+        followersCount: null,
+        fanCount: null,
+      },
+      recentPosts: [],
+      permissions,
+      refreshedAt: '',
+      warnings: [
+        'Chưa đồng bộ từ Facebook. Bấm Đồng bộ thông tin Fanpage để lấy dữ liệu và bài viết mới nhất.',
+      ],
+      cached: false,
+      stale: false,
+      dataSource: 'none',
+      syncStatus: null,
+      postsError: null,
+      lastSyncedAt: null,
+      lastPostCreatedAt: null,
+      lastSyncedAtDisplay: null,
+      lastPostCreatedAtDisplay: null,
+    };
+  }
+
+  private async persistSuccessfulSync(
+    organizationId: string,
+    fanpageId: string,
+    response: FanpageDetailsResponse,
+    syncedAt: Date,
+    latestPostAt: Date | null,
+  ): Promise<void> {
+    if (snapshotHasTokenLeak(response)) {
+      this.logger.error(`Refuse persist snapshot: token leak org=${organizationId}`);
+      throw new HttpException(
+        { code: 'META_API_ERROR', message: 'Không lưu được dữ liệu đồng bộ.' },
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+    const stored: FanpageDetailsResponse = {
+      ...response,
+      cached: true,
+      stale: false,
+      dataSource: 'sync',
+    };
+    await this.prisma.autoPostFacebookPage.updateMany({
+      where: { id: fanpageId, connection: { organizationId } },
+      data: {
+        lastSyncedAt: syncedAt,
+        lastPostCreatedAt: latestPostAt,
+        lastSyncSnapshot: stored as unknown as Prisma.InputJsonValue,
+        lastSyncError: null,
+        pageName: response.page.name || undefined,
+        pagePictureUrl: response.page.pictureUrl,
+      },
+    });
+  }
+
+  private async recordSyncFailure(
+    organizationId: string,
+    fanpageId: string,
+    err: unknown,
+  ): Promise<void> {
+    const classified = this.classifyThrown(err);
+    await this.prisma.autoPostFacebookPage
+      .updateMany({
+        where: { id: fanpageId, connection: { organizationId } },
+        data: { lastSyncError: classified.message.slice(0, 500) },
+      })
+      .catch(() => undefined);
   }
 
   private async resolvePageTokenForRead(
@@ -422,18 +569,7 @@ export class AutoPostFacebookPageDetailsService {
     pagePictureUrl: string | null;
     accessToken: string;
   }) {
-    const fields = [
-      'id',
-      'name',
-      'about',
-      'category',
-      'description',
-      'website',
-      'link',
-      'fan_count',
-      'followers_count',
-      'picture.width(200).height(200){url}',
-    ].join(',');
+    const fields = FANPAGE_DETAILS_PAGE_FIELDS.join(',');
 
     const url =
       `https://graph.facebook.com/${this.meta.apiVersion}/${encodeURIComponent(resolved.pageId)}` +

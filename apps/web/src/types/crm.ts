@@ -61,10 +61,13 @@ export interface LeadDetail {
   phone: string | null;
   email: string | null;
   pipelineStatus: LeadPipelineStatus;
+  pipelineId?: string | null;
+  stageId?: string | null;
   note?: string | null;
   estimatedValue?: number | null;
   lostReason?: string | null;
   score?: number;
+  qualification?: 'MQL' | 'SQL' | null;
   tags?: string[];
   slaRespondBy?: string | null;
   reminderAt?: string | null;
@@ -74,8 +77,38 @@ export interface LeadDetail {
   assignedTo?: EmployeeRef | null;
   customer?: { id: string; name: string } | null;
   branch?: Branch | null;
-  funnelStage?: { id: string; name: string; code?: string | null } | null;
+  stage?: {
+    id: string;
+    name: string;
+    code?: string | null;
+    category?: string;
+    isWon?: boolean;
+    isLost?: boolean;
+    color?: string | null;
+  } | null;
+  /** @deprecated */
+  funnelStage?: LeadDetail['stage'];
+  /** Funnel draft/runtime that captured this lead */
+  funnelRecommendationId?: string | null;
+  organizationId?: string;
+  attribution?: LeadAttribution | null;
+  funnelRecommendation?: { id: string; prompt: string; selectedSlug?: string | null } | null;
   appointments?: AppointmentRef[];
+  orders?: OrderRef[];
+}
+
+export interface LeadAttribution {
+  utmSource?: string | null;
+  utmMedium?: string | null;
+  utmCampaign?: string | null;
+  utmContent?: string | null;
+  utmTerm?: string | null;
+  fbclid?: string | null;
+  gclid?: string | null;
+  landingPage?: string | null;
+  referrer?: string | null;
+  firstTouchJson?: Record<string, unknown> | null;
+  lastTouchJson?: Record<string, unknown> | null;
 }
 
 export interface AppointmentRef {

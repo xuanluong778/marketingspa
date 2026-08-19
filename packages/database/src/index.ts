@@ -18,3 +18,10 @@ export * from '@prisma/client';
 export * from './hrm-attendance-calc';
 export * from './hrm-leave-calc';
 export * from './messaging-phone.util';
+export { CreditLedger, CreditError } from './credit-ledger';
+export type {
+  CreditBalanceSnapshot,
+  CreditMutationResult,
+  PaidFeatureContext,
+  RunPaidFeatureParams,
+} from './credit-ledger';

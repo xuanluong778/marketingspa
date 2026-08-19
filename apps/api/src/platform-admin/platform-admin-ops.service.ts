@@ -101,7 +101,7 @@ export class PlatformAdminOpsService {
           }),
           this.prisma.creditWallet.findUnique({ where: { organizationId: org.id } }),
           this.prisma.creditTransaction.aggregate({
-            where: { organizationId: org.id, type: 'DEBIT' },
+            where: { organizationId: org.id, type: 'USAGE' },
             _sum: { amount: true },
           }),
           this.prisma.aiReport.count({ where: { organizationId: org.id } }),

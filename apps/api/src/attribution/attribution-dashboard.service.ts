@@ -4,6 +4,7 @@ import {
   PaymentStatus,
   Prisma,
 } from '@marketingspa/database';
+import { resolveAttributionTouch, type FunnelTouchModel } from '@marketingspa/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import type { AttributionDashboardQueryDto } from './dto/attribution.dto';
 
@@ -34,6 +35,7 @@ export class AttributionDashboardService {
   async getDashboard(organizationId: string, query: AttributionDashboardQueryDto) {
     const from = query.from ? new Date(query.from) : new Date(Date.now() - 30 * 86400000);
     const to = query.to ? new Date(query.to) : new Date();
+    const touchModel: FunnelTouchModel = query.touchModel === 'first' ? 'first' : 'last';
 
     const attrWhere: Prisma.LeadAttributionWhereInput = {
       organizationId,
@@ -186,21 +188,22 @@ export class AttributionDashboardService {
         }
       }
 
-      const groupByAd = query.groupByAd === true;
-      const key = groupByAd
-        ? `ad:${attr.adId ?? 'none'}:${attr.adCampaignId ?? 'none'}`
-        : `campaign:${attr.adCampaignId ?? attr.channel ?? 'unknown'}`;
-      const label = groupByAd
-        ? attr.ad?.name ?? attr.externalAdId ?? 'Ad (không xác định)'
-        : attr.adCampaign?.name ?? attr.utmCampaign ?? String(attr.channel ?? 'Không xác định');
+      const touch = resolveAttributionTouch(attr, touchModel);
+      if (query.utmSource && touch.utmSource !== query.utmSource) continue;
 
-      const b = ensureBucket(
-        key,
-        label,
-        attr.adCampaignId,
-        attr.adId,
-        attr.channel ? String(attr.channel) : null,
-      );
+      const groupByAd = query.groupByAd === true;
+      const effectiveCampaignId = touch.adCampaignId ?? attr.adCampaignId;
+      const effectiveAdId = touch.adId ?? attr.adId;
+      const effectiveChannel = touch.channel ?? (attr.channel ? String(attr.channel) : null);
+
+      const key = groupByAd
+        ? `ad:${effectiveAdId ?? 'none'}:${effectiveCampaignId ?? 'none'}`
+        : `campaign:${effectiveCampaignId ?? effectiveChannel ?? touch.utmCampaign ?? 'unknown'}`;
+      const label = groupByAd
+        ? attr.ad?.name ?? touch.externalAdId ?? attr.externalAdId ?? 'Ad (không xác định)'
+        : attr.adCampaign?.name ?? touch.utmCampaign ?? attr.utmCampaign ?? String(effectiveChannel ?? 'Không xác định');
+
+      const b = ensureBucket(key, label, effectiveCampaignId, effectiveAdId, effectiveChannel);
       if (!b.leadIdSet.has(attr.leadId)) {
         b.leadIdSet.add(attr.leadId);
         b.leads += 1;
@@ -209,10 +212,16 @@ export class AttributionDashboardService {
 
     const leadToBucket = new Map<string, Bucket>();
     for (const attr of attributions) {
+      const touch = resolveAttributionTouch(attr, touchModel);
+      if (query.utmSource && touch.utmSource !== query.utmSource) continue;
+
       const groupByAd = query.groupByAd === true;
+      const effectiveCampaignId = touch.adCampaignId ?? attr.adCampaignId;
+      const effectiveAdId = touch.adId ?? attr.adId;
+      const effectiveChannel = touch.channel ?? (attr.channel ? String(attr.channel) : null);
       const key = groupByAd
-        ? `ad:${attr.adId ?? 'none'}:${attr.adCampaignId ?? 'none'}`
-        : `campaign:${attr.adCampaignId ?? attr.channel ?? 'unknown'}`;
+        ? `ad:${effectiveAdId ?? 'none'}:${effectiveCampaignId ?? 'none'}`
+        : `campaign:${effectiveCampaignId ?? effectiveChannel ?? touch.utmCampaign ?? 'unknown'}`;
       const b = buckets.get(key);
       if (b) leadToBucket.set(attr.leadId, b);
     }
@@ -329,6 +338,7 @@ export class AttributionDashboardService {
     return {
       from: from.toISOString(),
       to: to.toISOString(),
+      touchModel,
       totals: {
         ...totals,
         cpl: totals.leads > 0 ? totals.spend / totals.leads : null,

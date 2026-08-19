@@ -60,21 +60,17 @@ export default function AdminUsersPage() {
   }
 
   function softDelete(id: string, email: string) {
-    const reason = window.prompt(
-      `XÓA (soft delete) user ${email}.\nDữ liệu thanh toán/audit được giữ.\nLý do:`,
-    );
-    if (!reason || reason.trim().length < 3) return;
     if (
       !window.confirm(
-        `Xác nhận XÓA user?\nEmail: ${email}\nThao tác không xóa hóa đơn/payment/audit. User không thể đăng nhập lại.`,
+        `Xóa user ${email}?\nDữ liệu thanh toán/audit được giữ. User sẽ không đăng nhập được nữa.`,
       )
     ) {
       return;
     }
     deleteMut.mutate(
-      { id, reason: reason.trim() },
+      { id, reason: 'Admin xóa user' },
       {
-        onSuccess: () => window.alert('Đã soft-delete user'),
+        onSuccess: () => window.alert('Đã xóa user'),
         onError: (e) => window.alert(e instanceof Error ? e.message : 'Lỗi'),
       },
     );

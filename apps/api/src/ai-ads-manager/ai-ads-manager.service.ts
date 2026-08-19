@@ -19,9 +19,13 @@ import { AdsMcpGateway } from '../ads-mcp/ads-mcp.gateway';
 import { tenantFromAuthUser } from '../ads-mcp/ads-mcp.context';
 import { AdsActionService } from '../ads-actions/ads-action.service';
 import { OpenAiService } from '../openai/openai.service';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { evaluateRules, clampBudgetChangePercent, normalizeMcpMode } from './ads-automation.engine';
 import { decimalToNumber, type CampaignMetrics } from './ads-efficiency.util';
+import { RagKbService } from '../rag-kb/rag-kb.service';
+import { CreditService, isInsufficientCredits } from '../credit/credit.service';
+import { CREDIT_FEATURE_CODES } from '@marketingspa/shared';
+import { buildRagQuery } from '../rag-kb/rag-prompt.util';
 import type {
   ConnectGmailDto,
   ConnectGoogleDto,
@@ -47,6 +51,8 @@ export class AiAdsManagerService {
     private readonly adsMcp: AdsMcpGateway,
     private readonly adsActions: AdsActionService,
     private readonly openAi: OpenAiService,
+    private readonly ragKb: RagKbService,
+    private readonly credit: CreditService,
   ) {}
 
   /** Đọc dashboard chỉ qua Internal Ads MCP Gateway (PostgreSQL). */
@@ -485,23 +491,41 @@ export class AiAdsManagerService {
 
     if (this.openAi.isConfigured()) {
       try {
-        const raw = await this.openAi.chatCompletion({
-          messages: [
-            {
-              role: 'system',
-              content:
-                'Bạn là chuyên gia quảng cáo Facebook/Google cho spa. Chỉ dùng số liệu evidence từ AdsMcpGateway (PostgreSQL), không giả định token/API provider. Trả về JSON: objective, audience, headline, content, cta, landingPage. Tiếng Việt.',
-            },
-            {
-              role: 'user',
-              content: `Tạo bản nháp quảng cáo ${dto.platform}: mục tiêu ${dto.objective}, sản phẩm ${dto.product ?? 'spa'}, ngân sách ${dto.budget ?? 'chưa xác định'}. Evidence: ${evidenceNote || 'không có'}`,
-            },
-          ],
-          temperature: 0.7,
+        const kbBlock = await this.ragKb.getPromptBlock(
+          user.organizationId,
+          buildRagQuery(dto.product, dto.objective, dto.audience, dto.platform),
+          { limit: 5, mode: 'content' },
+        );
+        const parsed = await this.credit.runPaidFeature({
+          organizationId: user.organizationId,
+          featureCode: CREDIT_FEATURE_CODES.ADS_AI_CREATIVE,
+          referenceId: `ads.draft:${user.organizationId}:${randomUUID()}`,
+          reason: 'ads AI draft',
+          fn: async (ctx) => {
+            ctx.markProviderStarted();
+            const raw = await this.openAi.chatCompletion({
+              messages: [
+                {
+                  role: 'system',
+                  content:
+                    'Bạn là chuyên gia quảng cáo Facebook/Google cho spa. Chỉ dùng số liệu evidence từ AdsMcpGateway (PostgreSQL), không giả định token/API provider. Ưu tiên sự thật từ AI Knowledge Base khi viết headline/content/offer. Không bịa giá hay cam kết. Trả về JSON: objective, audience, headline, content, cta, landingPage. Tiếng Việt.',
+                },
+                ...(kbBlock
+                  ? [{ role: 'system' as const, content: kbBlock }]
+                  : []),
+                {
+                  role: 'user',
+                  content: `Tạo bản nháp quảng cáo ${dto.platform}: mục tiêu ${dto.objective}, sản phẩm ${dto.product ?? 'spa'}, ngân sách ${dto.budget ?? 'chưa xác định'}. Evidence: ${evidenceNote || 'không có'}`,
+                },
+              ],
+              temperature: 0.7,
+            });
+            return JSON.parse(raw.replace(/```json\n?|\n?```/g, '').trim()) as typeof content;
+          },
         });
-        const parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, '').trim()) as typeof content;
         content = { ...content, ...parsed };
-      } catch {
+      } catch (err) {
+        if (isInsufficientCredits(err)) throw err;
         this.logger.warn('AI draft fallback to template');
       }
     }

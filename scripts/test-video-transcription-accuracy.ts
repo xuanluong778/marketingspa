@@ -13,6 +13,7 @@ import {
   detectSuspiciousSegments,
   generateGlossaryAsrVariants,
   parseGlossaryInput,
+  stripPromptEchoArtifacts,
   wordErrorRate,
 } from '../packages/shared/src/video-transcription-accuracy';
 
@@ -108,8 +109,17 @@ function testPromptIncludesGlossaryAndContext() {
   });
   assert.ok(prompt.includes('Oneway'));
   assert.ok(prompt.includes('giá ngon'));
-  assert.ok(prompt.includes('Tiếng Việt'));
-  console.log('PASS STT prompt context');
+  // Must NOT inject chunk labels (root cause of "Đoạn 2. Đoạn 3." echo)
+  assert.ok(!/đoạn\s*\d/i.test(prompt), `prompt must not contain Đoạn N: ${prompt}`);
+  assert.ok(!prompt.includes('Review Oneway'), 'omit long title from prompt (whisper bias)');
+  console.log('PASS STT prompt context (no Đoạn/title leak)');
+}
+
+function testStripPromptEcho() {
+  assert.equal(stripPromptEchoArtifacts('Đoạn 2. Đoạn 3.'), '');
+  assert.equal(stripPromptEchoArtifacts('Đoạn 1/1. Đúng nói thật.'), 'Đúng nói thật.');
+  assert.ok(stripPromptEchoArtifacts('Con biết vì sao mẹ').includes('Con biết'));
+  console.log('PASS stripPromptEchoArtifacts');
 }
 
 function testParseGlossary() {
@@ -125,5 +135,6 @@ testMandatorySampleWithNearCorrectAsr();
 testStuckWords();
 testSuspiciousDetectsDigitBrand();
 testPromptIncludesGlossaryAndContext();
+testStripPromptEcho();
 testParseGlossary();
 console.log('test-video-transcription-accuracy: ALL PASS');

@@ -39,9 +39,11 @@ export function normalizeMessengerWebhook(
     }>;
   };
   const events: NormalizedWebhookEvent[] = [];
-  for (const entry of body.entry ?? []) {
+  const entries = Array.isArray(body.entry) ? body.entry : [];
+  for (const entry of entries) {
     const pageId = entry.id ?? accountRef;
-    for (const m of entry.messaging ?? []) {
+    const messaging = Array.isArray(entry.messaging) ? entry.messaging : [];
+    for (const m of messaging) {
       const senderId = m.sender?.id ?? '';
       const recipientId = m.recipient?.id ?? '';
       const isEcho = m.message?.is_echo === true;

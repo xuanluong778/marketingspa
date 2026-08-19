@@ -4,9 +4,21 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { MessageChannel, MessagingCampaignStatus, Prisma } from '@marketingspa/database';
 import type { MessagingEligibilityResult } from '@marketingspa/shared';
-import { mapCampaignKindToEligibilityType } from '@marketingspa/shared';
+import {
+  mapCampaignKindToEligibilityType,
+  MESSAGING_NAME_FALLBACKS,
+  pickCampaignRenderVariables,
+  resolveMessagingDisplayNames,
+  renderTemplateWithFallbacks,
+} from '@marketingspa/shared';
+import { createWriteStream, existsSync, mkdirSync } from 'fs';
+import { join, extname } from 'path';
+import { randomUUID } from 'crypto';
+import { pipeline } from 'stream/promises';
+import { Readable } from 'stream';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { MessagingEligibilityService } from '../messaging/messaging-eligibility.service';
@@ -27,10 +39,12 @@ import type {
 
 const campaignInclude = {
   channelConnection: { select: { id: true, displayName: true, accountRef: true, status: true } },
-  messageTemplate: { select: { id: true, name: true, channel: true, body: true } },
+  messageTemplate: { select: { id: true, name: true, channel: true, body: true, mediaUrl: true } },
   integration: { select: { id: true, provider: true, status: true } },
   createdBy: { select: { id: true, name: true, email: true } },
 } satisfies Prisma.MessagingCampaignInclude;
+
+const MEDIA_MAX_BYTES = 25 * 1024 * 1024;
 
 @Injectable()
 export class MessagingCampaignService {
@@ -40,6 +54,7 @@ export class MessagingCampaignService {
     private readonly eligibility: MessagingEligibilityService,
     private readonly audit: AuditService,
     private readonly campaignQueue: MessagingCampaignQueueService,
+    private readonly config: ConfigService,
   ) {}
 
   async create(organizationId: string, dto: CreateMessagingCampaignDto, userId: string) {
@@ -92,6 +107,19 @@ export class MessagingCampaignService {
 
     await this.validateReferences(organizationId, dto);
 
+    const contentChanged = this.hasLockedFieldChanges(dto);
+    const needsReset =
+      contentChanged &&
+      (Boolean(existing.startedAt) ||
+        existing.status === MessagingCampaignStatus.COMPLETED ||
+        existing.status === MessagingCampaignStatus.FAILED ||
+        existing.status === MessagingCampaignStatus.CANCELLED ||
+        existing.status === MessagingCampaignStatus.PAUSED);
+
+    if (needsReset) {
+      await this.prisma.messagingCampaignRecipient.deleteMany({ where: { campaignId: id } });
+    }
+
     const campaign = await this.prisma.messagingCampaign.update({
       where: { id },
       data: {
@@ -108,6 +136,26 @@ export class MessagingCampaignService {
         }),
         ...(dto.variables !== undefined && { variables: dto.variables as Prisma.InputJsonValue }),
         ...(dto.timezone !== undefined && { timezone: dto.timezone }),
+        ...(needsReset && {
+          status: MessagingCampaignStatus.DRAFT,
+          startedAt: null,
+          pausedAt: null,
+          completedAt: null,
+          scheduledAt: null,
+          totalRecipients: 0,
+          eligibleCount: 0,
+          excludedCount: 0,
+          queuedCount: 0,
+          sentCount: 0,
+          deliveredCount: 0,
+          readCount: 0,
+          repliedCount: 0,
+          failedCount: 0,
+          optOutCount: 0,
+          actualCost: 0,
+          estimatedCost: 0,
+          segmentSnapshot: {} as Prisma.InputJsonValue,
+        }),
       },
       include: campaignInclude,
     });
@@ -118,7 +166,7 @@ export class MessagingCampaignService {
       action: 'MESSAGING_CAMPAIGN_UPDATED',
       entityType: 'MESSAGING_CAMPAIGN',
       entityId: campaign.id,
-      metadata: redactForAudit(dto) as Prisma.InputJsonValue,
+      metadata: redactForAudit({ ...dto, resetToDraft: needsReset }) as Prisma.InputJsonValue,
     });
 
     return campaign;
@@ -245,18 +293,27 @@ export class MessagingCampaignService {
       if (eligibility.eligible) {
         eligible += 1;
         estimatedCost += eligibility.estimatedCost ?? 0;
-        if (contentPreviews.length < 50 && template) {
-          const context = await this.buildRenderContext(
-            organizationId,
-            { customerId: identity.customerId ?? undefined, leadId: identity.leadId ?? undefined },
-            identity,
-            campaign.variables as Record<string, string>,
-          );
-          contentPreviews.push({
-            identityId: identity.id,
-            name: identity.displayName ?? 'Khách',
-            content: renderTemplate(template.body, context),
-          });
+        if (contentPreviews.length < 50) {
+          const vars = (campaign.variables ?? {}) as Record<string, string>;
+          const bodySource =
+            template?.body || vars.body?.trim() || vars.message?.trim() || vars.content?.trim() || '';
+          if (bodySource) {
+            const context = await this.buildRenderContext(
+              organizationId,
+              {
+                customerId: identity.customerId ?? undefined,
+                leadId: identity.leadId ?? undefined,
+              },
+              identity,
+              vars,
+            );
+            contentPreviews.push({
+              identityId: identity.id,
+              name: identity.displayName ?? 'Khách',
+              content: renderTemplateWithFallbacks(bodySource, context, MESSAGING_NAME_FALLBACKS)
+                .rendered,
+            });
+          }
         }
       } else {
         excluded += 1;
@@ -423,6 +480,21 @@ export class MessagingCampaignService {
     ) {
       throw new BadRequestException('Chỉ bắt đầu chiến dịch ở trạng thái nháp hoặc đã lên lịch');
     }
+    if (!campaign.channelConnectionId) {
+      throw new BadRequestException('Chọn Fanpage/Zalo OA đã kết nối trước khi gửi');
+    }
+
+    const vars = (campaign.variables ?? {}) as Record<string, string>;
+    const hasBody = Boolean(
+      campaign.messageTemplateId ||
+        vars.body?.trim() ||
+        vars.message?.trim() ||
+        vars.content?.trim() ||
+        vars.mediaUrl?.trim(),
+    );
+    if (!hasBody) {
+      throw new BadRequestException('Nhập nội dung tin nhắn hoặc đính kèm media trước khi gửi');
+    }
 
     await this.prisma.messagingCampaign.update({
       where: { id },
@@ -441,6 +513,67 @@ export class MessagingCampaignService {
     });
 
     return this.findOne(organizationId, id);
+  }
+
+  async uploadMedia(
+    organizationId: string,
+    file?: {
+      originalname?: string;
+      mimetype?: string;
+      size?: number;
+      buffer?: Buffer;
+      stream?: Readable;
+    },
+  ) {
+    if (!file?.buffer && !file?.stream) {
+      throw new BadRequestException('Thiếu file upload');
+    }
+    const size = file.size ?? file.buffer?.length ?? 0;
+    if (size <= 0 || size > MEDIA_MAX_BYTES) {
+      throw new BadRequestException('File media tối đa 25MB');
+    }
+    const mime = (file.mimetype || '').toLowerCase();
+    let mediaType: 'image' | 'video' = 'image';
+    if (mime.startsWith('video/')) mediaType = 'video';
+    else if (mime.startsWith('image/')) mediaType = 'image';
+    else {
+      throw new BadRequestException('Chỉ hỗ trợ ảnh hoặc video');
+    }
+
+    const ext = extname(file.originalname || '') || (mediaType === 'video' ? '.mp4' : '.jpg');
+    const filename = `${randomUUID()}${ext}`.slice(0, 180);
+    const dir = join(process.cwd(), 'uploads', 'messaging-campaigns', organizationId);
+    try {
+      if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new BadRequestException(
+        `Không tạo được thư mục upload media (${msg}). Kiểm tra quyền ghi uploads/messaging-campaigns.`,
+      );
+    }
+    const absPath = join(dir, filename);
+
+    try {
+      if (file.buffer) {
+        const { writeFileSync } = await import('fs');
+        writeFileSync(absPath, file.buffer);
+      } else if (file.stream) {
+        await pipeline(file.stream, createWriteStream(absPath));
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new BadRequestException(`Không lưu được file media: ${msg}`);
+    }
+
+    const port = this.config.get<number>('PORT', 4000);
+    const base =
+      this.config.get<string>('API_PUBLIC_URL') ||
+      this.config.get<string>('CHATBOT_PUBLIC_API_URL') ||
+      this.config.get<string>('APP_URL') ||
+      `http://127.0.0.1:${port}`;
+    const url = `${String(base).replace(/\/$/, '')}/uploads/messaging-campaigns/${organizationId}/${filename}`;
+
+    return { url, mediaType, mimeType: mime, sizeBytes: size, filename };
   }
 
   async pause(organizationId: string, id: string, userId: string) {
@@ -1022,9 +1155,14 @@ export class MessagingCampaignService {
     campaignVariables: Record<string, string>,
   ): Promise<Record<string, string>> {
     const context: Record<string, string> = {
-      ...campaignVariables,
+      ...pickCampaignRenderVariables(campaignVariables),
       ...(dto.context ?? {}),
     };
+
+    const fbNames = resolveMessagingDisplayNames(identity?.displayName);
+    context.full_name = fbNames.full_name;
+    context.first_name = fbNames.first_name;
+    context.customer_name = fbNames.customer_name;
 
     const customerId = dto.customerId ?? identity?.customerId;
     const leadId = dto.leadId ?? identity?.leadId;
@@ -1035,22 +1173,24 @@ export class MessagingCampaignService {
         include: { branch: true },
       });
       if (customer) {
-        context.customer_name = customer.name;
+        if (fbNames.full_name === 'Anh/chị' && customer.name?.trim()) {
+          const crm = resolveMessagingDisplayNames(customer.name);
+          context.full_name = crm.full_name;
+          context.first_name = crm.first_name;
+          context.customer_name = crm.customer_name;
+        }
         context.branch_name = customer.branch?.name ?? context.branch_name ?? '';
       }
     } else if (leadId) {
       const lead = await this.prisma.lead.findFirst({
         where: { id: leadId, organizationId },
       });
-      if (lead) {
-        context.customer_name = lead.name;
+      if (lead && fbNames.full_name === 'Anh/chị' && lead.name?.trim()) {
+        const crm = resolveMessagingDisplayNames(lead.name);
+        context.full_name = crm.full_name;
+        context.first_name = crm.first_name;
+        context.customer_name = crm.customer_name;
       }
-    } else if (identity?.displayName) {
-      context.customer_name = identity.displayName;
-    }
-
-    if (!context.customer_name) {
-      context.customer_name = 'Quý khách';
     }
 
     const latestAppt = await this.prisma.appointment.findFirst({

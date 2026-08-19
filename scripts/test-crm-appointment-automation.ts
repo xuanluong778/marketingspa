@@ -97,7 +97,7 @@ async function main() {
       phone: `09${String(Date.now()).slice(-8)}`,
       email: `${TAG.toLowerCase()}@test.local`,
       assignedToId,
-      funnelStageId: stageNew?.id,
+      stageId: stageNew?.id,
       pipelineStatus: LeadPipelineStatus.NEW,
       score: 45,
       tags: ['e2e', 'hot'],
@@ -132,7 +132,7 @@ async function main() {
     where: { id: lead.id },
     data: {
       pipelineStatus: LeadPipelineStatus.CONTACTED,
-      funnelStageId: stageContacted?.id,
+      stageId: stageContacted?.id,
       lastContactedAt: new Date(),
     },
   });
@@ -160,7 +160,7 @@ async function main() {
     where: { id: lead.id },
     data: {
       pipelineStatus: LeadPipelineStatus.QUALIFIED,
-      funnelStageId: stageQualified?.id,
+      stageId: stageQualified?.id,
     },
   });
 
@@ -223,7 +223,7 @@ async function main() {
     where: { id: lead.id },
     data: {
       pipelineStatus: LeadPipelineStatus.BOOKED,
-      funnelStageId: stageBooked?.id,
+      stageId: stageBooked?.id,
     },
   });
 
@@ -261,7 +261,7 @@ async function main() {
     where: { id: lead.id },
     data: {
       pipelineStatus: LeadPipelineStatus.CONFIRMED,
-      funnelStageId: stageConfirmed?.id,
+      stageId: stageConfirmed?.id,
     },
   });
 
@@ -276,7 +276,7 @@ async function main() {
     where: { id: lead.id },
     data: {
       pipelineStatus: LeadPipelineStatus.VISITED,
-      funnelStageId: stageVisited?.id,
+      stageId: stageVisited?.id,
     },
   });
 
@@ -310,7 +310,7 @@ async function main() {
     where: { id: lead.id },
     data: {
       pipelineStatus: LeadPipelineStatus.PURCHASED,
-      funnelStageId: stagePurchased?.id,
+      stageId: stagePurchased?.id,
       convertedAt: new Date(),
     },
   });

@@ -37,6 +37,8 @@ export interface WsLeadStatusChangedPayload {
 export interface WsChatbotMessageNewPayload {
   conversationId: string;
   channel: string;
+  /** pageId (facebook) hoặc domain (website) */
+  channelRef?: string;
   preview: string;
   visitorName?: string;
   pageName?: string;

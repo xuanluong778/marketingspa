@@ -10,9 +10,15 @@ import { MetaGraphMetricsService } from './meta-graph-metrics.service';
 import { MetaFanpageModule } from '../meta-fanpage/meta-fanpage.module';
 import { MessagingModule } from '../messaging/messaging.module';
 import { ChatbotCskhModule } from '../chatbot-cskh/chatbot-cskh.module';
+import { RagKbModule } from '../rag-kb/rag-kb.module';
 
 @Module({
-  imports: [MetaFanpageModule, MessagingModule, forwardRef(() => ChatbotCskhModule)],
+  imports: [
+    MetaFanpageModule,
+    MessagingModule,
+    forwardRef(() => ChatbotCskhModule),
+    RagKbModule,
+  ],
   controllers: [AutoPostController],
   providers: [
     AutoPostService,

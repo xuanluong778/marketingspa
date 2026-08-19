@@ -13,7 +13,9 @@ import { TenantOwnershipService } from '../common/services/tenant-ownership.serv
 import { AttributionHooksService } from '../attribution/attribution-hooks.service';
 import { AppointmentConflictService } from '../crm/appointment-conflict.service';
 import { AutomationEngineService } from '../crm/automation-engine.service';
+import { LeadScoringService } from '../crm/lead-scoring.service';
 import { PipelineService } from '../crm/pipeline.service';
+import { FunnelCanvasRuntimeService } from '../crm/funnel-canvas-runtime.service';
 import {
   CreateAppointmentDto,
   UpdateAppointmentDto,
@@ -39,6 +41,8 @@ export class AppointmentsService {
     private readonly conflicts: AppointmentConflictService,
     private readonly automation: AutomationEngineService,
     private readonly pipeline: PipelineService,
+    private readonly scoring: LeadScoringService,
+    private readonly canvasRuntime: FunnelCanvasRuntimeService,
   ) {}
 
   listServices(organizationId: string) {
@@ -195,7 +199,8 @@ export class AppointmentsService {
         where: { id: dto.leadId },
         data: {
           pipelineStatus: LeadPipelineStatus.BOOKED,
-          funnelStageId: stage?.id,
+          stageId: stage?.id,
+          pipelineId: stage?.pipelineId,
         },
       });
     }
@@ -231,6 +236,26 @@ export class AppointmentsService {
       appointmentId: appt.id,
       dedupeKey: `APPOINTMENT_CREATED:${appt.id}`,
     });
+    void this.automation.dispatch(organizationId, AutomationTriggerType.BOOKING_CREATED, {
+      leadId: appt.leadId,
+      customerId: appt.customerId,
+      appointmentId: appt.id,
+      dedupeKey: `BOOKING_CREATED:${appt.id}`,
+    });
+    if (appt.leadId) {
+      void this.scoring.applyEvent({
+        organizationId,
+        leadId: appt.leadId,
+        eventType: 'BOOKING_CREATED',
+        source: 'appointment_create',
+      });
+      void this.canvasRuntime.advance({
+        organizationId,
+        leadId: appt.leadId,
+        event: 'BOOKING_CREATED',
+        appointmentId: appt.id,
+      });
+    }
 
     return appt;
   }
@@ -369,7 +394,11 @@ export class AppointmentsService {
         const stage = await this.pipeline.resolveStageForStatus(organizationId, next);
         await this.prisma.lead.update({
           where: { id: existing.leadId },
-          data: { pipelineStatus: next, funnelStageId: stage?.id },
+          data: {
+            pipelineStatus: next,
+            stageId: stage?.id,
+            pipelineId: stage?.pipelineId,
+          },
         });
       }
     }
@@ -404,6 +433,14 @@ export class AppointmentsService {
         appointmentId: appt.id,
         dedupeKey: `APPOINTMENT_CANCELLED:${appt.id}`,
       });
+      if (appt.leadId) {
+        void this.scoring.applyEvent({
+          organizationId,
+          leadId: appt.leadId,
+          eventType: 'APPOINTMENT_CANCELLED',
+          source: 'appointment_cancel',
+        });
+      }
     }
     if (dto.status === AppointmentStatus.NO_SHOW) {
       void this.automation.dispatch(organizationId, AutomationTriggerType.NO_SHOW, {
@@ -412,6 +449,27 @@ export class AppointmentsService {
         appointmentId: appt.id,
         dedupeKey: `NO_SHOW:${appt.id}`,
       });
+    }
+
+    if (appt.leadId) {
+      const canvasEvent =
+        dto.status === AppointmentStatus.CONFIRMED
+          ? 'BOOKING_CONFIRMED'
+          : dto.status === AppointmentStatus.ARRIVED
+            ? 'VISIT'
+            : dto.status === AppointmentStatus.COMPLETED
+              ? 'BOOKING_COMPLETED'
+              : dto.status === AppointmentStatus.CANCELLED || dto.status === AppointmentStatus.NO_SHOW
+                ? 'BOOKING_CANCELLED'
+                : null;
+      if (canvasEvent) {
+        void this.canvasRuntime.advance({
+          organizationId,
+          leadId: appt.leadId,
+          event: canvasEvent,
+          appointmentId: appt.id,
+        });
+      }
     }
 
     return appt;

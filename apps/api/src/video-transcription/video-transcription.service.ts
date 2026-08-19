@@ -21,6 +21,7 @@ import {
   videoTranscriptionQueuePayloadSchema,
   type VideoTranscriptionQueuePayload,
   type VideoUrlProbeResult,
+  CREDIT_FEATURE_CODES,
 } from '@marketingspa/shared';
 import { assertPublicHttpUrl } from '@marketingspa/shared/dist/ssrf-fetch';
 import {
@@ -32,9 +33,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RateLimitService } from '../common/services/rate-limit.service';
 import { QueueEnqueueService } from '../common/services/queue-enqueue.service';
 import { BillingService } from '../billing/billing.service';
+import { CreditService } from '../credit/credit.service';
 import { VIDEO_TRANSCRIPTION_QUEUE } from '../queue/queue.constants';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import type { CreateVideoTranscriptionDto } from './dto/video-transcription.dto';
+import { parseStrictBool } from './dto/video-transcription.dto';
 import {
   ALLOWED_MEDIA_EXT,
   ALLOWED_MEDIA_MIME,
@@ -63,6 +66,7 @@ export class VideoTranscriptionService {
     private readonly rateLimit: RateLimitService,
     private readonly queueEnqueue: QueueEnqueueService,
     private readonly billing: BillingService,
+    private readonly credit: CreditService,
     @Inject(VIDEO_TRANSCRIPTION_QUEUE) private readonly queue: Queue,
   ) {}
 
@@ -89,6 +93,7 @@ export class VideoTranscriptionService {
     originalFilename: string | null;
     language: string;
     ownershipConfirmed: boolean;
+    keepVideo?: boolean;
     cancelRequested?: boolean;
     glossaryTerms?: string[];
     rawTranscript: string | null;
@@ -140,6 +145,7 @@ export class VideoTranscriptionService {
       | {
           chunkCount?: number;
           chunksCompleted?: number;
+          currentChunkIndex?: number | null;
           audioDurationSeconds?: number;
           processedDurationSeconds?: number;
           firstTimestamp?: number | null;
@@ -152,14 +158,17 @@ export class VideoTranscriptionService {
             status: string;
             charCount: number;
             error?: string | null;
+            asrEndSec?: number | null;
           }>;
         }
       | null;
 
+    const keepVideo = Boolean(row.keepVideo);
     const videoDownloadAvailable = Boolean(
-      row.tempDir &&
+      keepVideo &&
+        row.tempDir &&
         (!row.tempExpiresAt || row.tempExpiresAt.getTime() > Date.now()) &&
-        this.findSourceInDir(row.tempDir),
+        this.findVideoSourceInDir(row.tempDir),
     );
     const transcriptDownloadAvailable = Boolean(
       (row.cleanedTranscript || row.correctedTranscript || row.rawTranscript)?.trim(),
@@ -176,6 +185,7 @@ export class VideoTranscriptionService {
       originalFilename: row.originalFilename,
       language: row.language,
       ownershipConfirmed: row.ownershipConfirmed,
+      keepVideo,
       cancelRequested: row.cancelRequested ?? false,
       glossaryTerms: row.glossaryTerms ?? [],
       rawTranscript: row.rawTranscript,
@@ -188,6 +198,10 @@ export class VideoTranscriptionService {
         row.processedDurationSeconds ?? progress?.processedDurationSeconds ?? null,
       chunkCount: row.chunkCount ?? progress?.chunkCount ?? null,
       chunksCompleted: row.chunksCompleted ?? progress?.chunksCompleted ?? null,
+      currentChunkIndex:
+        progress?.currentChunkIndex != null && Number.isFinite(progress.currentChunkIndex)
+          ? progress.currentChunkIndex
+          : null,
       firstTimestamp: progress?.firstTimestamp ?? null,
       lastTimestamp: progress?.lastTimestamp ?? null,
       resultCharCount:
@@ -200,6 +214,7 @@ export class VideoTranscriptionService {
         status: c.status,
         charCount: c.charCount,
         error: c.error ?? null,
+        asrEndSec: c.asrEndSec ?? null,
       })),
       fileSizeBytes: row.fileSizeBytes != null ? Number(row.fileSizeBytes) : null,
       detectedLanguage: row.detectedLanguage,
@@ -222,6 +237,45 @@ export class VideoTranscriptionService {
     try {
       const files = readdirSync(dir).filter((f) => f.startsWith('source.'));
       return files[0] ? join(dir, files[0]) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Full-video files only — never promote pure audio sources as downloadable video. */
+  private findVideoSourceInDir(dir: string | null | undefined): string | null {
+    if (!dir || !existsSync(dir)) return null;
+    const videoExt = new Set([
+      '.mp4',
+      '.mkv',
+      '.mov',
+      '.avi',
+      '.m4v',
+      '.flv',
+      '.webm',
+    ]);
+    const audioOnlyExt = new Set([
+      '.m4a',
+      '.mp3',
+      '.aac',
+      '.ogg',
+      '.opus',
+      '.wav',
+      '.flac',
+      '.weba',
+    ]);
+    try {
+      const files = readdirSync(dir).filter((f) => f.startsWith('source.'));
+      for (const f of files) {
+        const ext = extname(f).toLowerCase();
+        if (audioOnlyExt.has(ext)) continue;
+        if (videoExt.has(ext) || (!ext && f === 'source')) {
+          return join(dir, f);
+        }
+        // unknown container — only when keepVideo path produced it; still return if not audio-only
+        if (!audioOnlyExt.has(ext)) return join(dir, f);
+      }
+      return null;
     } catch {
       return null;
     }
@@ -385,6 +439,15 @@ export class VideoTranscriptionService {
 
     const language = (dto.language || 'vi').trim() || 'vi';
     const requestGlossary = parseGlossaryInput(dto.glossary);
+    // Upload: keep media for download. Remote URLs: keepVideo must be EXPLICIT true (default false).
+    // Re-parse with strict helper — protect against Boolean("false")===true pipe bugs.
+    const keepVideo = hasFile
+      ? true
+      : parseStrictBool((dto as { keepVideo?: unknown }).keepVideo, false);
+    this.logger.log(
+      `video-transcription create keepVideo raw=${String((dto as { keepVideo?: unknown }).keepVideo)} ` +
+        `parsed=${keepVideo} hasFile=${hasFile}`,
+    );
 
     // Merge with saved org/user glossary
     const saved = await this.prisma.videoTranscriptionGlossary.findUnique({
@@ -431,6 +494,7 @@ export class VideoTranscriptionService {
         originalFilename: hasFile && file ? basename(file.originalname).slice(0, 500) : null,
         language,
         ownershipConfirmed: true,
+        keepVideo,
         glossaryTerms: glossary,
         fileSizeBytes: hasFile && file ? BigInt(file.size) : null,
         attemptCount: 0,
@@ -542,9 +606,16 @@ export class VideoTranscriptionService {
 
   async downloadVideo(user: AuthUser, id: string): Promise<{ file: StreamableFile; filename: string }> {
     const row = await this.findOwned(user, id);
+    if (!row.keepVideo) {
+      throw new BadRequestException({
+        code: 'VIDEO_NOT_KEPT',
+        message:
+          'Job này không lưu video tạm. Bật «Lưu video tạm để tải xuống» khi tạo yêu cầu mới.',
+      });
+    }
     await this.cleanupIfExpired(row);
     const fresh = await this.findOwned(user, id);
-    const source = this.findSourceInDir(fresh.tempDir);
+    const source = this.findVideoSourceInDir(fresh.tempDir);
     if (!source || !existsSync(source)) {
       throw new BadRequestException({
         code: 'VIDEO_GONE',
@@ -711,12 +782,37 @@ export class VideoTranscriptionService {
   }
 
   private async enqueue(user: AuthUser, transcriptionId: string, chunkIndex?: number) {
+    const existing = await this.prisma.videoTranscription.findFirst({
+      where: {
+        id: transcriptionId,
+        organizationId: user.organizationId,
+        userId: user.id,
+      },
+      select: { keepVideo: true },
+    });
     const payload: VideoTranscriptionQueuePayload = videoTranscriptionQueuePayloadSchema.parse({
       organizationId: user.organizationId,
       transcriptionId,
       userId: user.id,
+      // explicit false — never Boolean(undefined)||true
+      keepVideo: existing?.keepVideo === true,
       ...(chunkIndex != null ? { chunkIndex } : {}),
     });
+    this.logger.log(
+      `video-transcription enqueue id=${transcriptionId} keepVideo=${payload.keepVideo}`,
+    );
+
+    const cost = await this.credit.getFeatureCost(CREDIT_FEATURE_CODES.VIDEO_TRANSCRIBE);
+    const ok = await this.credit.checkAvailable(user.organizationId, cost);
+    if (!ok) {
+      const bal = await this.credit.getBalance(user.organizationId);
+      throw new BadRequestException({
+        code: 'INSUFFICIENT_CREDITS',
+        message: 'Không đủ AI Credit',
+        required: cost,
+        available: bal.available,
+      });
+    }
 
     await this.queueEnqueue.add(this.queue, 'video-transcription', payload, {
       jobId: `video-transcription-${transcriptionId}-${chunkIndex ?? 'all'}`,

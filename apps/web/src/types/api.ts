@@ -20,6 +20,11 @@ export interface AuthUser {
   emailVerified?: boolean;
   organization: { id: string; name: string; slug: string };
   employee: { id: string; name: string } | null;
+  /** Server-driven feature flags (canary org allowlist for Trợ lý AI). */
+  features?: {
+    assistantEnabled?: boolean;
+    assistantCanaryMode?: boolean;
+  };
 }
 
 export interface AuthResponse {
@@ -58,6 +63,8 @@ export interface Lead {
   tags?: string[];
   serviceName?: string | null;
   isStale?: boolean;
+  score?: number;
+  qualification?: 'MQL' | 'SQL' | null;
   assignedTo?: { id: string; name: string } | null;
   leadSource?: { id: string; name: string } | null;
   branch?: { id: string; name: string } | null;

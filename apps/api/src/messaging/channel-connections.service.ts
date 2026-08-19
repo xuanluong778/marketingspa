@@ -506,6 +506,45 @@ export class ChannelConnectionsService {
     });
   }
 
+  /** OAuth Zalo OA — lưu refresh token (mã hóa), không log secret. */
+  async upsertZaloOaOAuth(
+    organizationId: string,
+    params: {
+      oaId: string;
+      oaName?: string;
+      accessToken: string;
+      refreshToken?: string;
+      tokenExpiresAt?: Date | null;
+      userId?: string;
+    },
+  ) {
+    const credentials: Record<string, string> = {
+      accessToken: params.accessToken.trim(),
+      oaId: params.oaId.trim(),
+      oaName: params.oaName?.trim() ?? params.oaId.trim(),
+    };
+    if (params.refreshToken?.trim()) {
+      credentials.refreshToken = params.refreshToken.trim();
+    }
+    return this.upsertConnection({
+      organizationId,
+      channel: MessageChannel.ZALO,
+      providerKind: MessagingProviderKind.ZALO_OA,
+      accountRef: params.oaId.trim(),
+      displayName: params.oaName,
+      credentials,
+      userId: params.userId,
+    }).then(async (conn) => {
+      if (params.tokenExpiresAt) {
+        await this.prisma.messagingChannelConnection.update({
+          where: { id: conn.id },
+          data: { tokenExpiresAt: params.tokenExpiresAt },
+        });
+      }
+      return conn;
+    });
+  }
+
   async connectZbs(organizationId: string, dto: ConnectZbsChannelDto, userId?: string) {
     const credentials = {
       appId: dto.appId.trim(),

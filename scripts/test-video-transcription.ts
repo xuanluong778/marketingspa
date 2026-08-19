@@ -1,6 +1,6 @@
 /**
  * Video transcription pipeline tests — chunking, overlap merge, VN normalize, ad loops.
- * Run: pnpm --filter @marketingspa/database exec tsx ../../scripts/test-video-transcription.ts
+ * Run: pnpm test:video-transcription
  */
 import assert from 'node:assert/strict';
 import {
@@ -12,6 +12,7 @@ import {
   durationsMatch,
   findOverlapWordCount,
   isAllowedVideoTranscriptionHost,
+  isChunkAsrCoverageAcceptable,
   mapVideoDownloadError,
   mergeChunkTranscripts,
   normalizeVietnameseTranscript,
@@ -75,24 +76,50 @@ function testHosts() {
   console.log('PASS isAllowedVideoTranscriptionHost');
 }
 
+function assertPlanCoversFull(
+  duration: number,
+  plans: ReturnType<typeof buildChunkPlan>,
+  label: string,
+) {
+  assert.ok(plans.length >= 1, `${label}: empty plan`);
+  assert.equal(plans[0]!.startSec, 0, `${label}: must start at 0`);
+  assert.ok(
+    plans[plans.length - 1]!.endSec >= duration - 0.1,
+    `${label}: last end ${plans[plans.length - 1]!.endSec} < ${duration}`,
+  );
+  for (let i = 1; i < plans.length; i++) {
+    assert.ok(plans[i]!.startSec < plans[i - 1]!.endSec, `${label}: gap before chunk ${i}`);
+    const ov = plans[i - 1]!.endSec - plans[i]!.startSec;
+    assert.ok(ov >= 5 && ov <= 10, `${label}: overlap ${ov} not in 5–10s`);
+  }
+}
+
 function testChunkPlan() {
   const short = buildChunkPlan(120);
   assert.equal(short.length, 1);
   assert.equal(short[0]!.endSec, 120);
+  assertPlanCoversFull(120, short, 'short');
 
-  const long = buildChunkPlan(45 * 60);
-  assert.ok(long.length >= 5);
-  assert.equal(long[0]!.startSec, 0);
-  assert.ok(long[long.length - 1]!.endSec >= 45 * 60 - 0.1);
-  for (let i = 1; i < long.length; i++) {
-    assert.ok(long[i]!.startSec < long[i - 1]!.endSec);
-    const ov = long[i - 1]!.endSec - long[i]!.startSec;
-    assert.ok(ov >= 5 && ov <= 10, `overlap ${ov}`);
-  }
+  // ~30 phút (default 5m chunks → ≥5)
+  const m30 = buildChunkPlan(30 * 60);
+  assert.ok(m30.length >= 5, `30m expected ≥5 chunks, got ${m30.length}`);
+  assertPlanCoversFull(30 * 60, m30, '30m');
+
+  // ≥5 chunks (40 phút)
+  const m40 = buildChunkPlan(40 * 60);
+  assert.ok(m40.length >= 5, `40m expected ≥5 chunks, got ${m40.length}`);
+  assertPlanCoversFull(40 * 60, m40, '40m');
+
+  const odd = buildChunkPlan(5 * 60 + 8 + 40);
+  assertPlanCoversFull(5 * 60 + 8 + 40, odd, 'odd');
 
   const over30 = buildChunkPlan(35 * 60);
-  assert.ok(over30.length >= 4);
-  console.log('PASS buildChunkPlan (incl. >30min)');
+  assert.ok(over30.length >= 5);
+  assertPlanCoversFull(35 * 60, over30, '35m');
+
+  console.log(
+    `PASS buildChunkPlan short=1 30m=${m30.length} 40m=${m40.length} (>=5, full coverage)`,
+  );
 }
 
 function testOverlapMerge() {
@@ -100,6 +127,9 @@ function testOverlapMerge() {
   const next = 've marketing va ban hang online tiep theo la cach viet content thu hut';
   const k = findOverlapWordCount(prev, next);
   assert.ok(k >= 4, `expected overlap words, got ${k}`);
+  const longNext = `${next} ${'them noi dung quan trong '.repeat(40)}`;
+  const k2 = findOverlapWordCount(prev, longNext, 80);
+  assert.ok(k2 <= Math.floor(longNext.trim().split(/\s+/).length * 0.5) + 1);
 
   const merged = mergeChunkTranscripts([
     {
@@ -121,8 +151,96 @@ function testOverlapMerge() {
   assert.ok(merged.rawMerged.includes('viet content'));
   const dup = /marketing va ban hang online\s+marketing va ban hang online/i;
   assert.equal(dup.test(merged.rawMerged), false);
-  assert.ok(merged.lastTimestamp != null && merged.lastTimestamp > 400);
+  assert.ok(merged.lastTimestamp != null && merged.lastTimestamp >= 800);
   console.log('PASS mergeChunkTranscripts / overlap');
+}
+
+/** Regression: segment-filter merge must not drop / overwrite with only last chunk */
+function testMergeKeepsAllChunks() {
+  const plans = buildChunkPlan(30 * 60);
+  assert.ok(plans.length >= 5);
+  const chunks = plans.map((p, i) => ({
+    index: i,
+    startSec: p.startSec,
+    endSec: p.endSec,
+    text: `HEAD_${i} unique middle content for chunk ${i} TAIL_${i}`,
+    segments: [
+      {
+        start: 0,
+        end: Math.min(30, p.durationSec * 0.2),
+        text: `HEAD_${i} unique middle content for chunk ${i} TAIL_${i}`,
+      },
+    ],
+  }));
+  const m = mergeChunkTranscripts(chunks);
+  for (let i = 0; i < plans.length; i++) {
+    assert.ok(m.rawMerged.includes(`HEAD_${i}`), `missing HEAD_${i}`);
+    assert.ok(m.rawMerged.includes(`TAIL_${i}`), `missing TAIL_${i}`);
+  }
+  assert.equal(m.firstTimestamp, 0);
+  assert.ok((m.lastTimestamp ?? 0) >= 30 * 60 - 1);
+  console.log(`PASS merge keeps all ${plans.length} chunks head/mid/tail`);
+}
+
+function testAsrCoverageGate() {
+  const words = Array.from({ length: 80 }, (_, i) => `tu${i}`).join(' ');
+  const bad = isChunkAsrCoverageAcceptable({
+    durationSec: 300,
+    text: words,
+    segments: [{ start: 0, end: 60, text: words }],
+  });
+  assert.equal(bad.ok, false, 'truncated ASR must fail');
+
+  const good = isChunkAsrCoverageAcceptable({
+    durationSec: 300,
+    text: words + ' ' + words + ' ' + words,
+    segments: [{ start: 0, end: 280, text: words }],
+  });
+  assert.equal(good.ok, true);
+
+  const empty = isChunkAsrCoverageAcceptable({
+    durationSec: 300,
+    text: '',
+    segments: [],
+  });
+  assert.equal(empty.ok, false);
+
+  const short = isChunkAsrCoverageAcceptable({
+    durationSec: 20,
+    text: 'ok enough text for short clip hello world',
+    segments: [],
+  });
+  assert.equal(short.ok, true);
+
+  // FB reel bug: prompt echo "Đoạn 2. Đoạn 3." must NEVER complete for 47s
+  const promptEcho = isChunkAsrCoverageAcceptable({
+    durationSec: 47,
+    text: 'Đoạn 2. Đoạn 3.',
+    segments: [{ start: 0, end: 46, text: 'Đoạn 2. Đoạn 3.' }],
+  });
+  assert.equal(promptEcho.ok, false, 'prompt-echo must fail quality gate');
+
+  console.log('PASS isChunkAsrCoverageAcceptable');
+}
+
+function testIncompleteChunksBlockComplete() {
+  const plans = buildChunkPlan(30 * 60);
+  const chunks: TranscriptChunkResult[] = plans.map((p, i) => ({
+    index: i,
+    startSec: p.startSec,
+    endSec: p.endSec,
+    status: i === plans.length - 1 ? 'failed' : 'completed',
+    text: `c${i}`,
+    rawText: `c${i}`,
+    segments: [],
+    charCount: 2,
+    attempts: 1,
+  }));
+  const pending = chunks.filter((c) => c.status !== 'completed');
+  assert.ok(pending.length === 1);
+  const covered = sumCompletedChunkCoverage(chunks);
+  assert.equal(durationsMatch(30 * 60, covered), false);
+  console.log('PASS incomplete last chunk blocks durationMatch/COMPLETED');
 }
 
 function testAdLoop() {
@@ -195,8 +313,10 @@ function testQuotaLimits() {
   assert.equal(VIDEO_TRANSCRIPTION_LIMITS.maxDurationSeconds, 30 * 60);
   assert.equal(VIDEO_TRANSCRIPTION_LIMITS.maxFileBytes, 500 * 1024 * 1024);
   assert.ok(VIDEO_TRANSCRIPTION_LIMITS.chunkSeconds >= 5 * 60);
+  assert.ok(VIDEO_TRANSCRIPTION_LIMITS.chunkSeconds <= 10 * 60);
   assert.ok(VIDEO_TRANSCRIPTION_LIMITS.overlapSeconds >= 5);
-  console.log('PASS limits / quota');
+  assert.ok(VIDEO_TRANSCRIPTION_LIMITS.chunkMaxAttempts >= 2);
+  console.log('PASS limits / quota / chunk band 5–10m');
 }
 
 function testFastSpeechWords() {
@@ -212,6 +332,9 @@ testPlatformErrors();
 testHosts();
 testChunkPlan();
 testOverlapMerge();
+testMergeKeepsAllChunks();
+testAsrCoverageGate();
+testIncompleteChunksBlockComplete();
 testAdLoop();
 testVietnameseNormalize();
 testMissingEndGuard();

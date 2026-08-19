@@ -100,22 +100,51 @@ export function buildSttPrompt(params: {
   chunkCount?: number;
 }): string {
   const bits: string[] = [];
-  bits.push('Tiếng Việt. Phiên âm chính xác tên riêng và thương hiệu.');
-  if (params.videoTitle?.trim()) {
-    bits.push(`Video: ${params.videoTitle.trim().slice(0, 120)}`);
-  }
-  if (params.chunkIndex != null && params.chunkCount != null) {
-    bits.push(`Đoạn ${params.chunkIndex + 1}/${params.chunkCount}.`);
-  }
+  // Keep prompt SHORT and free of labels like "Đoạn N" — Whisper often echoes prompt as fake transcript
+  // when guided-text looks like the spoken content.
+  bits.push(
+    'Transcribe the spoken words accurately. Prefer Vietnamese. Do not invent section labels.',
+  );
   if (params.glossary.length) {
-    bits.push(`Tên riêng/thương hiệu cần giữ đúng: ${params.glossary.slice(0, 40).join(', ')}.`);
+    bits.push(`Proper names: ${params.glossary.slice(0, 25).join(', ')}.`);
   }
-  const tail = (params.previousTail || '').trim().slice(-400);
+  const tail = (params.previousTail || '').trim().slice(-200);
   if (tail) {
-    bits.push(`Ngữ cảnh câu trước: ${tail}`);
+    // Only previous speech context — never meta like chunk counters
+    bits.push(`Context: ${tail}`);
   }
-  // OpenAI prompt limit ~224 tokens for whisper — keep short
-  return bits.join(' ').slice(0, 800);
+  // Intentionally omit videoTitle + "Đoạn i/n" (caused echo: "Đoạn 2. Đoạn 3.")
+  void params.videoTitle;
+  void params.chunkIndex;
+  void params.chunkCount;
+  return bits.join(' ').slice(0, 400);
+}
+
+/**
+ * Drop STT hallucinations that are just prompt echoes (e.g. "Đoạn 2. Đoạn 3.").
+ */
+export function stripPromptEchoArtifacts(text: string): string {
+  let t = (text || '').trim();
+  if (!t) return t;
+  // Whole-transcript is only "Đoạn N" labels
+  if (/^(?:đoạn\s*\d+(?:\s*\/\s*\d+)?\s*[.,;:]?\s*)+$/iu.test(t)) {
+    return '';
+  }
+  // Leading label spam
+  t = t.replace(/^(?:đoạn\s*\d+(?:\s*\/\s*\d+)?\s*[.,;:]?\s*)+/iu, '').trim();
+  return t;
+}
+
+/** Minimum expected transcript size (chars) for non-silent audio. */
+export function minTranscriptCharsForDuration(durationSec: number): number {
+  if (!(durationSec > 20)) return 1;
+  // User gate: >20s and <50 chars is always failure; scale gently after that
+  return Math.max(50, Math.min(400, Math.floor(durationSec * 2)));
+}
+
+export function isTranscriptTooShortForDuration(text: string, durationSec: number): boolean {
+  const t = (text || '').trim();
+  return t.length < minTranscriptCharsForDuration(durationSec);
 }
 
 /**

@@ -187,7 +187,7 @@ export function normalizeTeleprompterDraft(
     scrollSpeed: clamp(Number(raw.scrollSpeed) || base.scrollSpeed, 20, 240),
     playbackSpeed: normalizeTeleprompterPlaybackSpeed(raw.playbackSpeed),
     lineHeight: clamp(Number(raw.lineHeight) || base.lineHeight, 1.2, 2.4),
-    contentWidth: clamp(Number(raw.contentWidth) || base.contentWidth, 360, 1100),
+    contentWidth: clamp(Number(raw.contentWidth) || base.contentWidth, 360, 1600),
     mirrorMode: Boolean(raw.mirrorMode),
     theme: raw.theme === 'light' ? 'light' : 'dark',
     textAlign: raw.textAlign === 'center' || raw.textAlign === 'right' ? raw.textAlign : 'left',

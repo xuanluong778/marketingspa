@@ -13,6 +13,7 @@ import {
 import {
   buildIntegrationScopeKey,
   normalizeMessagingPhone,
+  resolveIntegrationScopeKeys,
 } from '@marketingspa/database';
 import { PrismaService } from '../prisma/prisma.service';
 import { TenantOwnershipService } from '../common/services/tenant-ownership.service';
@@ -42,17 +43,23 @@ export class MessagingIdentityService {
   async list(organizationId: string, query: MessagingIdentityQueryDto) {
     const { page, pageSize, skip, take } = getPaginationParams(query);
 
-    let integrationScopeKey = query.integrationScopeKey;
+    let integrationScopeKeys: string[] | undefined;
     if (query.connectionId) {
       const conn = await this.prisma.messagingChannelConnection.findFirst({
         where: { id: query.connectionId, organizationId },
       });
       if (conn) {
-        integrationScopeKey = buildIntegrationScopeKey({
+        integrationScopeKeys = resolveIntegrationScopeKeys({
           channel: conn.channel,
           channelAccountRef: conn.accountRef,
         });
       }
+    } else if (query.integrationScopeKey) {
+      integrationScopeKeys = resolveIntegrationScopeKeys({
+        channel: query.channel || 'MESSENGER',
+        integrationScopeKey: query.integrationScopeKey,
+        channelAccountRef: query.integrationScopeKey.split(':').slice(1).join(':') || null,
+      });
     }
 
     const where: Prisma.MessagingContactIdentityWhereInput = {
@@ -61,7 +68,9 @@ export class MessagingIdentityService {
       ...(query.customerId && { customerId: query.customerId }),
       ...(query.leadId && { leadId: query.leadId }),
       ...(!query.includeMerged && { mergedIntoId: null }),
-      ...(integrationScopeKey && { integrationScopeKey }),
+      ...(integrationScopeKeys?.length === 1 && { integrationScopeKey: integrationScopeKeys[0] }),
+      ...(integrationScopeKeys &&
+        integrationScopeKeys.length > 1 && { integrationScopeKey: { in: integrationScopeKeys } }),
       ...(query.consentStatus && { consentStatus: query.consentStatus }),
       ...(query.followStatus && { followStatus: query.followStatus }),
     };
@@ -117,8 +126,8 @@ export class MessagingIdentityService {
       where.customerId = null;
       where.leadId = null;
     }
-    if (query.funnelStageId) {
-      where.lead = { funnelStageId: query.funnelStageId };
+    if (query.stageId) {
+      where.lead = { stageId: query.stageId };
     }
     if (query.pipelineStatus) {
       where.lead = { pipelineStatus: query.pipelineStatus };
@@ -150,7 +159,7 @@ export class MessagingIdentityService {
               pipelineStatus: true,
               branch: { select: { id: true, name: true } },
               assignedTo: { select: { id: true, name: true } },
-              funnelStage: { select: { id: true, name: true } },
+              stage: { select: { id: true, name: true } },
             },
           },
           integration: { select: { id: true, provider: true, status: true } },

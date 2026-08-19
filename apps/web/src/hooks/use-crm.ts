@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
+import { invalidateLeadWorkspace } from '@/lib/lead-query-sync';
 import type { PaginatedResult, Lead } from '@/types/api';
 import type {
   CustomerDetail,
@@ -88,6 +89,7 @@ export function useUpdateCustomer() {
       qc.invalidateQueries({ queryKey: ['customers'] });
       qc.invalidateQueries({ queryKey: ['customers', vars.id] });
       qc.invalidateQueries({ queryKey: ['customers', vars.id, 'history'] });
+      qc.invalidateQueries({ queryKey: ['leads'] });
     },
   });
 }
@@ -130,8 +132,7 @@ export function useCreateLead() {
     mutationFn: (body: CreateLeadInput) =>
       apiClient<LeadDetail>('/leads', { method: 'POST', body: JSON.stringify(body) }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['leads'] });
-      qc.invalidateQueries({ queryKey: ['dashboard'] });
+      invalidateLeadWorkspace(qc);
     },
   });
 }
@@ -142,8 +143,7 @@ export function useUpdateLead() {
     mutationFn: ({ id, ...body }: CreateLeadInput & { id: string; lostReason?: string }) =>
       apiClient<LeadDetail>(`/leads/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
     onSuccess: (_, vars) => {
-      qc.invalidateQueries({ queryKey: ['leads'] });
-      qc.invalidateQueries({ queryKey: ['leads', vars.id] });
+      invalidateLeadWorkspace(qc, vars.id);
     },
   });
 }
@@ -208,9 +208,8 @@ export function useUpdateLeadStatus() {
     onError: (_err, _vars, ctx) => {
       ctx?.previous?.forEach(([key, data]) => qc.setQueryData(key, data));
     },
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: ['leads'] });
-      qc.invalidateQueries({ queryKey: ['dashboard'] });
+    onSettled: (_data, _err, vars) => {
+      invalidateLeadWorkspace(qc, vars?.id);
     },
   });
 }
@@ -221,9 +220,30 @@ export function useLeadKanban(params: Record<string, string>, enabled = true) {
     queryKey: ['leads', 'kanban', params],
     queryFn: () =>
       apiClient<{
+        pipelineId?: string;
+        stages?: Array<{
+          id: string;
+          name: string;
+          code: string;
+          category: string;
+          position: number;
+          probability: number;
+          slaMinutes: number | null;
+          isWon: boolean;
+          isLost: boolean;
+          color: string | null;
+          legacyStatus: string | null;
+        }>;
         columns: Record<
           string,
-          { total: number; items: Lead[]; nextCursor: string | null }
+          {
+            total: number;
+            items: Lead[];
+            nextCursor: string | null;
+            stageId?: string | null;
+            code?: string;
+            label?: string;
+          }
         >;
         limit: number;
       }>(`/leads/kanban?${qs}`),
@@ -282,8 +302,7 @@ export function useBulkLeadAction() {
       tags?: string[];
     }) => apiClient('/leads/bulk', { method: 'POST', body: JSON.stringify(body) }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['leads'] });
-      qc.invalidateQueries({ queryKey: ['dashboard'] });
+      invalidateLeadWorkspace(qc);
     },
   });
 }
@@ -296,7 +315,7 @@ export function useAssignLead() {
         method: 'PATCH',
         body: JSON.stringify({ assignedToId }),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['leads'] }),
+    onSuccess: (_data, vars) => invalidateLeadWorkspace(qc, vars.id),
   });
 }
 
@@ -304,7 +323,7 @@ export function useDeleteLead() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => apiClient(`/leads/${id}`, { method: 'DELETE' }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['leads'] }),
+    onSuccess: () => invalidateLeadWorkspace(qc),
   });
 }
 
@@ -314,9 +333,76 @@ export function useCreateAppointment() {
     mutationFn: (body: CreateAppointmentInput) =>
       apiClient('/appointments', { method: 'POST', body: JSON.stringify(body) }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['appointments'] });
-      qc.invalidateQueries({ queryKey: ['leads'] });
-      qc.invalidateQueries({ queryKey: ['customers'] });
+      invalidateLeadWorkspace(qc);
+    },
+  });
+}
+
+export type AssignmentRule = {
+  id: string;
+  name?: string | null;
+  mode: 'BRANCH' | 'EMPLOYEE' | 'ROUND_ROBIN' | 'LEAST_LOADED' | 'BY_SCORE';
+  branchId?: string | null;
+  leadSourceId?: string | null;
+  adCampaignId?: string | null;
+  minScore?: number | null;
+  maxScore?: number | null;
+  employeeIds: string[];
+  priority: number;
+  reassignOnSla: boolean;
+  notifyManager: boolean;
+  isActive: boolean;
+  branch?: { id: string; name: string } | null;
+  leadSource?: { id: string; name: string } | null;
+  adCampaign?: { id: string; name: string } | null;
+};
+
+export function useAssignmentRules() {
+  return useQuery({
+    queryKey: ['crm', 'assignment-rules'],
+    queryFn: () => apiClient<AssignmentRule[]>('/crm/assignment-rules'),
+  });
+}
+
+export function useUpsertAssignmentRule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: Partial<AssignmentRule> & { mode: AssignmentRule['mode'] }) =>
+      apiClient<AssignmentRule>('/crm/assignment-rules', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['crm', 'assignment-rules'] }),
+  });
+}
+
+export function useDeleteAssignmentRule() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) =>
+      apiClient(`/crm/assignment-rules/${id}`, { method: 'DELETE' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['crm', 'assignment-rules'] }),
+  });
+}
+
+export function useUpsertPipelineStage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: {
+      id?: string;
+      name: string;
+      code?: string;
+      slaMinutes?: number | null;
+      position?: number;
+      color?: string;
+    }) =>
+      apiClient('/crm/pipeline/stages', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['crm', 'pipeline'] });
+      void qc.invalidateQueries({ queryKey: ['leads', 'kanban'] });
     },
   });
 }

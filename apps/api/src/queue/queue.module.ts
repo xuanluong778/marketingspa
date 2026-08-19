@@ -21,6 +21,8 @@ import {
   AFFILIATE_HOLD_QUEUE,
   VIDEO_TRANSCRIPTION_QUEUE,
   AD_URL_ANALYZE_QUEUE,
+  EMAIL_CAMPAIGN_PLAN_QUEUE,
+  EMAIL_CAMPAIGN_SEND_QUEUE,
 } from './queue.constants';
 
 function createQueueProvider(token: string, queueName: string) {
@@ -62,6 +64,8 @@ function createQueueProvider(token: string, queueName: string) {
     createQueueProvider(AFFILIATE_HOLD_QUEUE, QUEUE_NAMES.AFFILIATE_HOLD),
     createQueueProvider(VIDEO_TRANSCRIPTION_QUEUE, QUEUE_NAMES.VIDEO_TRANSCRIPTION),
     createQueueProvider(AD_URL_ANALYZE_QUEUE, QUEUE_NAMES.AD_URL_ANALYZE),
+    createQueueProvider(EMAIL_CAMPAIGN_PLAN_QUEUE, QUEUE_NAMES.EMAIL_CAMPAIGN_PLAN),
+    createQueueProvider(EMAIL_CAMPAIGN_SEND_QUEUE, QUEUE_NAMES.EMAIL_CAMPAIGN_SEND),
   ],
   exports: [
     CAMPAIGN_QUEUE,
@@ -82,6 +86,8 @@ function createQueueProvider(token: string, queueName: string) {
     AFFILIATE_HOLD_QUEUE,
     VIDEO_TRANSCRIPTION_QUEUE,
     AD_URL_ANALYZE_QUEUE,
+    EMAIL_CAMPAIGN_PLAN_QUEUE,
+    EMAIL_CAMPAIGN_SEND_QUEUE,
   ],
 })
 export class QueueModule {}

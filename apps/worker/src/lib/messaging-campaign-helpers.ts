@@ -5,9 +5,14 @@ import {
   MessagingCampaignRecipientStatus,
   Prisma,
   prisma,
+  resolveIntegrationScopeKeys,
 } from '@marketingspa/database';
 import type Redis from 'ioredis';
-import { WS_EVENTS } from '@marketingspa/shared';
+import {
+  WS_EVENTS,
+  pickCampaignRenderVariables,
+  resolveMessagingDisplayNames,
+} from '@marketingspa/shared';
 import { publishRealtime } from './realtime';
 
 export type MessagingSegmentConfig = {
@@ -83,10 +88,15 @@ export async function resolveCampaignIdentities(
           });
         }
 
+        const scopeKeys = resolveIntegrationScopeKeys({
+          channel: 'MESSENGER',
+          channelAccountRef: pageId,
+          integrationScopeKey: scopeKey,
+        });
         const existing = await prisma.messagingContactIdentity.findFirst({
           where: {
             organizationId,
-            integrationScopeKey: scopeKey,
+            integrationScopeKey: { in: scopeKeys },
             externalUserId: conv.externalUserId,
           },
         });
@@ -115,6 +125,8 @@ export async function resolveCampaignIdentities(
           await prisma.messagingContactIdentity.update({
             where: { id: existing.id },
             data: {
+              // Chuẩn hóa legacy messenger_page → messenger
+              integrationScopeKey: scopeKey,
               chatbotConversationId: existing.chatbotConversationId ?? conv.id,
               ...(shouldRefreshInbound ? { lastInboundAt: inboundAt } : {}),
               ...(canMarkOptIn && existing.consentStatus !== MessagingConsentStatus.OPTED_IN
@@ -143,18 +155,30 @@ export async function resolveCampaignIdentities(
     where.followStatus = { in: segmentConfig.followStatuses as never[] };
   }
 
-  let scopeKey = segmentConfig.integrationScopeKey;
-  if (!scopeKey && channelConnectionId) {
-    const conn = await prisma.messagingChannelConnection.findFirst({
-      where: { id: channelConnectionId, organizationId },
-    });
-    if (conn) {
-      scopeKey = `${channel.toLowerCase()}:${conn.accountRef}`;
+  // Khi user chọn sẵn identityIds thì không lọc thêm scope (tránh lệch messenger vs messenger_page).
+  if (!segmentConfig.identityIds?.length) {
+    let scopeKey = segmentConfig.integrationScopeKey;
+    let accountRef: string | null = null;
+    if (!scopeKey && channelConnectionId) {
+      const conn = await prisma.messagingChannelConnection.findFirst({
+        where: { id: channelConnectionId, organizationId },
+      });
+      if (conn) {
+        accountRef = conn.accountRef;
+        scopeKey = `${channel.toLowerCase()}:${conn.accountRef}`;
+      }
+    } else if (scopeKey) {
+      accountRef = scopeKey.split(':').slice(1).join(':') || null;
     }
-  }
 
-  if (scopeKey) {
-    where.integrationScopeKey = scopeKey;
+    if (scopeKey) {
+      const scopeKeys = resolveIntegrationScopeKeys({
+        channel,
+        channelAccountRef: accountRef,
+        integrationScopeKey: scopeKey,
+      });
+      where.integrationScopeKey = scopeKeys.length > 1 ? { in: scopeKeys } : scopeKey;
+    }
   }
 
   if (segmentConfig.requireOptIn) {
@@ -217,7 +241,7 @@ export async function filterSuppressedIdentities(
   );
 
   return identities.filter((identity) => {
-    if (identity.optedOut || identity.isBlocked) return false;
+    // optedOut/isBlocked → để eligibility đánh OPTED_OUT/SKIPPED (không drop sớm)
     if (byIdentity.has(identity.id)) return false;
     if (identity.phoneNormalized && byPhone.has(identity.phoneNormalized)) return false;
     if (byExternal.has(identity.externalUserId)) return false;
@@ -230,27 +254,40 @@ export async function buildRecipientRenderContext(
   identity: { customerId: string | null; leadId: string | null; displayName: string | null },
   campaignVariables: Record<string, string>,
 ): Promise<Record<string, string>> {
-  const context: Record<string, string> = { ...campaignVariables };
+  // Không spread body/media/full_name từ campaign — tên phải theo từng identity
+  const context: Record<string, string> = {
+    ...pickCampaignRenderVariables(campaignVariables),
+  };
+
+  // Ưu tiên tên Facebook đã sync trên identity (PSID + page scope)
+  const fbNames = resolveMessagingDisplayNames(identity.displayName);
+  context.full_name = fbNames.full_name;
+  context.first_name = fbNames.first_name;
+  context.customer_name = fbNames.customer_name;
+
   if (identity.customerId) {
     const customer = await prisma.customer.findFirst({
       where: { id: identity.customerId, organizationId },
       include: { branch: true },
     });
     if (customer) {
-      context.customer_name = customer.name || context.customer_name || 'Quý khách';
+      // CRM name chỉ bổ sung khi identity thiếu tên FB thật
+      if (fbNames.full_name === 'Anh/chị' && customer.name?.trim()) {
+        const crm = resolveMessagingDisplayNames(customer.name);
+        context.full_name = crm.full_name;
+        context.first_name = crm.first_name;
+        context.customer_name = crm.customer_name;
+      }
       context.branch_name = customer.branch?.name ?? context.branch_name ?? '';
     }
   } else if (identity.leadId) {
     const lead = await prisma.lead.findFirst({ where: { id: identity.leadId, organizationId } });
-    if (lead) {
-      context.customer_name = lead.name || context.customer_name || 'Quý khách';
+    if (lead && fbNames.full_name === 'Anh/chị' && lead.name?.trim()) {
+      const crm = resolveMessagingDisplayNames(lead.name);
+      context.full_name = crm.full_name;
+      context.first_name = crm.first_name;
+      context.customer_name = crm.customer_name;
     }
-  } else if (identity.displayName) {
-    context.customer_name = identity.displayName || context.customer_name || 'Quý khách';
-  }
-
-  if (!context.customer_name) {
-    context.customer_name = 'Quý khách';
   }
 
   const latestAppt = await prisma.appointment.findFirst({

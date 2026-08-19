@@ -28,6 +28,7 @@ import {
   AdminReprocessTransactionDto,
   AdminUpdateTrialSettingsDto,
   CreatePaymentOrderDto,
+  CreateCreditOrderDto,
 } from './dto/billing.dto';
 import { ClientIp } from '../common/decorators/client-ip.decorator';
 
@@ -76,6 +77,12 @@ export class BillingController {
   @UseGuards(JwtAuthGuard, TenantGuard)
   createOrder(@CurrentUser() user: AuthUser, @Body() dto: CreatePaymentOrderDto) {
     return this.billing.createOrder(user.organizationId, user.id, dto.planCode);
+  }
+
+  @Post('billing/credit-orders')
+  @UseGuards(JwtAuthGuard, TenantGuard)
+  createCreditOrder(@CurrentUser() user: AuthUser, @Body() dto: CreateCreditOrderDto) {
+    return this.billing.createCreditOrder(user.organizationId, user.id, dto.packageCode);
   }
 
   @Get('billing/orders')

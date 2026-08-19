@@ -1,10 +1,19 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import {
   AutomationLogStatus,
   AutomationTriggerType,
+  LeadPipelineStatus,
   MessageChannel,
   Prisma,
 } from '@marketingspa/database';
+import {
+  automationFlowMatchesFunnel,
+  isSafeWebhookUrl,
+  normalizeAutomationAction,
+  scoreTriggerMatches,
+  stageTriggerMatches,
+  type NormalizedAutomationAction,
+} from '@marketingspa/shared';
 import type { Queue } from 'bullmq';
 import { PrismaService } from '../prisma/prisma.service';
 import { AUTOMATION_MESSAGE_QUEUE } from '../queue/queue.constants';
@@ -12,15 +21,9 @@ import { QueueEnqueueService } from '../common/services/queue-enqueue.service';
 import { renderTemplate } from '../automation/template-renderer.util';
 import { LeadAssignmentService } from './lead-assignment.service';
 import { MessagingEligibilityService } from '../messaging/messaging-eligibility.service';
+import { EmailMarketingService } from '../email-marketing/email-marketing.service';
 
-export type AutomationAction =
-  | { type: 'SEND_MESSAGE'; templateId?: string }
-  | { type: 'SEND_EMAIL'; templateId?: string }
-  | { type: 'CREATE_TASK'; title: string; dueInMinutes?: number }
-  | { type: 'ASSIGN_EMPLOYEE'; employeeId?: string; mode?: 'round_robin' }
-  | { type: 'CHANGE_STATUS'; pipelineStatus: string }
-  | { type: 'ADD_TAG'; tag: string }
-  | { type: 'CREATE_APPOINTMENT'; branchId?: string; delayMinutes?: number };
+export type AutomationAction = NormalizedAutomationAction;
 
 @Injectable()
 export class AutomationEngineService {
@@ -32,6 +35,7 @@ export class AutomationEngineService {
     private readonly assignment: LeadAssignmentService,
     private readonly eligibility: MessagingEligibilityService,
     @Inject(AUTOMATION_MESSAGE_QUEUE) private readonly queue: Queue,
+    @Optional() private readonly emailMarketing?: EmailMarketingService,
   ) {}
 
   /** Fire-and-forget enqueue — không chặn API */
@@ -44,21 +48,69 @@ export class AutomationEngineService {
       appointmentId?: string | null;
       context?: Record<string, string>;
       dedupeKey?: string;
+      delayMinutesOverride?: number;
+      fromStep?: number;
+      flowId?: string;
     },
   ) {
+    const lead = payload.leadId
+      ? await this.prisma.lead.findFirst({
+          where: { id: payload.leadId, organizationId },
+          select: {
+            funnelRecommendationId: true,
+            stageId: true,
+            pipelineStatus: true,
+            score: true,
+          },
+        })
+      : null;
+
     const flows = await this.prisma.automationFlow.findMany({
       where: {
         organizationId,
         triggerType,
         isActive: true,
         isPaused: false,
+        ...(payload.flowId ? { id: payload.flowId } : {}),
       },
     });
 
     for (const flow of flows) {
+      if (!automationFlowMatchesFunnel(flow.funnelId, lead?.funnelRecommendationId)) {
+        continue;
+      }
+      if (triggerType === AutomationTriggerType.STAGE_CHANGED) {
+        const cfg = (flow.triggerConfig ?? {}) as Record<string, unknown>;
+        if (
+          !stageTriggerMatches(cfg, {
+            stageId: payload.context?.stageId ?? lead?.stageId,
+            stageCode: payload.context?.stageCode ?? lead?.pipelineStatus ?? undefined,
+            previousStatus: payload.context?.previousStatus,
+          })
+        ) {
+          continue;
+        }
+      }
+      if (triggerType === AutomationTriggerType.SCORE_CHANGED) {
+        const cfg = (flow.triggerConfig ?? {}) as Record<string, unknown>;
+        if (
+          !scoreTriggerMatches(cfg, {
+            score: Number(payload.context?.score ?? lead?.score ?? 0),
+            previousScore: Number(payload.context?.previousScore ?? 0),
+            crossed: payload.context?.crossed ?? null,
+          })
+        ) {
+          continue;
+        }
+      }
+
       const idempotencyKey =
         payload.dedupeKey ??
         `${flow.id}:${triggerType}:${payload.leadId ?? ''}:${payload.appointmentId ?? ''}:${payload.customerId ?? ''}`;
+
+      const delayMinutes =
+        payload.delayMinutesOverride ??
+        Math.max(0, flow.delayMinutes);
 
       await this.queueEnqueue.add(
         this.queue,
@@ -66,21 +118,31 @@ export class AutomationEngineService {
         {
           organizationId,
           flowId: flow.id,
+          funnelId: flow.funnelId,
           leadId: payload.leadId,
           customerId: payload.customerId,
           appointmentId: payload.appointmentId,
           context: payload.context ?? {},
           idempotencyKey,
+          fromStep: payload.fromStep ?? 0,
         },
         {
           jobId: `auto:${idempotencyKey}`.slice(0, 120),
-          delay: Math.max(0, flow.delayMinutes) * 60_000,
+          delay: delayMinutes * 60_000,
           attempts: 3,
           backoff: { type: 'exponential', delay: 15_000 },
           removeOnComplete: 200,
           removeOnFail: 100,
         },
       );
+    }
+
+    if (this.emailMarketing) {
+      void this.emailMarketing.handleCrmTrigger(organizationId, triggerType, payload).catch((err) => {
+        this.logger.warn(
+          `Email automation trigger failed (${triggerType}): ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
     }
   }
 
@@ -97,11 +159,13 @@ export class AutomationEngineService {
   async processJob(data: {
     organizationId: string;
     flowId: string;
+    funnelId?: string | null;
     leadId?: string | null;
     customerId?: string | null;
     appointmentId?: string | null;
     context?: Record<string, string>;
     idempotencyKey: string;
+    fromStep?: number;
   }) {
     const existing = await this.prisma.automationLog.findUnique({
       where: {
@@ -121,6 +185,16 @@ export class AutomationEngineService {
     });
     if (!flow || !flow.isActive || flow.isPaused) {
       return { skipped: true, reason: 'flow_inactive' };
+    }
+
+    if (flow.triggerType === AutomationTriggerType.NO_REPLY) {
+      const replied = await this.hasInboundSince(
+        data.organizationId,
+        data.leadId,
+        data.customerId,
+        data.context?.noReplyWatchStartedAt,
+      );
+      if (replied) return { skipped: true, reason: 'replied' };
     }
 
     if (this.isInQuietHours(flow)) {
@@ -199,8 +273,10 @@ export class AutomationEngineService {
       }
     }
 
-    const actions = (Array.isArray(flow.actions) ? flow.actions : []) as AutomationAction[];
-    const effectiveActions: AutomationAction[] =
+    const actions = (Array.isArray(flow.actions) ? flow.actions : []).map((raw) =>
+      normalizeAutomationAction(raw),
+    );
+    const effectiveActions: NormalizedAutomationAction[] =
       actions.length > 0
         ? actions
         : flow.messageTemplate
@@ -209,8 +285,9 @@ export class AutomationEngineService {
 
     const stepResults: unknown[] = [];
     let lastContent: string | undefined;
+    const fromStep = Math.max(0, data.fromStep ?? 0);
 
-    for (let i = 0; i < effectiveActions.length; i++) {
+    for (let i = fromStep; i < effectiveActions.length; i++) {
       const action = effectiveActions[i]!;
       const stepName = action.type;
       try {
@@ -241,6 +318,44 @@ export class AutomationEngineService {
             result: result as Prisma.InputJsonValue,
           },
         }).catch(() => undefined);
+
+        if (action.type === 'SEND_MESSAGE' || action.type === 'SEND_EMAIL') {
+          void this.dispatch(data.organizationId, AutomationTriggerType.NO_REPLY, {
+            leadId: data.leadId,
+            customerId: data.customerId,
+            appointmentId: data.appointmentId,
+            context: {
+              ...(data.context ?? {}),
+              noReplyWatchStartedAt: new Date().toISOString(),
+            },
+            dedupeKey: `NO_REPLY:${flow.id}:${data.leadId ?? data.customerId ?? ''}`,
+          });
+        }
+
+        if (
+          action.type === 'WAIT' &&
+          result &&
+          typeof result === 'object' &&
+          'waitMinutes' in result
+        ) {
+          const minutes = Math.max(0, Number((result as { waitMinutes: number }).waitMinutes) || 0);
+          await this.queueEnqueue.add(
+            this.queue,
+            'run-automation',
+            {
+              ...data,
+              fromStep: i + 1,
+              idempotencyKey: `${data.idempotencyKey}:from:${i + 1}`,
+            },
+            {
+              jobId: `auto:${data.idempotencyKey}:from:${i + 1}`.slice(0, 120),
+              delay: minutes * 60_000,
+              attempts: 3,
+              backoff: { type: 'exponential', delay: 15_000 },
+            },
+          );
+          return { ok: true, waiting: true, nextStep: i + 1 };
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'action failed';
         this.logger.warn(`automation step failed: ${msg}`);
@@ -352,9 +467,29 @@ export class AutomationEngineService {
       }
       case 'ASSIGN_EMPLOYEE': {
         if (!ctx.leadId) return { skipped: true };
+        const lead = await this.prisma.lead.findFirst({
+          where: { id: ctx.leadId, organizationId },
+          select: {
+            assignedToId: true,
+            branchId: true,
+            leadSourceId: true,
+            score: true,
+            attribution: { select: { adCampaignId: true } },
+          },
+        });
+        if (!lead) return { skipped: true };
+        // Respect existing assignee unless explicit employeeId
+        if (lead.assignedToId && !action.employeeId) {
+          return { skipped: true, reason: 'already_assigned', assignedToId: lead.assignedToId };
+        }
         const employeeId =
           action.employeeId ??
-          (await this.assignment.autoAssign(organizationId, {}));
+          (await this.assignment.autoAssign(organizationId, {
+            branchId: lead.branchId,
+            leadSourceId: lead.leadSourceId,
+            adCampaignId: lead.attribution?.adCampaignId,
+            score: lead.score,
+          }));
         if (!employeeId) return { skipped: true, reason: 'no_employee' };
         await this.prisma.lead.update({
           where: { id: ctx.leadId },
@@ -363,12 +498,40 @@ export class AutomationEngineService {
         return { assignedToId: employeeId };
       }
       case 'CHANGE_STATUS': {
-        if (!ctx.leadId || !action.pipelineStatus) return { skipped: true };
+        if (!ctx.leadId || (!action.pipelineStatus && !action.stageId)) return { skipped: true };
+        const stage = action.stageId
+          ? await this.prisma.funnelStage.findFirst({
+              where: { id: action.stageId, organizationId, isActive: true },
+            })
+          : await this.prisma.funnelStage.findFirst({
+              where: {
+                organizationId,
+                isActive: true,
+                OR: [
+                  { code: action.pipelineStatus! },
+                  { legacyStatus: action.pipelineStatus as LeadPipelineStatus },
+                ],
+              },
+              orderBy: { position: 'asc' },
+            });
+        const status =
+          (stage?.legacyStatus as LeadPipelineStatus | null) ??
+          (action.pipelineStatus as LeadPipelineStatus | undefined);
+        if (!status && !stage) return { skipped: true };
         await this.prisma.lead.update({
           where: { id: ctx.leadId },
-          data: { pipelineStatus: action.pipelineStatus as never },
+          data: {
+            ...(status ? { pipelineStatus: status as never } : {}),
+            ...(stage
+              ? { stageId: stage.id, pipelineId: stage.pipelineId }
+              : {}),
+          },
         });
-        return { pipelineStatus: action.pipelineStatus };
+        return {
+          pipelineStatus: status ?? action.pipelineStatus,
+          stageId: stage?.id,
+          pipelineId: stage?.pipelineId,
+        };
       }
       case 'ADD_TAG': {
         if (!ctx.leadId) return { skipped: true };
@@ -397,8 +560,66 @@ export class AutomationEngineService {
           },
         });
       }
+      case 'WAIT':
+        return { waitMinutes: action.minutes, wait: true };
+      case 'WEBHOOK': {
+        if (!isSafeWebhookUrl(action.url)) {
+          return { skipped: true, reason: 'unsafe_webhook_url' };
+        }
+        const ac = new AbortController();
+        const timer = setTimeout(() => ac.abort(), 8_000);
+        try {
+          const res = await fetch(action.url, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(action.secretHeader ? { 'X-MarketingAuto-Hook': action.secretHeader } : {}),
+            },
+            body: JSON.stringify({
+              organizationId,
+              flowId: flow.id,
+              leadId: ctx.leadId ?? null,
+              customerId: ctx.customerId ?? null,
+              appointmentId: ctx.appointmentId ?? null,
+              event: 'automation.webhook',
+            }),
+            signal: ac.signal,
+          });
+          return { ok: res.ok, status: res.status };
+        } catch (err) {
+          return {
+            skipped: true,
+            reason: 'webhook_failed',
+            message: err instanceof Error ? err.message : 'webhook_failed',
+          };
+        } finally {
+          clearTimeout(timer);
+        }
+      }
       default:
         return { skipped: true, reason: 'unknown_action' };
     }
+  }
+
+  private async hasInboundSince(
+    organizationId: string,
+    leadId?: string | null,
+    customerId?: string | null,
+    sinceIso?: string,
+  ): Promise<boolean> {
+    if (!leadId && !customerId) return false;
+    const since = sinceIso ? new Date(sinceIso) : null;
+    const row = await this.prisma.messagingContactIdentity.findFirst({
+      where: {
+        organizationId,
+        OR: [
+          ...(leadId ? [{ leadId }] : []),
+          ...(customerId ? [{ customerId }] : []),
+        ],
+        lastInboundAt: since && !Number.isNaN(since.getTime()) ? { gt: since } : { not: null },
+      },
+      select: { id: true },
+    });
+    return Boolean(row);
   }
 }

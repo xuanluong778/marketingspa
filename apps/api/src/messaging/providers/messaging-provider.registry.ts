@@ -114,8 +114,43 @@ export class MessagingProviderRegistry {
       },
       verifyWebhookSignature: (rawBody, signature, secret) =>
         verifyMetaSha256Signature(rawBody, signature, secret),
-      normalizeWebhook(): NormalizedWebhookEvent[] {
-        return [];
+      normalizeWebhook(payload: unknown, accountRef: string): NormalizedWebhookEvent[] {
+        const body = payload as {
+          entry?: Array<{
+            id?: string;
+            messaging?: Array<{
+              message?: { mid?: string };
+              timestamp?: number;
+              sender?: { id?: string };
+            }>;
+            standby?: Array<{
+              message?: { mid?: string };
+              timestamp?: number;
+              sender?: { id?: string };
+            }>;
+          }>;
+        };
+        const out: NormalizedWebhookEvent[] = [];
+        for (const entry of body.entry || []) {
+          if (accountRef && entry.id && entry.id !== accountRef) continue;
+          const buckets = [
+            ...(Array.isArray(entry.messaging) ? entry.messaging : []),
+            ...(Array.isArray(entry.standby) ? entry.standby : []),
+          ];
+          for (const ev of buckets) {
+            const mid = String(ev?.message?.mid || '').trim();
+            if (mid) {
+              out.push({ rawEventKey: mid });
+              continue;
+            }
+            const sid = String(ev?.sender?.id || '').slice(-8);
+            const ts = String(ev?.timestamp || '');
+            if (sid || ts) {
+              out.push({ rawEventKey: `ev_${accountRef}_${ts}_${sid}` });
+            }
+          }
+        }
+        return out;
       },
       estimateCost() {
         return 0;

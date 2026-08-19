@@ -1,7 +1,10 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { randomUUID } from 'crypto';
+import { CREDIT_FEATURE_CODES } from '@marketingspa/shared';
 import { OpenAiService } from '../openai/openai.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { CreditService, type PaidFeatureContext } from '../credit/credit.service';
 import {
   analyzeVideoAngle,
   checkAdPolicyRisk,
@@ -81,6 +84,8 @@ import {
   findingsFromMediaText,
 } from './facebook-policy/facebook-policy-media.logic';
 import { checkFacebookAdPolicyMerged } from './facebook-policy/facebook-policy-merge.logic';
+import { RagKbService } from '../rag-kb/rag-kb.service';
+import { buildRagQuery, withKnowledgeOpenAi } from '../rag-kb/rag-prompt.util';
 
 @Injectable()
 export class ContentMarketingService {
@@ -88,113 +93,368 @@ export class ContentMarketingService {
     private readonly openai: OpenAiService,
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    private readonly ragKb: RagKbService,
+    private readonly credit: CreditService,
   ) {}
 
-  /** Hook trừ credit content — chưa bật billing content */
-  private async tryDebitContentCredit(_organizationId?: string): Promise<void> {
-    // Placeholder: tích hợp CreditWallet khi billing content được bật
+  private requireOrg(organizationId?: string | null): string {
+    if (!organizationId) {
+      throw new BadRequestException('Thiếu organizationId');
+    }
+    return organizationId;
   }
 
-  industrySuggestions(dto: IndustrySuggestionsDto) {
-    return buildIndustrySuggestions(dto, this.openai);
+  private withAiCredit<T>(
+    organizationId: string | undefined | null,
+    featureCode: string,
+    action: string,
+    fn: (ctx: PaidFeatureContext) => Promise<T>,
+  ): Promise<T> {
+    const org = this.requireOrg(organizationId);
+    return this.credit.runPaidFeature({
+      organizationId: org,
+      featureCode,
+      referenceId: `${featureCode}:${action}:${randomUUID()}`,
+      reason: action,
+      fn,
+    });
+  }
+
+  /** OpenAI đã gắn Knowledge Base của đúng organizationId (fail-open). */
+  private async openaiWithKb(
+    organizationId: string | undefined,
+    ...queryParts: Array<string | null | undefined>
+  ): Promise<OpenAiService> {
+    if (!organizationId) return this.openai;
+    const query = buildRagQuery(...queryParts);
+    if (!query) return this.openai;
+    const block = await this.ragKb.getPromptBlock(organizationId, query, {
+      limit: 5,
+      mode: 'content',
+    });
+    return withKnowledgeOpenAi(this.openai, block);
+  }
+
+  async industrySuggestions(dto: IndustrySuggestionsDto, organizationId?: string) {
+    return this.withAiCredit(
+      organizationId,
+      CREDIT_FEATURE_CODES.CONTENT_AI_GENERATE,
+      'industrySuggestions',
+      async (ctx) => {
+        const openai = await this.openaiWithKb(
+          organizationId,
+          dto.industryName,
+          dto.customIndustry,
+          dto.q,
+        );
+        ctx.markProviderStarted();
+        return buildIndustrySuggestions(dto, openai);
+      },
+    );
   }
 
   async generateAdvanced(dto: GenerateAdvancedArticleDto, organizationId?: string) {
-    await this.tryDebitContentCredit(organizationId);
-    return generateAdvancedArticle(dto, this.openai);
+    return this.withAiCredit(
+      organizationId,
+      CREDIT_FEATURE_CODES.CONTENT_AI_GENERATE,
+      'generateAdvanced',
+      async (ctx) => {
+        const openai = await this.openaiWithKb(
+          organizationId,
+          dto.productService,
+          dto.painPoints,
+          dto.desires,
+          dto.industryName,
+          dto.customIndustry,
+        );
+        ctx.markProviderStarted();
+        return generateAdvancedArticle(dto, openai);
+      },
+    );
   }
 
   async rewriteAdvanced(dto: RewriteAdvancedArticleDto, organizationId?: string) {
-    await this.tryDebitContentCredit(organizationId);
-    return rewriteAdvancedArticle(dto, this.openai);
-  }
-
-  async optimizeAdvancedCta(dto: OptimizeAdvancedCtaDto) {
-    return optimizeAdvancedCta(dto, this.openai);
-  }
-
-  async generateAdvancedTitles(dto: GenerateAdvancedTitlesDto) {
-    return generateAdvancedTitles(dto, this.openai);
-  }
-
-  suggestAdvancedField(dto: SuggestAdvancedFieldDto) {
-    return suggestAdvancedField(dto, this.openai);
-  }
-
-  async generate(dto: GenerateContentDto) {
-    if (dto.mode === 'personal') {
-      const generated =
-        dto.creationMode === 'opinion'
-          ? await generateOpinionContent(dto, this.openai)
-          : await generatePersonalContent(dto, this.openai);
-      const score = scorePersonalContent({ content: generated.content, mode: 'personal' });
-      return { ...generated, score };
-    }
-    try {
-      assertExclusiveProductService(dto);
-    } catch (e) {
-      throw new BadRequestException(e instanceof Error ? e.message : 'Invalid ad payload');
-    }
-    const generated = await generateMarketingContent(dto, this.openai);
-    const policy = checkAdPolicyRisk({
-      content: generated.content,
-      platform: dto.platform,
-      industryId: dto.industryId,
-      industryName: dto.industryName,
-      customIndustry: dto.customIndustry,
-    });
-    const score = scoreAdContent(
-      {
-        content: generated.content,
-        platform: dto.platform,
-        mode: dto.mode,
-        adObjective: dto.adObjective,
-        industryId: dto.industryId,
-        industryName: dto.industryName,
-        customIndustry: dto.customIndustry,
-      },
-      policy,
-    );
-    return { ...generated, policy, score };
-  }
-
-  analyzeVideo(dto: AnalyzeVideoDto) {
-    return analyzeVideoAngle(dto, this.openai);
-  }
-
-  analyzeOpinionStory(dto: AnalyzeOpinionStoryDto) {
-    return analyzeOpinionStory(dto, this.openai);
-  }
-
-  analyzeOpinion(dto: OpinionAnalyzeDto, userId: string, organizationId: string) {
-    return analyzeOpinionSource({
-      dto,
-      userId,
+    return this.withAiCredit(
       organizationId,
-      prisma: this.prisma,
-      config: this.config,
-      openai: this.openai,
-    });
+      CREDIT_FEATURE_CODES.CONTENT_AI_GENERATE,
+      'rewriteAdvanced',
+      async (ctx) => {
+        const openai = await this.openaiWithKb(
+          organizationId,
+          dto.productService,
+          dto.painPoints,
+          dto.desires,
+          dto.industryName,
+          dto.previousArticle?.slice(0, 200),
+        );
+        ctx.markProviderStarted();
+        return rewriteAdvancedArticle(dto, openai);
+      },
+    );
   }
 
-  generateOpinion(dto: OpinionGenerateDto) {
-    return generateOpinionPair(dto, this.openai);
+  async optimizeAdvancedCta(dto: OptimizeAdvancedCtaDto, organizationId?: string) {
+    return this.withAiCredit(
+      organizationId,
+      CREDIT_FEATURE_CODES.CONTENT_AI_GENERATE,
+      'optimizeAdvancedCta',
+      async (ctx) => {
+        const openai = await this.openaiWithKb(
+          organizationId,
+          dto.productService,
+          dto.ctaType,
+          dto.finalArticle?.slice(0, 200),
+        );
+        ctx.markProviderStarted();
+        return optimizeAdvancedCta(dto, openai);
+      },
+    );
   }
 
-  rewriteOpinion(dto: OpinionRewriteDto) {
-    return rewriteOpinionPair(dto, this.openai);
+  async generateAdvancedTitles(dto: GenerateAdvancedTitlesDto, organizationId?: string) {
+    return this.withAiCredit(
+      organizationId,
+      CREDIT_FEATURE_CODES.CONTENT_AI_GENERATE,
+      'generateAdvancedTitles',
+      async (ctx) => {
+        const openai = await this.openaiWithKb(
+          organizationId,
+          dto.productService,
+          dto.industryName,
+          dto.finalArticle?.slice(0, 200),
+        );
+        ctx.markProviderStarted();
+        return generateAdvancedTitles(dto, openai);
+      },
+    );
   }
 
-  rewriteTeleprompterScript(dto: TeleprompterScriptRewriteDto) {
-    return rewriteTeleprompterScript(dto.script, dto.mode, this.openai, dto.title);
+  async suggestAdvancedField(dto: SuggestAdvancedFieldDto, organizationId?: string) {
+    return this.withAiCredit(
+      organizationId,
+      CREDIT_FEATURE_CODES.CONTENT_AI_GENERATE,
+      'suggestAdvancedField',
+      async (ctx) => {
+        const openai = await this.openaiWithKb(
+          organizationId,
+          dto.field,
+          dto.productService,
+          dto.painPoints,
+        );
+        ctx.markProviderStarted();
+        return suggestAdvancedField(dto, openai);
+      },
+    );
   }
 
-  scoreOpinionNaturalness(dto: OpinionScoreNaturalnessDto) {
-    return scoreOpinionNaturalness(dto, this.openai);
+  async generate(dto: GenerateContentDto, organizationId?: string) {
+    if (dto.mode !== 'personal') {
+      try {
+        assertExclusiveProductService(dto);
+      } catch (e) {
+        throw new BadRequestException(e instanceof Error ? e.message : 'Invalid ad payload');
+      }
+    }
+    return this.withAiCredit(
+      organizationId,
+      CREDIT_FEATURE_CODES.CONTENT_AI_GENERATE,
+      'generate',
+      async (ctx) => {
+        const openai = await this.openaiWithKb(
+          organizationId,
+          dto.productService,
+          dto.postTopic,
+          dto.targetAudience,
+          dto.industryName,
+          dto.customIndustry,
+          dto.storyIdea,
+          dto.personalAngle,
+        );
+        ctx.markProviderStarted();
+        if (dto.mode === 'personal') {
+          const generated =
+            dto.creationMode === 'opinion'
+              ? await generateOpinionContent(dto, openai)
+              : await generatePersonalContent(dto, openai);
+          const score = scorePersonalContent({ content: generated.content, mode: 'personal' });
+          return { ...generated, score };
+        }
+        const generated = await generateMarketingContent(dto, openai);
+        const policy = checkAdPolicyRisk({
+          content: generated.content,
+          platform: dto.platform,
+          industryId: dto.industryId,
+          industryName: dto.industryName,
+          customIndustry: dto.customIndustry,
+        });
+        const score = scoreAdContent(
+          {
+            content: generated.content,
+            platform: dto.platform,
+            mode: dto.mode,
+            adObjective: dto.adObjective,
+            industryId: dto.industryId,
+            industryName: dto.industryName,
+            customIndustry: dto.customIndustry,
+          },
+          policy,
+        );
+        return { ...generated, policy, score };
+      },
+    );
   }
 
-  suggestOpinionField(dto: OpinionSuggestFieldDto) {
-    return suggestOpinionField(dto, this.openai);
+  async analyzeVideo(dto: AnalyzeVideoDto, organizationId?: string) {
+    return this.withAiCredit(
+      organizationId,
+      CREDIT_FEATURE_CODES.AI_ANALYSIS,
+      'analyzeVideo',
+      async (ctx) => {
+        const openai = await this.openaiWithKb(
+          organizationId,
+          dto.transcript?.slice(0, 300),
+          dto.videoUrl,
+        );
+        ctx.markProviderStarted();
+        return analyzeVideoAngle(dto, openai);
+      },
+    );
+  }
+
+  async analyzeOpinionStory(dto: AnalyzeOpinionStoryDto, organizationId?: string) {
+    return this.withAiCredit(
+      organizationId,
+      CREDIT_FEATURE_CODES.AI_ANALYSIS,
+      'analyzeOpinionStory',
+      async (ctx) => {
+        const openai = await this.openaiWithKb(
+          organizationId,
+          dto.sourceText?.slice(0, 300),
+          dto.sourceUrl,
+        );
+        ctx.markProviderStarted();
+        return analyzeOpinionStory(dto, openai);
+      },
+    );
+  }
+
+  async analyzeOpinion(dto: OpinionAnalyzeDto, userId: string, organizationId: string) {
+    return this.withAiCredit(
+      organizationId,
+      CREDIT_FEATURE_CODES.AI_ANALYSIS,
+      'analyzeOpinion',
+      async (ctx) => {
+        const openai = await this.openaiWithKb(
+          organizationId,
+          dto.story?.slice(0, 400),
+          dto.transcript?.slice(0, 300),
+          dto.url,
+        );
+        ctx.markProviderStarted();
+        return analyzeOpinionSource({
+          dto,
+          userId,
+          organizationId,
+          prisma: this.prisma,
+          config: this.config,
+          openai,
+        });
+      },
+    );
+  }
+
+  async generateOpinion(dto: OpinionGenerateDto, organizationId?: string) {
+    return this.withAiCredit(
+      organizationId,
+      CREDIT_FEATURE_CODES.CONTENT_AI_GENERATE,
+      'generateOpinion',
+      async (ctx) => {
+        const openai = await this.openaiWithKb(
+          organizationId,
+          dto.topic,
+          dto.angle,
+          dto.story?.slice(0, 300),
+        );
+        ctx.markProviderStarted();
+        return generateOpinionPair(dto, openai);
+      },
+    );
+  }
+
+  async rewriteOpinion(dto: OpinionRewriteDto, organizationId?: string) {
+    return this.withAiCredit(
+      organizationId,
+      CREDIT_FEATURE_CODES.CONTENT_AI_GENERATE,
+      'rewriteOpinion',
+      async (ctx) => {
+        const openai = await this.openaiWithKb(
+          organizationId,
+          dto.topic,
+          dto.facebookPost?.slice(0, 200),
+          dto.videoScript?.slice(0, 200),
+          dto.content?.slice(0, 200),
+        );
+        ctx.markProviderStarted();
+        return rewriteOpinionPair(dto, openai);
+      },
+    );
+  }
+
+  async rewriteTeleprompterScript(
+    dto: TeleprompterScriptRewriteDto,
+    organizationId?: string,
+  ) {
+    return this.withAiCredit(
+      organizationId,
+      CREDIT_FEATURE_CODES.CONTENT_AI_GENERATE,
+      'rewriteTeleprompterScript',
+      async (ctx) => {
+        const openai = await this.openaiWithKb(
+          organizationId,
+          dto.title,
+          dto.script?.slice(0, 400),
+          dto.mode,
+        );
+        ctx.markProviderStarted();
+        return rewriteTeleprompterScript(dto.script, dto.mode, openai, dto.title);
+      },
+    );
+  }
+
+  async scoreOpinionNaturalness(
+    dto: OpinionScoreNaturalnessDto,
+    organizationId?: string,
+  ) {
+    return this.withAiCredit(
+      organizationId,
+      CREDIT_FEATURE_CODES.AI_ANALYSIS,
+      'scoreOpinionNaturalness',
+      async (ctx) => {
+        const openai = await this.openaiWithKb(organizationId, dto.content?.slice(0, 300));
+        ctx.markProviderStarted();
+        return scoreOpinionNaturalness(dto, openai);
+      },
+    );
+  }
+
+  async suggestOpinionField(dto: OpinionSuggestFieldDto, organizationId?: string) {
+    return this.withAiCredit(
+      organizationId,
+      CREDIT_FEATURE_CODES.CONTENT_AI_GENERATE,
+      'suggestOpinionField',
+      async (ctx) => {
+        const openai = await this.openaiWithKb(
+          organizationId,
+          dto.field,
+          dto.themeLabel,
+          dto.subtopic,
+          dto.currentValue,
+          dto.context,
+        );
+        ctx.markProviderStarted();
+        return suggestOpinionField(dto, openai);
+      },
+    );
   }
 
   checkPolicy(dto: CheckPolicyDto) {
@@ -215,93 +475,190 @@ export class ContentMarketingService {
     return { ...scoreAdContent(dto, policy), policy };
   }
 
-  rewrite(dto: RewriteContentDto) {
-    return rewriteContentVariant(dto, this.openai);
-  }
-
-  suggestInsights(dto: SuggestAdInsightsDto) {
-    return suggestAdInsights(dto, this.openai);
-  }
-
-  suggestCta(dto: SuggestAdCtaDto) {
-    return suggestAdCta(dto, this.openai);
-  }
-
-  suggestPersonalIdeas(dto: SuggestPersonalIdeasDto) {
-    return suggestPersonalIdeas(dto, this.openai);
-  }
-
-  suggestPersonalTitles(dto: SuggestPersonalTitlesDto) {
-    return suggestPersonalTitles(dto, this.openai);
-  }
-
-  checkFacebookPolicy(dto: FacebookPolicyCheckDto, organizationId?: string | null) {
-    const input = this.normalizeFacebookPolicyInput(dto, organizationId);
-    const hasMediaExtras = Boolean(
-      input.imageOcrText?.trim() || input.transcript?.trim() || input.landingPageText?.trim(),
-    );
-    if (!hasMediaExtras) {
-      return checkFacebookAdPolicy(input, this.openai);
-    }
-
-    const media = [];
-    if (input.imageOcrText?.trim()) {
-      media.push({
-        mediaType: 'image' as const,
-        ocrText: input.imageOcrText,
-        transcript: '',
-        caption: '',
-        visualNotes: [],
-        regions: [],
-        findings: findingsFromMediaText(input.imageOcrText, 'img'),
-        insufficientData: false,
-        statusHint: 'OK' as const,
-        warnings: [],
-      });
-    }
-    if (input.transcript?.trim()) {
-      media.push({
-        mediaType: 'transcript' as const,
-        ocrText: '',
-        transcript: input.transcript,
-        caption: '',
-        visualNotes: [],
-        regions: [],
-        findings: findingsFromMediaText(input.transcript, 'tr'),
-        insufficientData: false,
-        statusHint: 'OK' as const,
-        warnings: [],
-      });
-    }
-
-    return checkFacebookAdPolicyMerged({
-      input,
-      media,
-      landingImport: input.landingPageText?.trim()
-        ? {
-            sourceType: 'landing_page' as const,
-            url: input.landingUrl || '',
-            editable: true as const,
-            primaryText: input.landingPageText,
-            warnings: [],
-            insufficientData: false,
-            landing: analyzeLandingSignals('', input.landingPageText),
-          }
-        : undefined,
-      openai: this.openai,
-    });
-  }
-
-  rewriteFacebookPolicy(dto: FacebookPolicyRewriteDto, organizationId?: string | null) {
-    const input = this.normalizeFacebookPolicyInput(dto, organizationId);
-    const primaryText =
-      input.primaryText?.trim() || input.contentToRewrite?.trim() || '';
-    return rewriteFacebookAdPolicy(
-      {
-        ...input,
-        primaryText: primaryText || input.primaryText,
+  async rewrite(dto: RewriteContentDto, organizationId?: string) {
+    return this.withAiCredit(
+      organizationId,
+      CREDIT_FEATURE_CODES.CONTENT_AI_GENERATE,
+      'rewrite',
+      async (ctx) => {
+        const openai = await this.openaiWithKb(
+          organizationId,
+          dto.content?.slice(0, 300),
+          dto.mode,
+          dto.tone,
+        );
+        ctx.markProviderStarted();
+        return rewriteContentVariant(dto, openai);
       },
-      this.openai,
+    );
+  }
+
+  async suggestInsights(dto: SuggestAdInsightsDto, organizationId?: string) {
+    return this.withAiCredit(
+      organizationId,
+      CREDIT_FEATURE_CODES.CONTENT_AI_GENERATE,
+      'suggestInsights',
+      async (ctx) => {
+        const openai = await this.openaiWithKb(
+          organizationId,
+          dto.productService,
+          dto.targetAudience,
+          dto.adObjective,
+        );
+        ctx.markProviderStarted();
+        return suggestAdInsights(dto, openai);
+      },
+    );
+  }
+
+  async suggestCta(dto: SuggestAdCtaDto, organizationId?: string) {
+    return this.withAiCredit(
+      organizationId,
+      CREDIT_FEATURE_CODES.CONTENT_AI_GENERATE,
+      'suggestCta',
+      async (ctx) => {
+        const openai = await this.openaiWithKb(
+          organizationId,
+          dto.productService,
+          dto.adObjective,
+          dto.offer,
+          dto.targetAudience,
+        );
+        ctx.markProviderStarted();
+        return suggestAdCta(dto, openai);
+      },
+    );
+  }
+
+  async suggestPersonalIdeas(dto: SuggestPersonalIdeasDto, organizationId?: string) {
+    return this.withAiCredit(
+      organizationId,
+      CREDIT_FEATURE_CODES.CONTENT_AI_GENERATE,
+      'suggestPersonalIdeas',
+      async (ctx) => {
+        const openai = await this.openaiWithKb(
+          organizationId,
+          dto.postTopic,
+          dto.targetAudience,
+          dto.topicGroupLabel,
+        );
+        ctx.markProviderStarted();
+        return suggestPersonalIdeas(dto, openai);
+      },
+    );
+  }
+
+  async suggestPersonalTitles(dto: SuggestPersonalTitlesDto, organizationId?: string) {
+    return this.withAiCredit(
+      organizationId,
+      CREDIT_FEATURE_CODES.CONTENT_AI_GENERATE,
+      'suggestPersonalTitles',
+      async (ctx) => {
+        const openai = await this.openaiWithKb(
+          organizationId,
+          dto.subtopicLabel,
+          dto.topicGroupLabel,
+        );
+        ctx.markProviderStarted();
+        return suggestPersonalTitles(dto, openai);
+      },
+    );
+  }
+
+  async checkFacebookPolicy(dto: FacebookPolicyCheckDto, organizationId?: string | null) {
+    const run = async () => {
+      const input = this.normalizeFacebookPolicyInput(dto, organizationId);
+      const hasMediaExtras = Boolean(
+        input.imageOcrText?.trim() || input.transcript?.trim() || input.landingPageText?.trim(),
+      );
+      if (!hasMediaExtras) {
+        return checkFacebookAdPolicy(input, this.openai);
+      }
+
+      const media = [];
+      if (input.imageOcrText?.trim()) {
+        media.push({
+          mediaType: 'image' as const,
+          ocrText: input.imageOcrText,
+          transcript: '',
+          caption: '',
+          visualNotes: [],
+          regions: [],
+          findings: findingsFromMediaText(input.imageOcrText, 'img'),
+          insufficientData: false,
+          statusHint: 'OK' as const,
+          warnings: [],
+        });
+      }
+      if (input.transcript?.trim()) {
+        media.push({
+          mediaType: 'transcript' as const,
+          ocrText: '',
+          transcript: input.transcript,
+          caption: '',
+          visualNotes: [],
+          regions: [],
+          findings: findingsFromMediaText(input.transcript, 'tr'),
+          insufficientData: false,
+          statusHint: 'OK' as const,
+          warnings: [],
+        });
+      }
+
+      return checkFacebookAdPolicyMerged({
+        input,
+        media,
+        landingImport: input.landingPageText?.trim()
+          ? {
+              sourceType: 'landing_page' as const,
+              url: input.landingUrl || '',
+              editable: true as const,
+              primaryText: input.landingPageText,
+              warnings: [],
+              insufficientData: false,
+              landing: analyzeLandingSignals('', input.landingPageText),
+            }
+          : undefined,
+        openai: this.openai,
+      });
+    };
+    if (!this.openai.isConfigured()) return run();
+    return this.withAiCredit(
+      organizationId,
+      CREDIT_FEATURE_CODES.AI_ANALYSIS,
+      'checkFacebookPolicy',
+      async (ctx) => {
+        ctx.markProviderStarted();
+        return run();
+      },
+    );
+  }
+
+  async rewriteFacebookPolicy(
+    dto: FacebookPolicyRewriteDto,
+    organizationId?: string | null,
+  ) {
+    return this.withAiCredit(
+      organizationId,
+      CREDIT_FEATURE_CODES.CONTENT_AI_GENERATE,
+      'rewriteFacebookPolicy',
+      async (ctx) => {
+        const input = this.normalizeFacebookPolicyInput(dto, organizationId);
+        const primaryText =
+          input.primaryText?.trim() || input.contentToRewrite?.trim() || '';
+        const openai = await this.openaiWithKb(
+          organizationId || undefined,
+          primaryText.slice(0, 300),
+        );
+        ctx.markProviderStarted();
+        return rewriteFacebookAdPolicy(
+          {
+            ...input,
+            primaryText: primaryText || input.primaryText,
+          },
+          openai,
+        );
+      },
     );
   }
 
@@ -365,6 +722,7 @@ export class ContentMarketingService {
     dto: FacebookPolicyAnalyzeMediaDto,
     file?: { buffer: Buffer; mimetype?: string; originalname?: string; size?: number },
     thumb?: { buffer: Buffer; mimetype?: string },
+    organizationId?: string,
   ) {
     const mediaType =
       dto.mediaType ||
@@ -400,25 +758,41 @@ export class ContentMarketingService {
     }
 
     if (mediaType === 'video') {
-      return analyzePolicyVideo({
-        buffer: file?.buffer,
-        mimeType: file?.mimetype,
-        filename: file?.originalname,
-        caption: dto.caption,
-        manualTranscript: dto.transcript,
-        thumbnailBuffer: thumb?.buffer,
-        thumbnailMime: thumb?.mimetype,
-        openai: this.openai,
-      });
+      return this.withAiCredit(
+        organizationId,
+        CREDIT_FEATURE_CODES.AI_ANALYSIS,
+        'analyzePolicyVideo',
+        async (ctx) => {
+          ctx.markProviderStarted();
+          return analyzePolicyVideo({
+            buffer: file?.buffer,
+            mimeType: file?.mimetype,
+            filename: file?.originalname,
+            caption: dto.caption,
+            manualTranscript: dto.transcript,
+            thumbnailBuffer: thumb?.buffer,
+            thumbnailMime: thumb?.mimetype,
+            openai: this.openai,
+          });
+        },
+      );
     }
 
-    return analyzePolicyImage({
-      buffer: file!.buffer,
-      mimeType: file?.mimetype || 'image/jpeg',
-      filename: file?.originalname,
-      caption: dto.caption,
-      openai: this.openai,
-    });
+    return this.withAiCredit(
+      organizationId,
+      CREDIT_FEATURE_CODES.CONTENT_AI_IMAGE,
+      'analyzePolicyImage',
+      async (ctx) => {
+        ctx.markProviderStarted();
+        return analyzePolicyImage({
+          buffer: file!.buffer,
+          mimeType: file?.mimetype || 'image/jpeg',
+          filename: file?.originalname,
+          caption: dto.caption,
+          openai: this.openai,
+        });
+      },
+    );
   }
 
   status() {

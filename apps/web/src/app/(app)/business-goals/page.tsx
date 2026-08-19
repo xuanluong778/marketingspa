@@ -15,8 +15,8 @@ import {
   BookOpen,
 } from 'lucide-react';
 import { BusinessGoalForm } from '@/components/business-goals/business-goal-form';
-import { FooterTips, InsightsPanel } from '@/components/business-goals/insights-panel';
-import { KpiCards, ResultHeroCard } from '@/components/business-goals/result-hero';
+import { FooterTips } from '@/components/business-goals/insights-panel';
+import { BusinessGoalResultsSummary, BusinessGoalResultsTable } from '@/components/business-goals/business-goal-results-panel';
 import { LoadingState, ErrorState, EmptyState } from '@/components/shared/page-state';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -64,6 +64,18 @@ const AdPerformancePanel = dynamic(
   },
 );
 
+const AdGoalPanel = dynamic(
+  () => import('@/components/business-goals/ad-goal-panel').then((m) => m.AdGoalPanel),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="rounded-lg border border-white/10 bg-[#0B2115] p-8 text-center text-white/70">
+        Đang tải tab Tính mục tiêu quảng cáo...
+      </div>
+    ),
+  },
+);
+
 import type { BusinessGoalInput, BusinessGoalScenario } from '@/types/business-goals';
 
 type FormErrors = Partial<Record<keyof BusinessGoalInput, string>>;
@@ -92,11 +104,12 @@ export default function BusinessGoalsPage() {
   useEffect(() => {
     if (searchParams.get('tab') === 'ad-performance') {
       setActiveTab('ad-performance');
+    } else if (searchParams.get('tab') === 'ad-goal') {
+      setActiveTab('ad-goal');
     }
   }, [searchParams]);
 
   const [formState, setFormState] = useState<BusinessGoalFormState>(defaultBusinessGoalFormState);
-  const [inputMode, setInputMode] = useState<'quick' | 'detailed'>('quick');
   const [calculated, setCalculated] = useState(true);
   const [errors, setErrors] = useState<FormErrors>({});
   const [saveOpen, setSaveOpen] = useState(false);
@@ -106,6 +119,8 @@ export default function BusinessGoalsPage() {
   const [draftSaved, setDraftSaved] = useState(false);
 
   const metrics = useMemo(() => calculateBusinessGoalMetrics(formState), [formState]);
+  // Always show live preview; "Tính toán" validates + confirms
+  const showResults = calculated;
 
   const createScenario = useCreateBusinessGoalScenario();
   const deleteScenario = useDeleteBusinessGoalScenario();
@@ -137,14 +152,12 @@ export default function BusinessGoalsPage() {
     setFormState(defaultBusinessGoalFormState);
     setErrors({});
     setCalculated(true);
-    setInputMode('quick');
   }, []);
 
   const handleSample = useCallback(() => {
     setFormState(sampleBusinessGoalFormState);
     setErrors({});
     setCalculated(true);
-    setInputMode('quick');
   }, []);
 
   const handleSaveDraft = useCallback(() => {
@@ -174,7 +187,7 @@ export default function BusinessGoalsPage() {
   }, []);
 
   return (
-    <div className="space-y-5 max-w-[1400px] mx-auto">
+    <div className={cn('space-y-5 max-w-[1400px] mx-auto', activeTab === 'goals' && 'pb-20')}>
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
@@ -185,7 +198,8 @@ export default function BusinessGoalsPage() {
             <div>
               <h1 className="text-2xl font-bold tracking-tight">Mục tiêu kinh doanh</h1>
               <p className="text-sm text-muted-foreground mt-0.5">
-                Nhập số liệu thực tế — hệ thống tự tính lãi/lỗ, hòa vốn và mục tiêu cần đạt
+                Nhập vài con số cơ bản — hiểu ngay cần bán bao nhiêu, cần bao nhiêu khách, hòa vốn ở
+                đâu
               </p>
             </div>
           </div>
@@ -207,96 +221,58 @@ export default function BusinessGoalsPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-5">
-        <TabsList className="grid w-full max-w-md grid-cols-2">
+        <TabsList className="grid w-full max-w-3xl grid-cols-3">
           <TabsTrigger value="goals">Tính mục tiêu</TabsTrigger>
+          <TabsTrigger value="ad-goal">Tính mục tiêu quảng cáo</TabsTrigger>
           <TabsTrigger value="ad-performance">Hiệu quả quảng cáo</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="goals" className="space-y-5 mt-0">
-          {/* Hero + KPIs */}
-          {calculated && (
-            <div className="space-y-3">
-              <ResultHeroCard metrics={metrics} />
-              <KpiCards metrics={metrics} />
-            </div>
-          )}
+        <TabsContent value="goals" className="mt-0 space-y-5">
+          {/* 4 KPI + Hiểu nhanh — full width trên đầu */}
+          {showResults && <BusinessGoalResultsSummary metrics={metrics} />}
 
-          {/* Main 2-column layout */}
-          <div className="grid gap-5 lg:grid-cols-5">
-            <Card className={cn('lg:col-span-3', BG_BOX, BG_BOX_FIELDS)}>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base text-white">Nhập liệu</CardTitle>
+          <div className="flex w-full flex-col gap-5 lg:flex-row lg:items-start">
+            {/* Cột nhập số liệu — 450px trên desktop */}
+            <Card
+              className={cn(
+                'min-w-0 w-full lg:w-[450px] lg:min-w-[450px] lg:max-w-[450px] lg:shrink-0',
+                BG_BOX,
+                BG_BOX_FIELDS,
+              )}
+            >
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base text-white">Nhập số liệu</CardTitle>
+                <p className="text-xs font-normal text-white/60">6 ô cơ bản</p>
               </CardHeader>
               <CardContent className="space-y-4">
                 <BusinessGoalForm
                   state={formState}
                   onChange={(s) => {
                     setFormState(s);
-                    setCalculated(false);
+                    setCalculated(true);
                   }}
-                  inputMode={inputMode}
-                  onInputModeChange={setInputMode}
                 />
-
                 {Object.keys(errors).length > 0 && (
                   <p className="text-sm text-red-300">
                     {Object.values(errors).filter(Boolean).join(' · ')}
                   </p>
                 )}
-
-                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap pt-2 border-t border-white/10">
-                  <Button onClick={handleCalculate} className="sm:flex-1">
-                    <Calculator className="h-4 w-4 mr-2" />
-                    Tính toán
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={handleReset}
-                    className="border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white"
-                  >
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Reset
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={handleSaveDraft}
-                    className="border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white"
-                  >
-                    <Save className="h-4 w-4 mr-2" />
-                    {draftSaved ? 'Đã lưu nháp!' : 'Lưu nháp'}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={handleSample}
-                    className="bg-white/15 text-white hover:bg-white/20"
-                  >
-                    <Sparkles className="h-4 w-4 mr-2" />
-                    Dùng dữ liệu mẫu
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => setSaveOpen(true)}
-                    disabled={!calculated || createScenario.isPending}
-                    className="border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white"
-                  >
-                    Lưu kịch bản
-                  </Button>
-                </div>
               </CardContent>
             </Card>
 
-            <div className="lg:col-span-2 space-y-4 lg:sticky lg:top-4 lg:self-start">
-              {!calculated ? (
+            {/* Cột bảng kết quả — chiếm phần còn lại */}
+            <div className="min-w-0 w-full flex-1 space-y-4">
+              {showResults ? (
+                <BusinessGoalResultsTable metrics={metrics} />
+              ) : (
                 <Card className={cn(BG_BOX)}>
-                  <CardContent className="py-12 [&_.text-muted-foreground]:text-white/70 [&_p.font-medium]:text-white">
+                  <CardContent className="py-10 [&_.text-muted-foreground]:text-white/70 [&_p.font-medium]:text-white">
                     <EmptyState
                       title="Chưa có kết quả"
-                      description="Nhập số liệu và nhấn Tính toán để xem insight"
+                      description="Nhập số liệu rồi nhấn Tính toán"
                     />
                   </CardContent>
                 </Card>
-              ) : (
-                <InsightsPanel metrics={metrics} />
               )}
             </div>
           </div>
@@ -304,10 +280,64 @@ export default function BusinessGoalsPage() {
           <FooterTips />
         </TabsContent>
 
+        <TabsContent value="ad-goal" className="mt-0">
+          <AdGoalPanel />
+        </TabsContent>
+
         <TabsContent value="ad-performance" className="mt-0">
           <AdPerformancePanel />
         </TabsContent>
       </Tabs>
+
+      {/* Fixed action bar — tab Tính mục tiêu only; one row, no wrap */}
+      {activeTab === 'goals' && (
+        <div
+          className={cn(
+            'fixed bottom-0 left-0 right-0 z-40 lg:left-64',
+            'border-t border-white/10 bg-[#0B2115]/95 backdrop-blur-sm',
+            'px-3 py-2.5 md:px-6',
+          )}
+        >
+          <div className="mx-auto flex w-full max-w-full flex-row flex-nowrap items-center justify-start gap-2 overflow-x-auto">
+            <Button onClick={handleCalculate} className="shrink-0">
+              <Calculator className="h-4 w-4 mr-2" />
+              Tính toán
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleReset}
+              className="shrink-0 border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Reset
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleSaveDraft}
+              className="shrink-0 border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+            >
+              <Save className="h-4 w-4 mr-2" />
+              {draftSaved ? 'Đã lưu nháp!' : 'Lưu nháp'}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={handleSample}
+              className="shrink-0 bg-white/15 text-white hover:bg-white/20"
+            >
+              <Sparkles className="h-4 w-4 mr-2" />
+              Dùng dữ liệu mẫu
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setSaveOpen(true)}
+              disabled={!calculated || createScenario.isPending}
+              className="shrink-0 border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+            >
+              Lưu kịch bản
+            </Button>
+          </div>
+        </div>
+      )}
 
       <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
         <DialogContent>

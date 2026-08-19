@@ -17,6 +17,7 @@ export class OrderItemDto {
   quantity!: number;
 
   @Type(() => Number)
+  @IsNumber()
   unitPrice!: number;
 }
 
@@ -35,6 +36,7 @@ export class CreateOrderDto {
 
   @IsOptional()
   @Type(() => Number)
+  @IsNumber()
   discount?: number;
 
   @IsOptional()
@@ -51,6 +53,8 @@ export class CreatePaymentDto {
   orderId!: string;
 
   @Type(() => Number)
+  @IsNumber()
+  @Min(0.01)
   amount!: number;
 
   @IsEnum(PaymentMethod)
@@ -73,6 +77,8 @@ export class CreateExpenseDto {
   description!: string;
 
   @Type(() => Number)
+  @IsNumber()
+  @Min(0.01)
   amount!: number;
 
   @IsDateString()
@@ -102,6 +108,7 @@ export class UpdateExpenseDto {
 
   @IsOptional()
   @Type(() => Number)
+  @IsNumber()
   amount?: number;
 
   @IsOptional()

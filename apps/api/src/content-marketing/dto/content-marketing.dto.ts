@@ -1,4 +1,4 @@
-import { IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, MinLength, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import {
   ADVANCED_ARTICLE_GOALS,
@@ -1206,5 +1206,67 @@ export class StartAdUrlAnalyzeDto {
   @IsString()
   @MaxLength(200)
   brandName?: string;
+}
+
+export class InitTeleprompterRecordingDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(500)
+  title!: string;
+
+  @IsIn(['video_audio', 'video_only', 'audio_only'])
+  recordingType!: 'video_audio' | 'video_only' | 'audio_only';
+
+  @IsString()
+  @MinLength(3)
+  @MaxLength(120)
+  mimeType!: string;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  size!: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  duration?: number;
+
+  @IsOptional()
+  @IsString()
+  teleprompterSourceId?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(256 * 1024)
+  partSize?: number;
+}
+
+export class CompleteTeleprompterRecordingDto {
+  @IsOptional()
+  parts?: Array<{ partNumber: number; etag?: string }>;
+}
+
+export class RenameTeleprompterRecordingDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(500)
+  title!: string;
+}
+
+export class ListTeleprompterRecordingsQueryDto {
+  @IsOptional()
+  @IsString()
+  cursor?: string;
+
+  @IsOptional()
+  @IsString()
+  status?: string;
+
+  @IsOptional()
+  @IsString()
+  limit?: string;
 }
 

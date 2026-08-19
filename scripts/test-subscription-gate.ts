@@ -74,6 +74,7 @@ async function main() {
   if (!ownerRole) throw new Error('OWNER role missing');
   const plan = await prisma.subscriptionPlan.findFirst({ where: { code: 'msp-pro-6m' } });
   if (!plan) throw new Error('plan missing');
+  const planAmount = Number(plan.priceVnd);
 
   const org = await prisma.organization.create({
     data: { name: `Gate Test ${stamp}`, slug: `gate-test-${stamp}`, email: `gate.${stamp}@example.com` },
@@ -128,7 +129,7 @@ async function main() {
           organizationId: org.id,
           planId: plan.id,
           createdByUserId: user.id,
-          amountVnd: new Decimal(3900000),
+          amountVnd: new Decimal(planAmount),
           status: PaymentOrderStatus.PENDING,
           transferContent: 'PENDING',
           bankCode: 'ACB',
@@ -196,7 +197,7 @@ async function main() {
           organizationId: org.id,
           planId: plan.id,
           createdByUserId: user.id,
-          amountVnd: new Decimal(3900000),
+          amountVnd: new Decimal(planAmount),
           status: PaymentOrderStatus.PENDING,
           transferContent: code,
           bankCode: 'ACB',
@@ -215,7 +216,7 @@ async function main() {
         body: JSON.stringify({
           id: sepayId,
           transferType: 'in',
-          transferAmount: 3900000,
+          transferAmount: planAmount,
           accountNumber: ACCOUNT,
           content: `CK ${code}`,
           gateway: 'ACB',

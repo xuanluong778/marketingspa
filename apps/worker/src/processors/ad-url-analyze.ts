@@ -16,6 +16,8 @@ import {
 } from '@marketingspa/shared/dist/ssrf-fetch';
 import { analyzeAdUrlContent } from '../lib/ad-url-analyze-ai';
 import { bullConnection } from '../config';
+import { prisma, CreditLedger, CreditError } from '@marketingspa/database';
+import { CREDIT_FEATURE_CODES } from '@marketingspa/shared';
 
 function progressForStage(stage: AdUrlAnalyzeStage): number {
   switch (stage) {
@@ -114,13 +116,39 @@ export async function processAdUrlAnalyze(job: Job): Promise<{ id: string; ok: b
     await patchJob(redis, payload.jobId, { stage: 'extracting' });
     await patchJob(redis, payload.jobId, { stage: 'analyzing' });
 
-    const result = await analyzeAdUrlContent({
-      adPostKind: payload.adPostKind,
-      title: fetched.title,
-      text: fetched.text,
-      finalUrl: fetched.finalUrl,
-      brandName: payload.brandName,
-    });
+    const credit = new CreditLedger(prisma);
+    const creditRef = `ai.analysis:ad-url:${payload.jobId}`;
+    let result;
+    try {
+      result = await credit.runPaidFeature({
+        organizationId: payload.organizationId,
+        featureCode: CREDIT_FEATURE_CODES.AI_ANALYSIS,
+        referenceId: creditRef,
+        reason: 'ad url analyze',
+        fn: async (ctx) => {
+          ctx.markProviderStarted();
+          return analyzeAdUrlContent({
+            adPostKind: payload.adPostKind,
+            title: fetched.title,
+            text: fetched.text,
+            finalUrl: fetched.finalUrl,
+            brandName: payload.brandName,
+          });
+        },
+      });
+    } catch (err) {
+      if (err instanceof CreditError && err.code === 'ALREADY_COMMITTED') {
+        result = await analyzeAdUrlContent({
+          adPostKind: payload.adPostKind,
+          title: fetched.title,
+          text: fetched.text,
+          finalUrl: fetched.finalUrl,
+          brandName: payload.brandName,
+        });
+      } else {
+        throw err;
+      }
+    }
 
     const after = await loadJob(redis, payload.jobId);
     if (after?.status === 'cancelled') {

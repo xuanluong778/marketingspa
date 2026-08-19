@@ -22,6 +22,10 @@ import {
   generateAutoPostContent,
   rewriteAutoPostContent,
 } from './auto-post-ai.logic';
+import { RagKbService } from '../rag-kb/rag-kb.service';
+import { CreditService } from '../credit/credit.service';
+import { CREDIT_FEATURE_CODES } from '@marketingspa/shared';
+import { buildRagQuery, withKnowledgeOpenAi } from '../rag-kb/rag-prompt.util';
 import {
   buildFacebookPostUrl,
   friendlyPublishError,
@@ -71,8 +75,10 @@ export class AutoPostService {
     private readonly facebook: AutoPostFacebookService,
     private readonly meta: AutoPostMetaService,
     private readonly metrics: MetaGraphMetricsService,
+    private readonly ragKb: RagKbService,
     @Inject(AUTO_POST_QUEUE) private readonly autoPostQueue: Queue,
     private readonly queueEnqueue: QueueEnqueueService,
+    private readonly credit: CreditService,
     @Optional() @Inject(REDIS_CLIENT) private readonly redis?: Redis,
   ) {}
 
@@ -137,11 +143,44 @@ export class AutoPostService {
   }
 
   async generateAi(user: AuthUser, dto: GenerateAutoPostDto) {
-    return generateAutoPostContent(this.openai, dto);
+    return this.credit.runPaidFeature({
+      organizationId: user.organizationId,
+      featureCode: CREDIT_FEATURE_CODES.CONTENT_AI_GENERATE,
+      referenceId: `auto-post.generate:${user.organizationId}:${randomUUID()}`,
+      reason: 'auto-post AI generate',
+      fn: async (ctx) => {
+        const block = await this.ragKb.getPromptBlock(
+          user.organizationId,
+          buildRagQuery(dto.topic, dto.spaService, dto.targetAudience, dto.promotion),
+          { limit: 5, mode: 'content' },
+        );
+        ctx.markProviderStarted();
+        return generateAutoPostContent(withKnowledgeOpenAi(this.openai, block), dto);
+      },
+    });
   }
 
-  async rewriteAi(_user: AuthUser, dto: RewriteAutoPostDto) {
-    return rewriteAutoPostContent(this.openai, dto.mode, dto.caption, dto.cta);
+  async rewriteAi(user: AuthUser, dto: RewriteAutoPostDto) {
+    return this.credit.runPaidFeature({
+      organizationId: user.organizationId,
+      featureCode: CREDIT_FEATURE_CODES.CONTENT_AI_GENERATE,
+      referenceId: `auto-post.rewrite:${user.organizationId}:${randomUUID()}`,
+      reason: 'auto-post AI rewrite',
+      fn: async (ctx) => {
+        const block = await this.ragKb.getPromptBlock(
+          user.organizationId,
+          buildRagQuery(dto.caption?.slice(0, 300), dto.cta),
+          { limit: 5, mode: 'content' },
+        );
+        ctx.markProviderStarted();
+        return rewriteAutoPostContent(
+          withKnowledgeOpenAi(this.openai, block),
+          dto.mode,
+          dto.caption,
+          dto.cta,
+        );
+      },
+    });
   }
 
   async saveDraft(user: AuthUser, dto: SaveAutoPostDraftDto) {
@@ -310,11 +349,11 @@ export class AutoPostService {
 
   async deletePost(userId: string, organizationId: string, id: string) {
     const post = await this.requireOwnedPost(userId, organizationId, id);
-    if (
-      post.status === AutoPostStatus.PUBLISHING ||
-      post.status === AutoPostStatus.PUBLISHED
-    ) {
-      throw new BadRequestException('Không thể xóa bài đã/đang đăng');
+    try {
+      const job = await this.autoPostQueue.getJob(`auto-post-${id}`);
+      if (job) await job.remove();
+    } catch {
+      /* ignore missing/expired job */
     }
     await this.prisma.autoPost.delete({ where: { id } });
     return { ok: true };

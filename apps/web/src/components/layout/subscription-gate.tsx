@@ -7,7 +7,7 @@ import { useCurrentSubscription } from '@/hooks/use-billing';
 import { LoadingState } from '@/components/shared/page-state';
 
 /** Routes luôn mở dù chưa có gói / hết trial */
-const ALLOW = ['/pricing', '/settings', '/login', '/register'];
+const ALLOW = ['/pricing', '/settings', '/credits', '/login', '/register'];
 
 /**
  * Khóa khu vực app khi chưa ACTIVE/TRIALING.
@@ -34,11 +34,26 @@ export function SubscriptionGate({ children }: { children: React.ReactNode }) {
     (status === 'ACTIVE' || status === 'EXPIRING' || status === 'TRIALING');
 
   useEffect(() => {
-    if (isSuperAdmin) return;
-    if (sub.isLoading || sub.isFetching || sub.isError) return;
-    if (hasAccess || bypass) return;
-    const reason = status === 'TRIAL_EXPIRED' ? 'trial_expired' : 'subscription_required';
-    router.replace(`/pricing?reason=${reason}`);
+    if (isSuperAdmin || bypass) return;
+    if (sub.isLoading || sub.isFetching) return;
+    if (hasAccess) return;
+
+    const reason =
+      sub.isError
+        ? 'subscription_check_failed'
+        : status === 'TRIAL_EXPIRED'
+          ? 'trial_expired'
+          : 'subscription_required';
+    const target = `/pricing?reason=${reason}`;
+    router.replace(target);
+    // Fallback when client router is stuck (common after auth redirect)
+    if (typeof window !== 'undefined' && window.location.pathname !== '/pricing') {
+      window.setTimeout(() => {
+        if (!window.location.pathname.startsWith('/pricing')) {
+          window.location.replace(target);
+        }
+      }, 300);
+    }
   }, [
     bypass,
     hasAccess,

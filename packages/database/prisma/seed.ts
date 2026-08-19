@@ -115,6 +115,10 @@ async function main() {
     { code: 'ads.sync', name: 'Đồng bộ dữ liệu Ads', module: 'ads' },
     { code: 'ads.analyze', name: 'Phân tích / AI draft Ads', module: 'ads' },
     { code: 'ads.manage', name: 'Quản lý chiến dịch Ads (pause/enable/rules)', module: 'ads' },
+    // AI Assistant / Trợ lý Bạch Cốt Tinh (tách Chatbot CSKH)
+    { code: 'assistant.use', name: 'Dùng Trợ lý Bạch Cốt Tinh', module: 'assistant' },
+    { code: 'assistant.admin', name: 'Quản trị Trợ lý Bạch Cốt Tinh', module: 'assistant' },
+    { code: 'chatbot.inbox.read', name: 'Đọc inbox CSKH/Fanpage (observe)', module: 'chatbot' },
   ];
 
   const permissions = await Promise.all(
@@ -156,6 +160,7 @@ async function main() {
       'work.project.write',
       'work.task.read',
       'work.task.write',
+      'assistant.use',
     ],
     SALE: [
       'customer.read',
@@ -170,6 +175,8 @@ async function main() {
       'work.project.write',
       'work.task.read',
       'work.task.write',
+      'assistant.use',
+      'chatbot.inbox.read',
     ],
     TECHNICIAN: [
       'hrm.employee.read',
@@ -206,6 +213,7 @@ async function main() {
       'work.task.read',
       'work.task.write',
       'work.task.manage',
+      'assistant.use',
     ],
   };
 
@@ -237,22 +245,24 @@ async function main() {
     where: { code: 'msp-pro-6m' },
     update: {
       name: 'Marketing SPA Pro — 6 tháng',
-      priceMonthly: new Decimal(650000),
-      priceVnd: new Decimal(3900000),
+      priceMonthly: new Decimal(916667),
+      priceVnd: new Decimal(5500000),
       durationMonths: 6,
       highlightLabel: null,
       savingsAmount: null,
       sortOrder: 10,
+      creditGrant: new Decimal(30000),
       features: mspFeatures,
       isActive: true,
     },
     create: {
       code: 'msp-pro-6m',
       name: 'Marketing SPA Pro — 6 tháng',
-      priceMonthly: new Decimal(650000),
-      priceVnd: new Decimal(3900000),
+      priceMonthly: new Decimal(916667),
+      priceVnd: new Decimal(5500000),
       durationMonths: 6,
       sortOrder: 10,
+      creditGrant: new Decimal(30000),
       creditsIncluded: 0,
       features: mspFeatures,
       isActive: true,
@@ -263,29 +273,57 @@ async function main() {
     where: { code: 'msp-pro-12m' },
     update: {
       name: 'Marketing SPA Pro — 12 tháng',
-      priceMonthly: new Decimal(458333),
-      priceVnd: new Decimal(5500000),
+      priceMonthly: new Decimal(708333),
+      priceVnd: new Decimal(8500000),
       durationMonths: 12,
       highlightLabel: 'Khuyên dùng',
-      savingsAmount: new Decimal(2300000),
+      savingsAmount: new Decimal(2500000),
       sortOrder: 20,
+      creditGrant: new Decimal(75000),
       features: mspFeatures,
       isActive: true,
     },
     create: {
       code: 'msp-pro-12m',
       name: 'Marketing SPA Pro — 12 tháng',
-      priceMonthly: new Decimal(458333),
-      priceVnd: new Decimal(5500000),
+      priceMonthly: new Decimal(708333),
+      priceVnd: new Decimal(8500000),
       durationMonths: 12,
       highlightLabel: 'Khuyên dùng',
-      savingsAmount: new Decimal(2300000),
+      savingsAmount: new Decimal(2500000),
       sortOrder: 20,
+      creditGrant: new Decimal(75000),
       creditsIncluded: 0,
       features: mspFeatures,
       isActive: true,
     },
   });
+
+  const creditPackages = [
+    { code: 'credit-500', name: 'AI Credit 500', credits: 500, priceVnd: 99000, sortOrder: 10 },
+    { code: 'credit-1500', name: 'AI Credit 1500', credits: 1500, priceVnd: 249000, sortOrder: 20 },
+    { code: 'credit-5000', name: 'AI Credit 5000', credits: 5000, priceVnd: 699000, sortOrder: 30 },
+  ];
+  for (const p of creditPackages) {
+    await prisma.creditPackage.upsert({
+      where: { code: p.code },
+      update: {
+        name: p.name,
+        credits: new Decimal(p.credits),
+        priceVnd: new Decimal(p.priceVnd),
+        status: 'ACTIVE',
+        sortOrder: p.sortOrder,
+      },
+      create: {
+        code: p.code,
+        name: p.name,
+        credits: new Decimal(p.credits),
+        priceVnd: new Decimal(p.priceVnd),
+        status: 'ACTIVE',
+        sortOrder: p.sortOrder,
+      },
+    });
+  }
 
   // --- Organization (1 spa) ---
   const org = await prisma.organization.upsert({
@@ -462,16 +500,63 @@ async function main() {
     ),
   );
 
+  let defaultPipeline = await prisma.funnelPipeline.findFirst({
+    where: { organizationId: org.id, isDefault: true },
+  });
+  if (!defaultPipeline) {
+    defaultPipeline = await prisma.funnelPipeline.create({
+      data: {
+        organizationId: org.id,
+        name: 'Pipeline mặc định',
+        isDefault: true,
+        isActive: true,
+        position: 0,
+      },
+    });
+  }
+
+  const stageSeeds = [
+    { name: 'Lead mới', code: 'NEW', legacyStatus: LeadPipelineStatus.NEW, category: 'OPEN' as const, probability: 10, slaMinutes: 15 },
+    { name: 'Đã liên hệ', code: 'CONTACTED', legacyStatus: LeadPipelineStatus.CONTACTED, category: 'IN_PROGRESS' as const, probability: 20, slaMinutes: 60 },
+    { name: 'Đủ điều kiện', code: 'QUALIFIED', legacyStatus: LeadPipelineStatus.QUALIFIED, category: 'QUALIFIED' as const, probability: 40, slaMinutes: 120 },
+    { name: 'Đã đặt lịch', code: 'BOOKED', legacyStatus: LeadPipelineStatus.BOOKED, category: 'BOOKING' as const, probability: 50, slaMinutes: 1440 },
+    { name: 'Đã xác nhận', code: 'CONFIRMED', legacyStatus: LeadPipelineStatus.CONFIRMED, category: 'BOOKING' as const, probability: 60, slaMinutes: 720 },
+    { name: 'Đã đến', code: 'VISITED', legacyStatus: LeadPipelineStatus.VISITED, category: 'BOOKING' as const, probability: 70 },
+    { name: 'Đã mua', code: 'PURCHASED', legacyStatus: LeadPipelineStatus.PURCHASED, category: 'WON' as const, probability: 100, isWon: true },
+    { name: 'Mất lead', code: 'LOST', legacyStatus: LeadPipelineStatus.LOST, category: 'LOST' as const, probability: 0, isLost: true },
+  ];
+
   const funnelStages = await Promise.all(
-    ['Mới', 'Đã liên hệ', 'Đặt lịch', 'Đến spa', 'Mua dịch vụ'].map((name, i) =>
+    stageSeeds.map((s, i) =>
       prisma.funnelStage.upsert({
-        where: { organizationId_name: { organizationId: org.id, name } },
-        update: {},
+        where: {
+          pipelineId_code: { pipelineId: defaultPipeline!.id, code: s.code },
+        },
+        update: {
+          name: s.name,
+          category: s.category,
+          probability: s.probability,
+          slaMinutes: s.slaMinutes ?? null,
+          isWon: !!s.isWon,
+          isLost: !!s.isLost,
+          legacyStatus: s.legacyStatus,
+          position: i,
+          isActive: true,
+        },
         create: {
           organizationId: org.id,
-          name,
+          pipelineId: defaultPipeline!.id,
+          name: s.name,
+          code: s.code,
+          category: s.category,
           position: i,
-          isDefault: i === 0,
+          probability: s.probability,
+          slaMinutes: s.slaMinutes ?? null,
+          isWon: !!s.isWon,
+          isLost: !!s.isLost,
+          isDefault: s.code === 'NEW',
+          isActive: true,
+          legacyStatus: s.legacyStatus,
         },
       }),
     ),
@@ -531,12 +616,16 @@ async function main() {
   const leads = [];
   for (let i = 0; i < 30; i++) {
     const status = LEAD_STATUSES[i % LEAD_STATUSES.length]!;
+    const stageForStatus =
+      funnelStages.find((s) => s.legacyStatus === status) ??
+      funnelStages[Math.min(i % funnelStages.length, funnelStages.length - 1)]!;
     const lead = await prisma.lead.create({
       data: {
         organizationId: org.id,
         branchId: branch.id,
         leadSourceId: randomItem(sources).id,
-        funnelStageId: funnelStages[Math.min(i % funnelStages.length, funnelStages.length - 1)]!.id,
+        pipelineId: defaultPipeline.id,
+        stageId: stageForStatus.id,
         assignedToId: randomItem(employees).id,
         customerId: i < 15 ? customers[i]!.id : undefined,
         name: `Lead ${i + 1} - ${VIET_NAMES[i % VIET_NAMES.length]}`,
@@ -805,7 +894,7 @@ async function main() {
     data: {
       organizationId: org.id,
       walletId: wallet.id,
-      type: CreditTransactionType.CREDIT,
+      type: CreditTransactionType.GRANT,
       amount: new Decimal(500),
       balanceAfter: new Decimal(500),
       reason: 'Gói Starter tháng đầu',
@@ -816,7 +905,7 @@ async function main() {
     data: {
       organizationId: org.id,
       walletId: wallet.id,
-      type: CreditTransactionType.DEBIT,
+      type: CreditTransactionType.USAGE,
       amount: new Decimal(150),
       balanceAfter: new Decimal(350),
       reason: 'Gửi SMS campaign',

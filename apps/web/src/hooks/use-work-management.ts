@@ -17,6 +17,14 @@ import type {
 
 const KEY = ['work-management'] as const;
 
+export function useWorkTask(taskId: string | null | undefined) {
+  return useQuery({
+    queryKey: [...KEY, 'task', taskId],
+    queryFn: () => apiClient<WorkTask>(`/work-management/tasks/${taskId}`),
+    enabled: !!taskId,
+  });
+}
+
 export function useWorkProjects(includeArchived = false) {
   const qs = includeArchived ? '?includeArchived=1' : '';
   return useQuery({
@@ -65,7 +73,12 @@ export function useUpdateWorkTask() {
         method: 'PATCH',
         body: JSON.stringify(body),
       }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+    onSuccess: (data) => {
+      if (data?.id) {
+        qc.setQueryData([...KEY, 'task', data.id], data);
+      }
+      qc.invalidateQueries({ queryKey: KEY });
+    },
   });
 }
 
@@ -277,5 +290,62 @@ export function useMarkAllNotificationsRead() {
   return useMutation({
     mutationFn: () => apiClient(`/work-management/notifications/read-all`, { method: 'POST' }),
     onSuccess: () => qc.invalidateQueries({ queryKey: [...KEY, 'notifications'] }),
+  });
+}
+
+export type WorkTimeLog = {
+  id: string;
+  taskId: string;
+  employeeId: string;
+  status: string;
+  startedAt?: string | null;
+  endedAt?: string | null;
+  durationSeconds: number;
+  note?: string | null;
+  employee?: { id: string; name: string };
+  createdAt: string;
+};
+
+export function useTaskTimeLogs(taskId: string | null) {
+  return useQuery({
+    queryKey: [...KEY, 'time-logs', taskId],
+    queryFn: () => apiClient<WorkTimeLog[]>(`/work-management/tasks/${taskId}/time-logs`),
+    enabled: !!taskId,
+  });
+}
+
+export function useStartTaskTimer(taskId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiClient(`/work-management/tasks/${taskId}/time/start`, { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [...KEY, 'time-logs', taskId] }),
+  });
+}
+
+export function usePauseTaskTimer(taskId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiClient(`/work-management/tasks/${taskId}/time/pause`, { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [...KEY, 'time-logs', taskId] }),
+  });
+}
+
+export function useStopTaskTimer(taskId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => apiClient(`/work-management/tasks/${taskId}/time/stop`, { method: 'POST' }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [...KEY, 'time-logs', taskId] }),
+  });
+}
+
+export function useManualTaskTime(taskId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { durationMinutes: number; note?: string }) =>
+      apiClient(`/work-management/tasks/${taskId}/time/manual`, {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: [...KEY, 'time-logs', taskId] }),
   });
 }

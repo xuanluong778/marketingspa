@@ -26,6 +26,9 @@ const rootEnv = readRootEnvKeys([
   'AUTO_POST_OAUTH_CANARY',
   'AUTO_POST_OAUTH_CANARY_ORG_IDS',
   'OAUTH_CONNECTION',
+  'ASSISTANT_ENABLED',
+  'ASSISTANT_CANARY',
+  'ASSISTANT_CANARY_ORG_IDS',
 ]);
 
 module.exports = {
@@ -51,6 +54,15 @@ module.exports = {
           : {}),
         ...(rootEnv.OAUTH_CONNECTION
           ? { OAUTH_CONNECTION: rootEnv.OAUTH_CONNECTION }
+          : {}),
+        ...(rootEnv.ASSISTANT_ENABLED != null && rootEnv.ASSISTANT_ENABLED !== ''
+          ? { ASSISTANT_ENABLED: rootEnv.ASSISTANT_ENABLED }
+          : {}),
+        ...(rootEnv.ASSISTANT_CANARY != null && rootEnv.ASSISTANT_CANARY !== ''
+          ? { ASSISTANT_CANARY: rootEnv.ASSISTANT_CANARY }
+          : {}),
+        ...(rootEnv.ASSISTANT_CANARY_ORG_IDS
+          ? { ASSISTANT_CANARY_ORG_IDS: rootEnv.ASSISTANT_CANARY_ORG_IDS }
           : {}),
       },
       out_file: '../logs/api.out.log',

@@ -4,6 +4,8 @@ export const NO_DATA_REPLY =
 export const CREDIT_EXHAUSTED_MESSAGE =
   'Đã đạt giới hạn lượt AI trả lời tháng này. Vui lòng liên hệ trực tiếp qua hotline.';
 
+export const INSUFFICIENT_AI_CREDIT_MESSAGE = 'Không đủ AI Credit';
+
 export const LLM_UNAVAILABLE_MESSAGE =
   'Chatbot chưa sẵn sàng trả lời AI. Vui lòng để lại số điện thoại để nhân viên hỗ trợ.';
 

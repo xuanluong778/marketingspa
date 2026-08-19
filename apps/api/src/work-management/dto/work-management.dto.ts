@@ -123,6 +123,27 @@ export class CreateWorkTaskDto {
   progress?: number;
 
   @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(100000)
+  estimatedMinutes?: number | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(16)
+  recurrenceRule?: string | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(30)
+  recurrenceInterval?: number;
+
+  @IsOptional()
+  @IsDateString()
+  recurrenceUntil?: string | null;
+
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ChecklistItemInputDto)
@@ -179,6 +200,27 @@ export class UpdateWorkTaskDto {
   @Min(0)
   @Max(100)
   progress?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(100000)
+  estimatedMinutes?: number | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(16)
+  recurrenceRule?: string | null;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(30)
+  recurrenceInterval?: number;
+
+  @IsOptional()
+  @IsDateString()
+  recurrenceUntil?: string | null;
 
   @IsOptional()
   @IsBoolean()
@@ -269,4 +311,20 @@ export class ReviewDecisionDto {
   @IsString()
   @MaxLength(5000)
   note?: string;
+}
+
+export class ManualTimeDto {
+  @IsInt()
+  @Min(1)
+  @Max(24 * 60 * 30)
+  durationMinutes!: number;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
+
+  @IsOptional()
+  @IsDateString()
+  startedAt?: string;
 }

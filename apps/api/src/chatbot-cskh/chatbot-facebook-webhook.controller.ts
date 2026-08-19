@@ -83,18 +83,25 @@ export class ChatbotFacebookWebhookController {
     }
 
     const entry = Array.isArray(body.entry) ? (body.entry as Array<{ id?: string }>) : [];
-    const pageId = String(entry[0]?.id || '').trim();
+    const pageIds = entry
+      .map((e) => String(e?.id || '').trim())
+      .filter(Boolean);
     this.logger.log(
-      `Meta webhook POST object=${String(body.object || '-')} pageId=${
-        pageId ? `••••${pageId.slice(-4)}` : '-'
+      `Meta webhook POST object=${String(body.object || '-')} pages=${
+        pageIds.length ? pageIds.map((p) => `••••${p.slice(-4)}`).join(',') : '-'
       } entries=${entry.length} sig=${signature ? 'yes' : 'no'}`,
     );
 
+    // PRIMARY: process Chatbot CSKH immediately (multi-page). Never depend on messaging queue jobId.
+    this.webhook.processPayloadAsync(body as never);
+
+    // SECONDARY: messaging blast/webhook pipeline — isolated failures must not block chatbot
     const raw = req.rawBody ?? Buffer.from(JSON.stringify(body));
-    // ingestMessenger → chatbot handler + messaging queue (một lần, chống double-process)
-    void this.messagingIngress.ingestMessenger(raw, body, signature).catch((err) => {
-      this.logger.warn(`Messaging/chatbot ingress: ${(err as Error).message}`);
-    });
+    void this.messagingIngress
+      .ingestMessenger(raw, body, signature, { skipSignatureAssert: true, skipChatbotHandler: true })
+      .catch((err) => {
+        this.logger.warn(`Messaging ingress (non-fatal): ${(err as Error).message}`);
+      });
     return { ok: true };
   }
 }

@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiClient, apiUpload } from '@/lib/api-client';
+import { apiClient, apiDownload, apiUpload } from '@/lib/api-client';
 
 export interface RagKbStats {
   documentCount: number;
@@ -125,6 +125,46 @@ export function useImportRagKbText() {
         body: JSON.stringify({ title, content }),
       }),
     onSuccess: () => qc.invalidateQueries({ queryKey: KEY }),
+  });
+}
+
+export interface RagKbDocumentDetail extends RagKbDocument {
+  content: string;
+  contentLength: number;
+  chunks: Array<{
+    index: number;
+    text: string;
+    charCount: number;
+    tokenEstimate: number;
+  }>;
+  updatedAt?: string;
+}
+
+export function useRagKbDocument(kbId: string | null, docId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: [...KEY, 'document', kbId, docId],
+    queryFn: () =>
+      apiClient<RagKbDocumentDetail>(`/rag-kb/${kbId}/documents/${docId}`),
+    enabled: Boolean(kbId && docId && enabled),
+  });
+}
+
+export function useDownloadRagKbDocument() {
+  return useMutation({
+    mutationFn: async ({ kbId, docId }: { kbId: string; docId: string }) => {
+      const { blob, filename } = await apiDownload(
+        `/rag-kb/${kbId}/documents/${docId}/download`,
+      );
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      return filename;
+    },
   });
 }
 

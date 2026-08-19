@@ -3,7 +3,32 @@ import { ConfigService } from '@nestjs/config';
 
 export interface OpenAiChatMessage {
   role: string;
-  content: string;
+  content: string | null;
+  /** OpenAI tool call request (assistant message) */
+  tool_calls?: OpenAiToolCall[];
+  /** For role=tool */
+  tool_call_id?: string;
+  name?: string;
+}
+
+export interface OpenAiToolCallFunction {
+  name: string;
+  arguments: string;
+}
+
+export interface OpenAiToolCall {
+  id: string;
+  type: 'function';
+  function: OpenAiToolCallFunction;
+}
+
+export interface OpenAiFunctionTool {
+  type: 'function';
+  function: {
+    name: string;
+    description?: string;
+    parameters?: Record<string, unknown>;
+  };
 }
 
 export interface OpenAiChatParams {
@@ -13,6 +38,23 @@ export interface OpenAiChatParams {
   temperature?: number;
   /** Abort fetch after N ms (default 20s). */
   timeoutMs?: number;
+}
+
+export interface OpenAiChatWithToolsParams extends OpenAiChatParams {
+  tools?: OpenAiFunctionTool[];
+  toolChoice?: 'auto' | 'none' | { type: 'function'; function: { name: string } };
+}
+
+export interface OpenAiChatCompletionMessage {
+  role: string;
+  content: string | null;
+  tool_calls?: OpenAiToolCall[];
+}
+
+export interface OpenAiChatCompletionResult {
+  message: OpenAiChatCompletionMessage;
+  finishReason: string | null;
+  rawUsage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
 }
 
 export interface OpenAiStatus {
@@ -48,6 +90,22 @@ export class OpenAiService {
   }
 
   async chatCompletion(params: OpenAiChatParams): Promise<string> {
+    const result = await this.chatCompletionWithTools({
+      ...params,
+      tools: undefined,
+      toolChoice: undefined,
+    });
+    return (result.message.content ?? '').trim();
+  }
+
+  /**
+   * Chat completions with optional OpenAI function/tools.
+   * Returns full assistant message (content + tool_calls) — used by AI Assistant orchestrator.
+   * Does not log API keys or raw secrets.
+   */
+  async chatCompletionWithTools(
+    params: OpenAiChatWithToolsParams,
+  ): Promise<OpenAiChatCompletionResult> {
     const apiKey = this.getApiKey();
     if (!apiKey) {
       throw new Error('OPENAI_API_KEY chưa được cấu hình');
@@ -57,6 +115,17 @@ export class OpenAiService {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
+    const body: Record<string, unknown> = {
+      model: params.model || this.getDefaultModel(),
+      messages: params.messages,
+      max_tokens: params.maxTokens ?? 500,
+      temperature: params.temperature ?? 0.4,
+    };
+    if (params.tools?.length) {
+      body.tools = params.tools;
+      body.tool_choice = params.toolChoice ?? 'auto';
+    }
+
     let res: Response;
     try {
       res = await fetch(`${this.getBaseUrl()}/chat/completions`, {
@@ -65,12 +134,7 @@ export class OpenAiService {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${apiKey}`,
         },
-        body: JSON.stringify({
-          model: params.model || this.getDefaultModel(),
-          messages: params.messages,
-          max_tokens: params.maxTokens ?? 500,
-          temperature: params.temperature ?? 0.4,
-        }),
+        body: JSON.stringify(body),
         signal: controller.signal,
       });
     } catch (err) {
@@ -93,8 +157,29 @@ export class OpenAiService {
       throw new Error(`OpenAI ${res.status}${detail ? `: ${detail}` : ''}`);
     }
 
-    const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
-    return (data.choices?.[0]?.message?.content ?? '').trim();
+    const data = (await res.json()) as {
+      choices?: Array<{
+        finish_reason?: string | null;
+        message?: {
+          role?: string;
+          content?: string | null;
+          tool_calls?: OpenAiToolCall[];
+        };
+      }>;
+      usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+    };
+
+    const choice = data.choices?.[0];
+    const msg = choice?.message;
+    return {
+      message: {
+        role: msg?.role || 'assistant',
+        content: msg?.content ?? null,
+        tool_calls: msg?.tool_calls,
+      },
+      finishReason: choice?.finish_reason ?? null,
+      rawUsage: data.usage,
+    };
   }
 
   /**

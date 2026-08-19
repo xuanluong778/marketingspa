@@ -1,13 +1,18 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, SubscriptionStatus } from '@marketingspa/database';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { CreditService } from '../credit/credit.service';
+import { BillingMailService } from '../billing/billing-mail.service';
+import { CREDIT_GRANT_SOURCES } from '@marketingspa/shared';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import type {
+  AdminCreditAdjustDto,
   AdminExtendSubscriptionDto,
   AdminGiftTimeDto,
   AdminListQueryDto,
@@ -52,11 +57,92 @@ function addGiftDuration(
   return end;
 }
 
+/** Hạn “vĩnh viễn” — dùng chung cho admin tặng gói */
+export const PERMANENT_SUBSCRIPTION_END = new Date('2099-12-31T23:59:59.999Z');
+
+const GIFT_AMOUNT_MAX: Record<'days' | 'months' | 'years', number> = {
+  days: 3650,
+  months: 120,
+  years: 10,
+};
+
+const ORG_SUB_SELECT = {
+  id: true,
+  name: true,
+  slug: true,
+  email: true,
+  isActive: true,
+  creditWallet: { select: { balance: true } },
+} satisfies Prisma.OrganizationSelect;
+
+type GiftIntent = {
+  durationGift: boolean;
+  creditAmount: number;
+  unit: 'days' | 'months' | 'years';
+};
+
+function parseGiftIntent(dto: AdminGiftTimeDto): GiftIntent {
+  const creditAmount = Number(dto.creditAmount ?? 0);
+  const durationGift = Boolean(dto.permanent) || Number(dto.amount) >= 1;
+  if (!Number.isFinite(creditAmount) || creditAmount < 0 || !Number.isInteger(creditAmount)) {
+    throw new BadRequestException('Số AI Credit không hợp lệ');
+  }
+  if (creditAmount > 10_000_000) {
+    throw new BadRequestException('Số AI Credit vượt giới hạn');
+  }
+  if (!durationGift && creditAmount <= 0) {
+    throw new BadRequestException('Cần tặng thời hạn hoặc AI Credit');
+  }
+  const unit = dto.unit ?? 'days';
+  if (durationGift && !dto.permanent) {
+    if (!dto.unit) {
+      throw new BadRequestException('Thiếu loại thời hạn');
+    }
+    const amount = Number(dto.amount);
+    if (!Number.isInteger(amount) || amount < 1) {
+      throw new BadRequestException('Số lượng thời hạn phải là số nguyên lớn hơn 0');
+    }
+    if (amount > GIFT_AMOUNT_MAX[dto.unit]) {
+      throw new BadRequestException('Số lượng thời hạn vượt giới hạn');
+    }
+  }
+  return { durationGift, creditAmount, unit };
+}
+
+function resolveGiftEndDate(
+  base: Date,
+  dto: { unit: 'days' | 'months' | 'years'; amount?: number; permanent?: boolean },
+): Date {
+  if (dto.permanent) return PERMANENT_SUBSCRIPTION_END;
+  const amount = dto.amount ?? 0;
+  if (amount < 1) {
+    throw new BadRequestException('Số lượng phải lớn hơn 0');
+  }
+  if (!dto.unit) {
+    throw new BadRequestException('Thiếu loại thời hạn');
+  }
+  return addGiftDuration(base, dto.unit, amount);
+}
+
+function giftDurationLabel(dto: AdminGiftTimeDto): string {
+  if (dto.permanent) return 'Vĩnh viễn';
+  const n = dto.amount ?? 0;
+  if (!(n >= 1)) return '';
+  if (dto.unit === 'days') return `${n} ngày`;
+  if (dto.unit === 'months') return `${n} tháng`;
+  if (dto.unit === 'years') return `${n} năm`;
+  return '';
+}
+
 @Injectable()
 export class PlatformAdminService {
+  private readonly logger = new Logger(PlatformAdminService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly credit: CreditService,
+    private readonly billingMail: BillingMailService,
   ) {}
 
   async overview() {
@@ -543,6 +629,8 @@ export class PlatformAdminService {
       throw new BadRequestException('Không thể tặng thời gian cho user đã xóa');
     }
 
+    const intent = parseGiftIntent(dto);
+
     const plan =
       (await this.prisma.subscriptionPlan.findFirst({
         where: { code: 'msp-pro-6m', isActive: true },
@@ -551,7 +639,9 @@ export class PlatformAdminService {
         where: { isActive: true, durationMonths: { gt: 0 } },
         orderBy: { sortOrder: 'asc' },
       }));
-    if (!plan) throw new BadRequestException('Không có gói subscription để gắn thời gian tặng');
+    if (intent.durationGift && !plan) {
+      throw new BadRequestException('Không có gói subscription để gắn thời gian tặng');
+    }
 
     const result = await this.prisma.$transaction(async (tx) => {
       // Race: key vừa được tạo bởi request song song
@@ -572,52 +662,66 @@ export class PlatformAdminService {
       });
 
       const now = new Date();
-      const base =
-        existing && existing.currentPeriodEnd.getTime() > now.getTime()
-          ? existing.currentPeriodEnd
-          : now;
-      const periodStart =
-        existing && existing.currentPeriodEnd.getTime() > now.getTime()
-          ? existing.currentPeriodStart
-          : now;
-      const newEnd = addGiftDuration(base, dto.unit, dto.amount);
+      let after = existing;
+      if (intent.durationGift) {
+        if (!plan) throw new BadRequestException('Không có gói subscription để gắn thời gian tặng');
+        const base =
+          existing && existing.currentPeriodEnd.getTime() > now.getTime()
+            ? existing.currentPeriodEnd
+            : now;
+        const periodStart =
+          existing && existing.currentPeriodEnd.getTime() > now.getTime()
+            ? existing.currentPeriodStart
+            : now;
+        const newEnd = resolveGiftEndDate(base, { ...dto, unit: intent.unit });
 
-      let after;
-      if (existing) {
-        after = await tx.subscription.update({
-          where: { id: existing.id },
-          data: {
-            planId:
-              existing.status === SubscriptionStatus.TRIALING ||
-              existing.plan.code === 'msp-trial-3d'
-                ? plan.id
-                : existing.planId,
-            status: SubscriptionStatus.ACTIVE,
-            currentPeriodStart: periodStart,
-            currentPeriodEnd: newEnd,
-            cancelledAt: null,
-          },
-          include: { plan: true },
-        });
-      } else {
-        after = await tx.subscription.create({
-          data: {
-            organizationId: user.organizationId,
-            planId: plan.id,
-            status: SubscriptionStatus.ACTIVE,
-            currentPeriodStart: now,
-            currentPeriodEnd: newEnd,
-          },
-          include: { plan: true },
-        });
+        if (existing) {
+          after = await tx.subscription.update({
+            where: { id: existing.id },
+            data: {
+              planId:
+                existing.status === SubscriptionStatus.TRIALING ||
+                existing.plan.code === 'msp-trial-3d'
+                  ? plan.id
+                  : existing.planId,
+              status: SubscriptionStatus.ACTIVE,
+              currentPeriodStart: periodStart,
+              currentPeriodEnd: newEnd,
+              cancelledAt: null,
+            },
+            include: { plan: true },
+          });
+        } else {
+          after = await tx.subscription.create({
+            data: {
+              organizationId: user.organizationId,
+              planId: plan.id,
+              status: SubscriptionStatus.ACTIVE,
+              currentPeriodStart: now,
+              currentPeriodEnd: newEnd,
+            },
+            include: { plan: true },
+          });
+        }
       }
+
+      const credit = await this.grantGiftCreditsTx(tx, {
+        organizationId: user.organizationId,
+        subscriptionId: after?.id,
+        userId: user.id,
+        actorUserId: actor.id,
+        dto,
+      });
 
       const payload = {
         targetUserId: user.id,
         targetEmail: user.email,
         organizationId: user.organizationId,
-        unit: dto.unit,
-        amount: dto.amount,
+        unit: dto.unit ?? intent.unit,
+        amount: dto.permanent || !intent.durationGift ? null : (dto.amount ?? null),
+        permanent: dto.permanent ?? false,
+        creditsGranted: credit.granted,
+        creditBalanceAfter: credit.balanceAfter,
         before: existing
           ? {
               subscriptionId: existing.id,
@@ -626,12 +730,14 @@ export class PlatformAdminService {
               planCode: existing.plan.code,
             }
           : null,
-        after: {
-          subscriptionId: after.id,
-          status: after.status,
-          currentPeriodEnd: after.currentPeriodEnd.toISOString(),
-          planCode: after.plan.code,
-        },
+        after: after
+          ? {
+              subscriptionId: after.id,
+              status: after.status,
+              currentPeriodEnd: after.currentPeriodEnd.toISOString(),
+              planCode: after.plan.code,
+            }
+          : null,
       };
 
       await this.audit.log(
@@ -655,7 +761,7 @@ export class PlatformAdminService {
       const response = {
         idempotent: false,
         ...payload,
-        subscription: this.mapSub(after),
+        subscription: after ? this.mapSub(after) : null,
       };
 
       await tx.adminIdempotencyKey.create({
@@ -670,6 +776,22 @@ export class PlatformAdminService {
 
       return response;
     });
+
+    if (!result.idempotent) {
+      const afterEnd =
+        (result as { after?: { currentPeriodEnd?: string | Date } }).after?.currentPeriodEnd ??
+        (result as { subscription?: { currentPeriodEnd?: string | Date } }).subscription
+          ?.currentPeriodEnd;
+      void this.billingMail
+        .sendGiftNotice({
+          email: user.email,
+          name: user.name ?? user.email,
+          durationLabel: giftDurationLabel(dto),
+          creditsGranted: Number((result as { creditsGranted?: number }).creditsGranted ?? 0),
+          periodEnd: afterEnd ? new Date(afterEnd) : new Date(),
+        })
+        .catch((err) => this.logger.warn(`Gift email skipped: ${String(err)}`));
+    }
 
     return result;
   }
@@ -739,7 +861,7 @@ export class PlatformAdminService {
         where,
         include: {
           plan: true,
-          organization: { select: { id: true, name: true, slug: true, email: true, isActive: true } },
+          organization: { select: ORG_SUB_SELECT },
         },
         orderBy: { currentPeriodEnd: 'desc' },
         skip: (page - 1) * pageSize,
@@ -761,7 +883,7 @@ export class PlatformAdminService {
       where: { id },
       include: {
         plan: true,
-        organization: { select: { id: true, name: true, slug: true, email: true, isActive: true } },
+        organization: { select: ORG_SUB_SELECT },
       },
     });
     if (!s) throw new NotFoundException('Không tìm thấy subscription');
@@ -871,6 +993,172 @@ export class PlatformAdminService {
     });
   }
 
+  /**
+   * Tặng thời gian trực tiếp lên subscription (theo org) — giữ nguyên gói, không tạo bản ghi mới.
+   * ACTIVE/còn hạn: cộng từ currentPeriodEnd; EXPIRED/hết hạn: cộng từ now → ACTIVE.
+   */
+  async giftTimeToSubscription(
+    actor: AuthUser,
+    subscriptionId: string,
+    dto: AdminGiftTimeDto,
+    ipAddress?: string,
+  ) {
+    const existingKey = await this.prisma.adminIdempotencyKey.findUnique({
+      where: { key: dto.idempotencyKey },
+    });
+    if (existingKey) {
+      return {
+        ...(existingKey.responseJson as Record<string, unknown>),
+        idempotent: true,
+      };
+    }
+
+    const intent = parseGiftIntent(dto);
+
+    const before = await this.prisma.subscription.findUnique({
+      where: { id: subscriptionId },
+      include: { plan: true, organization: { select: ORG_SUB_SELECT } },
+    });
+    if (!before) throw new NotFoundException('Không tìm thấy subscription');
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const raced = await tx.adminIdempotencyKey.findUnique({
+        where: { key: dto.idempotencyKey },
+      });
+      if (raced) {
+        return {
+          ...(raced.responseJson as Record<string, unknown>),
+          idempotent: true,
+        };
+      }
+
+      const now = new Date();
+      let after = before;
+      if (intent.durationGift) {
+        const stillValid = before.currentPeriodEnd.getTime() > now.getTime();
+        const base = stillValid ? before.currentPeriodEnd : now;
+        const periodStart = stillValid ? before.currentPeriodStart : now;
+        const newEnd = resolveGiftEndDate(base, { ...dto, unit: intent.unit });
+
+        after = await tx.subscription.update({
+          where: { id: subscriptionId },
+          data: {
+            status: SubscriptionStatus.ACTIVE,
+            currentPeriodStart: periodStart,
+            currentPeriodEnd: newEnd,
+            cancelledAt: null,
+          },
+          include: { plan: true, organization: { select: ORG_SUB_SELECT } },
+        });
+      }
+
+      const credit = await this.grantGiftCreditsTx(tx, {
+        organizationId: before.organizationId,
+        subscriptionId: after.id,
+        actorUserId: actor.id,
+        dto,
+      });
+
+      const payload = {
+        organizationId: before.organizationId,
+        organizationName: before.organization?.name ?? null,
+        subscriptionId: before.id,
+        unit: dto.unit ?? intent.unit,
+        amount: dto.permanent || !intent.durationGift ? null : (dto.amount ?? null),
+        permanent: dto.permanent ?? false,
+        creditsGranted: credit.granted,
+        creditBalanceBefore: credit.balanceBefore,
+        creditBalanceAfter: credit.balanceAfter,
+        giftedAt: now.toISOString(),
+        before: {
+          status: before.status,
+          currentPeriodEnd: before.currentPeriodEnd.toISOString(),
+          planCode: before.plan.code,
+          planName: before.plan.name,
+          creditBalance: Number(before.organization?.creditWallet?.balance ?? 0),
+        },
+        after: {
+          status: after.status,
+          currentPeriodEnd: after.currentPeriodEnd.toISOString(),
+          planCode: after.plan.code,
+          planName: after.plan.name,
+          creditBalance: credit.balanceAfter,
+        },
+      };
+
+      await this.audit.log(
+        {
+          organizationId: before.organizationId,
+          userId: actor.id,
+          action: 'PLATFORM_SUB_GIFT_TIME',
+          entityType: 'SUBSCRIPTION',
+          entityId: subscriptionId,
+          ipAddress,
+          metadata: {
+            reason: dto.reason,
+            result: 'ok',
+            idempotencyKey: dto.idempotencyKey,
+            adminUserId: actor.id,
+            adminEmail: actor.email,
+            ...payload,
+          },
+        },
+        tx,
+      );
+
+      const afterMapped = {
+        ...this.mapSub(after),
+        creditBalance: credit.balanceAfter,
+      };
+
+      const response = {
+        idempotent: false,
+        ...payload,
+        before: this.mapSub(before),
+        after: afterMapped,
+      };
+
+      await tx.adminIdempotencyKey.create({
+        data: {
+          key: dto.idempotencyKey,
+          action: 'PLATFORM_SUB_GIFT_TIME',
+          actorUserId: actor.id,
+          responseJson: response,
+        },
+      });
+
+      return response;
+    });
+
+    if (!result.idempotent) {
+      const emailTarget =
+        before.organization?.email ||
+        (
+          await this.prisma.user.findFirst({
+            where: { organizationId: before.organizationId, isActive: true },
+            orderBy: { createdAt: 'asc' },
+          })
+        )?.email;
+      if (emailTarget) {
+        const afterRow = result as {
+          after?: { expiresAt?: string; currentPeriodEnd?: string | Date };
+        };
+        const afterEnd = afterRow.after?.expiresAt ?? afterRow.after?.currentPeriodEnd;
+        void this.billingMail
+          .sendGiftNotice({
+            email: emailTarget,
+            name: before.organization?.name ?? emailTarget,
+            durationLabel: giftDurationLabel(dto),
+            creditsGranted: Number((result as { creditsGranted?: number }).creditsGranted ?? 0),
+            periodEnd: afterEnd ? new Date(afterEnd) : before.currentPeriodEnd,
+          })
+          .catch((err) => this.logger.warn(`Gift email skipped: ${String(err)}`));
+      }
+    }
+
+    return result;
+  }
+
   async upgradeTo12m(actor: AuthUser, id: string, dto: AdminReasonDto, ipAddress?: string) {
     const before = await this.prisma.subscription.findUnique({
       where: { id },
@@ -937,6 +1225,50 @@ export class PlatformAdminService {
     });
   }
 
+  private async grantGiftCreditsTx(
+    tx: Prisma.TransactionClient,
+    params: {
+      organizationId: string;
+      subscriptionId?: string;
+      userId?: string;
+      actorUserId: string;
+      dto: AdminGiftTimeDto;
+    },
+  ): Promise<{ granted: number; idempotent: boolean; balanceBefore: number; balanceAfter: number }> {
+    const wallet = await tx.creditWallet.findUnique({
+      where: { organizationId: params.organizationId },
+    });
+    const balanceBefore = Number(wallet?.balance ?? 0);
+    const amount = Number(params.dto.creditAmount ?? 0);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return { granted: 0, idempotent: false, balanceBefore, balanceAfter: balanceBefore };
+    }
+    const result = await this.credit.grant(
+      {
+        organizationId: params.organizationId,
+        amount,
+        userId: params.userId,
+        source: CREDIT_GRANT_SOURCES.ADMIN_GIFT,
+        subscriptionId: params.subscriptionId,
+        idempotencyKey: `gift:${params.dto.idempotencyKey}:credit-grant`,
+        referenceId: params.dto.idempotencyKey,
+        reason: params.dto.reason?.trim() || 'Admin tặng AI Credit',
+        metadata: {
+          source: CREDIT_GRANT_SOURCES.ADMIN_GIFT,
+          actorUserId: params.actorUserId,
+          subscriptionId: params.subscriptionId,
+        },
+      },
+      tx,
+    );
+    return {
+      granted: amount,
+      idempotent: result.idempotent,
+      balanceBefore,
+      balanceAfter: result.balance.balance,
+    };
+  }
+
   private mapSub(s: {
     id: string;
     organizationId: string;
@@ -945,27 +1277,235 @@ export class PlatformAdminService {
     currentPeriodStart: Date;
     currentPeriodEnd: Date;
     cancelledAt?: Date | null;
-    plan: { code: string; name: string; durationMonths: number; priceVnd?: unknown };
-    organization?: { id: string; name: string; slug: string; email: string | null; isActive?: boolean };
+    plan: { code: string; name: string; durationMonths: number; priceVnd?: unknown; creditGrant?: unknown };
+    organization?: {
+      id: string;
+      name: string;
+      slug: string;
+      email: string | null;
+      isActive?: boolean;
+      creditWallet?: { balance?: unknown } | null;
+    };
   }) {
     const remainingDays = Math.max(
       0,
       Math.ceil((s.currentPeriodEnd.getTime() - Date.now()) / 86400000),
     );
     const expired = s.currentPeriodEnd.getTime() <= Date.now();
+    const organization = s.organization
+      ? {
+          id: s.organization.id,
+          name: s.organization.name,
+          slug: s.organization.slug,
+          email: s.organization.email,
+          isActive: s.organization.isActive,
+        }
+      : undefined;
     return {
       id: s.id,
       organizationId: s.organizationId,
-      organization: s.organization,
+      organization,
       planId: s.planId,
       planCode: s.plan.code,
       planName: s.plan.name,
       durationMonths: s.plan.durationMonths,
+      planCreditGrant: Number(s.plan.creditGrant ?? 0),
       status: expired ? 'EXPIRED' : s.status,
       startedAt: s.currentPeriodStart.toISOString(),
       expiresAt: s.currentPeriodEnd.toISOString(),
       remainingDays,
       isExpired: expired,
+      creditBalance: Number(s.organization?.creditWallet?.balance ?? 0),
     };
+  }
+
+  async listCreditOrgs(query: AdminListQueryDto) {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+    const where: Prisma.OrganizationWhereInput = {};
+    if (query.q?.trim()) {
+      const q = query.q.trim();
+      where.OR = [
+        { name: { contains: q, mode: 'insensitive' } },
+        { slug: { contains: q, mode: 'insensitive' } },
+        { email: { contains: q, mode: 'insensitive' } },
+      ];
+    }
+
+    const [total, items] = await Promise.all([
+      this.prisma.organization.count({ where }),
+      this.prisma.organization.findMany({
+        where,
+        include: {
+          creditWallet: true,
+          subscriptions: {
+            orderBy: { currentPeriodEnd: 'desc' },
+            take: 1,
+            include: { plan: { select: { code: true, name: true, durationMonths: true } } },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+    ]);
+
+    return {
+      items: items.map((o) => {
+        const sub = o.subscriptions[0];
+        const expired = sub ? sub.currentPeriodEnd.getTime() <= Date.now() : false;
+        return {
+          organizationId: o.id,
+          name: o.name,
+          slug: o.slug,
+          email: o.email,
+          isActive: o.isActive,
+          planCode: sub?.plan.code ?? null,
+          planName: sub?.plan.name ?? null,
+          subscriptionStatus: sub ? (expired ? 'EXPIRED' : sub.status) : null,
+          expiresAt: sub?.currentPeriodEnd?.toISOString() ?? null,
+          remainingDays: sub
+            ? Math.max(0, Math.ceil((sub.currentPeriodEnd.getTime() - Date.now()) / 86400000))
+            : null,
+          balance: Number(o.creditWallet?.balance ?? 0),
+          reservedBalance: Number(o.creditWallet?.reservedBalance ?? 0),
+          lifetimeEarned: Number(o.creditWallet?.lifetimeEarned ?? 0),
+          lifetimeUsed: Number(o.creditWallet?.lifetimeUsed ?? 0),
+        };
+      }),
+      total,
+      page,
+      pageSize,
+      totalPages: Math.ceil(total / pageSize) || 1,
+    };
+  }
+
+  async listCreditHistory(
+    organizationId: string,
+    query: { page?: number; pageSize?: number },
+  ) {
+    const org = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { id: true, name: true, email: true },
+    });
+    if (!org) throw new NotFoundException('Không tìm thấy tổ chức');
+    const history = await this.credit.listHistory(organizationId, {
+      page: query.page,
+      pageSize: query.pageSize,
+      includeInternal: true,
+    });
+    const balance = await this.credit.getBalance(organizationId);
+    return { organization: org, balance, ...history };
+  }
+
+  async adjustCredit(
+    actor: AuthUser,
+    organizationId: string,
+    dto: AdminCreditAdjustDto,
+    ipAddress?: string,
+  ) {
+    const reason = dto.reason.trim();
+    if (reason.length < 3) {
+      throw new BadRequestException('Bắt buộc nhập lý do khi điều chỉnh Credit');
+    }
+    if (!Number.isFinite(dto.delta) || dto.delta === 0) {
+      throw new BadRequestException('Số Credit phải khác 0');
+    }
+
+    const org = await this.prisma.organization.findUnique({
+      where: { id: organizationId },
+      select: { id: true, name: true, email: true },
+    });
+    if (!org) throw new NotFoundException('Không tìm thấy tổ chức');
+
+    const existingKey = await this.prisma.adminIdempotencyKey.findUnique({
+      where: { key: dto.idempotencyKey },
+    });
+    if (existingKey) {
+      return {
+        ...(existingKey.responseJson as Record<string, unknown>),
+        idempotent: true,
+      };
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const raced = await tx.adminIdempotencyKey.findUnique({
+        where: { key: dto.idempotencyKey },
+      });
+      if (raced) {
+        return {
+          ...(raced.responseJson as Record<string, unknown>),
+          idempotent: true,
+        };
+      }
+
+      const result = await this.credit.adjust(
+        {
+          organizationId,
+          delta: dto.delta,
+          idempotencyKey: `admin-credit:${dto.idempotencyKey}`,
+          referenceId: organizationId,
+          reason,
+          metadata: {
+            adminId: actor.id,
+            adminEmail: actor.email,
+            delta: dto.delta,
+          },
+        },
+        tx,
+      );
+
+      const after = result.balance.balance;
+      const before = result.idempotent ? after : after - dto.delta;
+      const timestamp = new Date().toISOString();
+      const wallet = await tx.creditWallet.findUnique({ where: { organizationId } });
+      const response = {
+        organizationId,
+        organizationName: org.name,
+        delta: dto.delta,
+        before,
+        after,
+        reason,
+        timestamp,
+        transactionId: result.transactionId,
+        idempotent: result.idempotent,
+        balance: result.balance,
+      };
+
+      await this.audit.log(
+        {
+          organizationId,
+          userId: actor.id,
+          action: 'PLATFORM_CREDIT_ADJUST',
+          entityType: 'CREDIT_WALLET',
+          entityId: wallet?.id ?? organizationId,
+          ipAddress,
+          metadata: {
+            adminId: actor.id,
+            adminEmail: actor.email,
+            organizationId,
+            before,
+            amount: dto.delta,
+            after,
+            reason,
+            timestamp,
+            idempotencyKey: dto.idempotencyKey,
+            result: result.idempotent ? 'idempotent' : 'ok',
+          },
+        },
+        tx,
+      );
+
+      await tx.adminIdempotencyKey.create({
+        data: {
+          key: dto.idempotencyKey,
+          action: 'PLATFORM_CREDIT_ADJUST',
+          actorUserId: actor.id,
+          responseJson: response as unknown as Prisma.InputJsonValue,
+        },
+      });
+
+      return response;
+    });
   }
 }

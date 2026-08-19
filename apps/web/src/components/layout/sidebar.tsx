@@ -190,8 +190,8 @@ export function Sidebar({ onNavigate }: SidebarProps) {
   return (
     <div className="flex h-full min-h-0 flex-col text-white">
       <div className="flex h-14 shrink-0 items-center gap-2 border-b border-white/10 px-4 pr-12">
-        <Sparkles className="h-6 w-6 text-white" />
-        <span className="font-bold text-lg text-white">MarketingSpa</span>
+        <Sparkles className="h-6 w-6 shrink-0 text-white" />
+        <span className="truncate font-bold text-lg text-white">Marketing Auto AZ</span>
       </div>
       <ScrollArea className="min-h-0 flex-1 py-4">
         <nav className="grid gap-2 px-2 pb-4">

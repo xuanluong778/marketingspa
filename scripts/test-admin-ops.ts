@@ -4,7 +4,7 @@
  *
  * node scripts/with-root-env.cjs pnpm --filter @marketingspa/database exec tsx ../../scripts/test-admin-ops.ts
  */
-import { createHmac, randomBytes } from 'crypto';
+import { createHmac, randomBytes, randomUUID } from 'crypto';
 import {
   AdsSyncJobStatus,
   AdsSyncPlatform,
@@ -253,10 +253,108 @@ async function main() {
       });
     }
 
+    // --- Gift subscription ACTIVE: cộng từ hạn hiện tại ---
+    {
+      const plan = await prisma.subscriptionPlan.findFirst({ where: { code: 'msp-pro-6m' } });
+      if (!plan) throw new Error('missing plan');
+      const end = new Date(Date.now() + 20 * 86400000);
+      const sub = await prisma.subscription.create({
+        data: {
+          organizationId: fixture.org.id,
+          planId: plan.id,
+          status: SubscriptionStatus.ACTIVE,
+          currentPeriodStart: new Date(),
+          currentPeriodEnd: end,
+        },
+      });
+      const beforeEnd = sub.currentPeriodEnd.getTime();
+      const r = await api(`/admin/subscriptions/${sub.id}/gift-time`, superToken, {
+        method: 'POST',
+        body: JSON.stringify({
+          amount: 7,
+          unit: 'days',
+          reason: 'ops gift active sub',
+          idempotencyKey: randomUUID(),
+        }),
+      });
+      const after = await prisma.subscription.findUnique({ where: { id: sub.id } });
+      const deltaDays = Math.round(
+        ((after?.currentPeriodEnd.getTime() ?? 0) - beforeEnd) / 86400000,
+      );
+      results.push({
+        name: 'gift_subscription_active_add_from_expiry',
+        ok:
+          (r.status === 200 || r.status === 201) &&
+          after?.status === SubscriptionStatus.ACTIVE &&
+          deltaDays === 7,
+        detail: `status=${r.status} delta=${deltaDays} plan=${after?.planId === plan.id}`,
+      });
+    }
+
+    // --- Gift subscription EXPIRED: tính từ now + ACTIVE ---
+    {
+      const plan = await prisma.subscriptionPlan.findFirst({ where: { code: 'msp-pro-6m' } });
+      if (!plan) throw new Error('missing plan');
+      const sub = await prisma.subscription.findFirst({
+        where: { organizationId: fixture.org.id },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (!sub) throw new Error('missing sub for expired gift');
+      await prisma.subscription.update({
+        where: { id: sub.id },
+        data: {
+          status: SubscriptionStatus.EXPIRED,
+          currentPeriodEnd: new Date(Date.now() - 2 * 86400000),
+        },
+      });
+      const now = Date.now();
+      const giftKey = randomUUID();
+      const r = await api(`/admin/subscriptions/${sub.id}/gift-time`, superToken, {
+        method: 'POST',
+        body: JSON.stringify({
+          amount: 1,
+          unit: 'months',
+          reason: 'ops gift expired sub',
+          idempotencyKey: giftKey,
+        }),
+      });
+      const after = await prisma.subscription.findUnique({ where: { id: sub.id } });
+      const okActive =
+        (r.status === 200 || r.status === 201) &&
+        after?.status === SubscriptionStatus.ACTIVE &&
+        !!after &&
+        after.currentPeriodEnd.getTime() > now + 20 * 86400000;
+      results.push({
+        name: 'gift_subscription_expired_from_now',
+        ok: okActive,
+        detail: `status=${after?.status} end=${after?.currentPeriodEnd.toISOString()}`,
+      });
+
+      const r2 = await api(`/admin/subscriptions/${sub.id}/gift-time`, superToken, {
+        method: 'POST',
+        body: JSON.stringify({
+          amount: 1,
+          unit: 'months',
+          reason: 'ops gift expired sub',
+          idempotencyKey: giftKey,
+        }),
+      });
+      const after2 = await prisma.subscription.findUnique({ where: { id: sub.id } });
+      results.push({
+        name: 'gift_subscription_idempotent',
+        ok:
+          (r2.status === 200 || r2.status === 201) &&
+          (r2.json as { idempotent?: boolean })?.idempotent === true &&
+          after2?.currentPeriodEnd.getTime() === after?.currentPeriodEnd.getTime(),
+        detail: `idempotent=${(r2.json as { idempotent?: boolean })?.idempotent}`,
+      });
+    }
+
     // --- Webhook duplicate / idempotent trên org disposable ---
     {
       const plan = await prisma.subscriptionPlan.findFirst({ where: { code: 'msp-pro-6m' } });
       if (!plan) throw new Error('missing plan');
+      const planAmount = Number(plan.priceVnd);
       const code = mkta();
       const order = await prisma.paymentOrder.create({
         data: {
@@ -264,7 +362,7 @@ async function main() {
           organizationId: fixture.org.id,
           planId: plan.id,
           createdByUserId: fixture.user.id,
-          amountVnd: new Decimal(3900000),
+          amountVnd: new Decimal(planAmount),
           status: PaymentOrderStatus.PENDING,
           transferContent: code,
           bankCode: 'ACB',
@@ -278,7 +376,7 @@ async function main() {
       const body = {
         id: sepayId,
         transferType: 'in',
-        transferAmount: 3900000,
+        transferAmount: planAmount,
         accountNumber: ACCOUNT,
         content: `CK ${code}`,
         gateway: 'ACB',

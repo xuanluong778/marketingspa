@@ -23,12 +23,14 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { WorkManagementService } from './work-management.service';
 import { WorkCollabService } from './work-collab.service';
+import { WorkInsightsService } from './work-insights.service';
 import { WORK_PERMISSIONS } from './work-management.constants';
 import { WORK_UPLOAD_MAX_BYTES } from './work-file-policy';
 import {
   CreateWorkCommentDto,
   CreateWorkProjectDto,
   CreateWorkTaskDto,
+  ManualTimeDto,
   MoveWorkTaskDto,
   ReviewDecisionDto,
   SubmitReviewDto,
@@ -44,7 +46,73 @@ export class WorkManagementController {
   constructor(
     private readonly service: WorkManagementService,
     private readonly collab: WorkCollabService,
+    private readonly insights: WorkInsightsService,
   ) {}
+
+  // ── Insights: my-work, dashboard, calendar, export ───────────────────────
+
+  @Get('my-work')
+  @RequirePermissions(WORK_PERMISSIONS.TASK_READ)
+  myWork(@CurrentUser() user: AuthUser) {
+    return this.insights.myWork(user.organizationId, user);
+  }
+
+  @Get('dashboard')
+  @RequirePermissions(WORK_PERMISSIONS.TASK_READ)
+  dashboard(
+    @CurrentUser() user: AuthUser,
+    @Query('groupBy') groupBy?: 'project' | 'department' | 'employee',
+  ) {
+    return this.insights.dashboard(user.organizationId, user, groupBy || 'project');
+  }
+
+  @Get('calendar')
+  @RequirePermissions(WORK_PERMISSIONS.TASK_READ)
+  calendar(@CurrentUser() user: AuthUser, @Query('from') from?: string, @Query('to') to?: string) {
+    return this.insights.calendar(user.organizationId, user, {
+      from: from || '',
+      to: to || '',
+    });
+  }
+
+  @Get('employees/:employeeId/stats')
+  @RequirePermissions(WORK_PERMISSIONS.TASK_READ)
+  employeeStats(@CurrentUser() user: AuthUser, @Param('employeeId') employeeId: string) {
+    return this.insights.employeeStats(user.organizationId, user, employeeId);
+  }
+
+  @Get('reports/export')
+  @RequirePermissions(WORK_PERMISSIONS.TASK_READ)
+  async exportReport(
+    @CurrentUser() user: AuthUser,
+    @Query('format') format: 'csv' | 'xlsx' = 'csv',
+    @Res() res: Response,
+  ) {
+    const out = await this.insights.exportReport(
+      user.organizationId,
+      user,
+      format === 'xlsx' ? 'xlsx' : 'csv',
+    );
+    res.setHeader('Content-Type', out.contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
+    res.send(out.body);
+  }
+
+  @Get('audit-logs')
+  @RequirePermissions(WORK_PERMISSIONS.TASK_READ)
+  auditLogs(
+    @CurrentUser() user: AuthUser,
+    @Query('taskId') taskId?: string,
+    @Query('projectId') projectId?: string,
+  ) {
+    return this.insights.listAuditLogs(user.organizationId, user, { taskId, projectId });
+  }
+
+  @Post('recurrence/materialize')
+  @RequirePermissions(WORK_PERMISSIONS.TASK_MANAGE)
+  materialize(@CurrentUser() user: AuthUser) {
+    return this.insights.materializeRecurrences(user.organizationId);
+  }
 
   // ── Projects / Tasks (existing) ─────────────────────────────────────────
 
@@ -158,6 +226,38 @@ export class WorkManagementController {
   @RequirePermissions(WORK_PERMISSIONS.TASK_WRITE)
   softDeleteTask(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.service.softDeleteTask(user.organizationId, user, id);
+  }
+
+  // ── Time tracking ────────────────────────────────────────────────────────
+
+  @Post('tasks/:id/time/start')
+  @RequirePermissions(WORK_PERMISSIONS.TASK_WRITE)
+  startTimer(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.insights.startTimer(user.organizationId, user, id);
+  }
+
+  @Post('tasks/:id/time/pause')
+  @RequirePermissions(WORK_PERMISSIONS.TASK_WRITE)
+  pauseTimer(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.insights.pauseTimer(user.organizationId, user, id);
+  }
+
+  @Post('tasks/:id/time/stop')
+  @RequirePermissions(WORK_PERMISSIONS.TASK_WRITE)
+  stopTimer(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.insights.stopTimer(user.organizationId, user, id);
+  }
+
+  @Post('tasks/:id/time/manual')
+  @RequirePermissions(WORK_PERMISSIONS.TASK_WRITE)
+  manualTime(@CurrentUser() user: AuthUser, @Param('id') id: string, @Body() dto: ManualTimeDto) {
+    return this.insights.manualTime(user.organizationId, user, id, dto);
+  }
+
+  @Get('tasks/:id/time-logs')
+  @RequirePermissions(WORK_PERMISSIONS.TASK_READ)
+  timeLogs(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.insights.listTimeLogs(user.organizationId, user, id);
   }
 
   // ── Review ───────────────────────────────────────────────────────────────

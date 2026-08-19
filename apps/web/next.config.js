@@ -15,6 +15,11 @@ const nextConfig = {
             key: 'Cache-Control',
             value: 'private, no-cache, no-store, max-age=0, must-revalidate',
           },
+          {
+            // Camera/mic cho Teleprompter recorder (same-origin only)
+            key: 'Permissions-Policy',
+            value: 'camera=(self), microphone=(self)',
+          },
         ],
       },
       {

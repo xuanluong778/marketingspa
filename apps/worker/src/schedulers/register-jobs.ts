@@ -59,11 +59,22 @@ export async function registerRepeatableJobs() {
     { repeat: { pattern: '* * * * *' }, jobId: 'messaging-campaign-scan-due' },
   );
 
+  const emailPlanQueue = new Queue(QUEUE_NAMES.EMAIL_CAMPAIGN_PLAN, {
+    connection,
+    prefix: queuePrefix,
+  });
+  await emailPlanQueue.add(
+    'scan-due-scheduled-email-campaigns',
+    {},
+    { repeat: { pattern: '* * * * *' }, jobId: 'email-campaign-scan-due' },
+  );
+
   console.log('[scheduler] Repeatable jobs registered');
 
   await Promise.all([
     ...Object.values(queues).map((q) => q.close()),
     autoPostQueue.close(),
     messagingPlanQueue.close(),
+    emailPlanQueue.close(),
   ]);
 }

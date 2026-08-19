@@ -21,11 +21,13 @@ import type {
 import { redactForAudit } from '../common/utils/token-security.util';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { AffiliateService } from '../affiliate/affiliate.service';
+import { CreditService } from '../credit/credit.service';
 import {
   normalizeEmailForUniqueness,
   normalizePhoneDigits,
 } from '../common/utils/email-normalize.util';
 import { hashSignal } from '../common/utils/hash-signal.util';
+import { CREDIT_GRANT_SOURCES } from '@marketingspa/shared';
 
 const ACB_BIN = '970416';
 const ORDER_TTL_MS = 30 * 60 * 1000;
@@ -62,6 +64,7 @@ export class BillingService {
     private readonly audit: AuditService,
     private readonly mail: BillingMailService,
     private readonly affiliate: AffiliateService,
+    private readonly credit: CreditService,
   ) {}
 
   private bankCode() {
@@ -93,6 +96,7 @@ export class BillingService {
         trialDays: 3,
         allowedFeaturePrefixes: ['content-marketing', 'auto-post', 'video-transcriptions'],
         aiDailyQuota: 30,
+        creditGrant: 1000,
       },
       update: {},
     });
@@ -103,6 +107,7 @@ export class BillingService {
     trialDays?: number;
     allowedFeaturePrefixes?: string[];
     aiDailyQuota?: number;
+    creditGrant?: number;
   }) {
     await this.getTrialSettings();
     return this.prisma.trialSetting.update({
@@ -114,6 +119,7 @@ export class BillingService {
           ? { allowedFeaturePrefixes: dto.allowedFeaturePrefixes }
           : {}),
         ...(dto.aiDailyQuota !== undefined ? { aiDailyQuota: dto.aiDailyQuota } : {}),
+        ...(dto.creditGrant !== undefined ? { creditGrant: dto.creditGrant } : {}),
       },
     });
   }
@@ -194,7 +200,7 @@ export class BillingService {
     const settings = await this.getTrialSettings();
     const prefixes = Array.isArray(settings.allowedFeaturePrefixes)
       ? (settings.allowedFeaturePrefixes as string[])
-      : ['content-marketing', 'auto-post', 'video-transcriptions'];
+      : ['content-marketing', 'auto-post', 'video-transcriptions', 'work-management'];
     const path = apiPath.startsWith('/') ? apiPath.slice(1) : apiPath;
     // Content Studio companion — allow when content-marketing is already in trial
     if (
@@ -203,16 +209,21 @@ export class BillingService {
     ) {
       return true;
     }
+    // Module Công việc — always allow when org has any trial list (common HR companion feature)
+    if (
+      (path === 'work-management' || path.startsWith('work-management/')) &&
+      !prefixes.some((p) => p === 'work-management' || p.startsWith('work-management'))
+    ) {
+      // Still require trial entitlement ok (caller already checked) — opt-in for work module
+      return true;
+    }
     return prefixes.some((p) => path === p || path.startsWith(`${p}/`) || path.startsWith(p));
   }
 
   /**
    * Subscription hiện tại — gồm TRIALING / TRIAL_EXPIRED / ACTIVE…
    */
-  async getCurrentSubscription(
-    organizationId: string,
-    viewer?: { email?: string; role?: string },
-  ) {
+  async getCurrentSubscription(organizationId: string, viewer?: { email?: string; role?: string }) {
     await this.expireTrialIfNeeded(organizationId);
     const claim = await this.prisma.trialClaim.findUnique({
       where: { organizationId },
@@ -240,8 +251,7 @@ export class BillingService {
       (!sub ||
         sub.status === SubscriptionStatus.EXPIRED ||
         sub.status === SubscriptionStatus.TRIAL_EXPIRED ||
-        (sub.status !== SubscriptionStatus.ACTIVE &&
-          sub.status !== SubscriptionStatus.TRIALING));
+        (sub.status !== SubscriptionStatus.ACTIVE && sub.status !== SubscriptionStatus.TRIALING));
 
     // Chưa từng có sub / chỉ eligible trial
     if (!sub) {
@@ -286,22 +296,13 @@ export class BillingService {
     const remainingDays = Math.max(0, Math.ceil(remainingMs / 86400000));
     const remainingHours = Math.max(0, Math.ceil(remainingMs / 3600000));
 
-    let status:
-      | 'NONE'
-      | 'ACTIVE'
-      | 'EXPIRING'
-      | 'EXPIRED'
-      | 'TRIALING'
-      | 'TRIAL_EXPIRED' = 'NONE';
+    let status: 'NONE' | 'ACTIVE' | 'EXPIRING' | 'EXPIRED' | 'TRIALING' | 'TRIAL_EXPIRED' = 'NONE';
 
     if (sub.status === SubscriptionStatus.TRIALING) {
       status = remainingMs > 0 ? 'TRIALING' : 'TRIAL_EXPIRED';
     } else if (sub.status === SubscriptionStatus.TRIAL_EXPIRED) {
       status = 'TRIAL_EXPIRED';
-    } else if (
-      expiresMs <= now ||
-      sub.status === SubscriptionStatus.EXPIRED
-    ) {
+    } else if (expiresMs <= now || sub.status === SubscriptionStatus.EXPIRED) {
       status = 'EXPIRED';
     } else if (remainingDays <= 15) {
       status = 'EXPIRING';
@@ -338,12 +339,9 @@ export class BillingService {
         eligible: !claim && status !== 'ACTIVE' && status !== 'EXPIRING' && status !== 'TRIALING',
         activated: !!claim || status === 'TRIALING' || status === 'TRIAL_EXPIRED',
         status:
-          status === 'TRIALING' || status === 'TRIAL_EXPIRED'
-            ? status
-            : claim
-              ? 'USED'
-              : null,
-        trialStartedAt: sub.trialStartedAt?.toISOString() ?? claim?.activatedAt.toISOString() ?? null,
+          status === 'TRIALING' || status === 'TRIAL_EXPIRED' ? status : claim ? 'USED' : null,
+        trialStartedAt:
+          sub.trialStartedAt?.toISOString() ?? claim?.activatedAt.toISOString() ?? null,
         trialEndsAt: sub.trialEndsAt?.toISOString() ?? claim?.trialEndsAt.toISOString() ?? null,
         remainingMs: status === 'TRIALING' ? remainingMs : 0,
         remainingDays: status === 'TRIALING' ? remainingDays : 0,
@@ -358,11 +356,7 @@ export class BillingService {
   /**
    * User chủ động bấm kích hoạt dùng thử 3 ngày — idempotent, 1 lần / email-org-device.
    */
-  async activateTrial(
-    user: AuthUser,
-    dto: ActivateTrialDto,
-    meta?: { ip?: string },
-  ) {
+  async activateTrial(user: AuthUser, dto: ActivateTrialDto, meta?: { ip?: string }) {
     const settings = await this.getTrialSettings();
     if (!settings.enabled) {
       throw new BadRequestException('Tính năng dùng thử đang tạm tắt');
@@ -377,11 +371,12 @@ export class BillingService {
       throw new BadRequestException('Vui lòng xác minh email trước khi dùng thử');
     }
 
-    const emailNorm =
-      dbUser.emailNormalized || normalizeEmailForUniqueness(dbUser.email);
+    const emailNorm = dbUser.emailNormalized || normalizeEmailForUniqueness(dbUser.email);
     const phoneNorm = normalizePhoneDigits(dbUser.organization.phone);
-    const deviceHash = hashSignal(dto.deviceFingerprint);
-    const ipHash = hashSignal(meta?.ip);
+    const deviceHash = dto.deviceFingerprint?.trim()
+      ? hashSignal(dto.deviceFingerprint)
+      : undefined;
+    const ipHash = meta?.ip?.trim() ? hashSignal(meta.ip) : undefined;
 
     // Đã ACTIVE còn hạn → không cần trial
     const activePaid = await this.prisma.subscription.findFirst({
@@ -520,6 +515,29 @@ export class BillingService {
         });
       }
 
+      const creditAmount = Number(settings.creditGrant ?? 0);
+      if (Number.isFinite(creditAmount) && creditAmount > 0) {
+        await this.credit.grant(
+          {
+            organizationId: user.organizationId,
+            amount: creditAmount,
+            userId: user.id,
+            source: CREDIT_GRANT_SOURCES.TRIAL,
+            subscriptionId: sub.id,
+            idempotencyKey: this.trialCreditGrantKey(user.organizationId),
+            referenceId: sub.id,
+            reason: 'Dùng thử 3 ngày',
+            metadata: {
+              source: CREDIT_GRANT_SOURCES.TRIAL,
+              subscriptionId: sub.id,
+              userId: user.id,
+              trialDays: settings.trialDays,
+            },
+          },
+          tx,
+        );
+      }
+
       return sub;
     });
 
@@ -534,6 +552,7 @@ export class BillingService {
         trialStartedAt: startedAt.toISOString(),
         trialEndsAt: endsAt.toISOString(),
         emailNormalized: emailNorm,
+        creditGrant: Number(settings.creditGrant ?? 0),
       },
       ipAddress: meta?.ip,
     });
@@ -556,9 +575,9 @@ export class BillingService {
       throw new BadRequestException('Gói không hợp lệ');
     }
 
-    // Hủy đơn PENDING cũ của org (tránh nhiều QR)
+    // Hủy đơn PENDING gói đăng ký cũ (không đụng đơn mua Credit)
     await this.prisma.paymentOrder.updateMany({
-      where: { organizationId, status: PaymentOrderStatus.PENDING },
+      where: { organizationId, status: PaymentOrderStatus.PENDING, creditPackageId: null },
       data: { status: PaymentOrderStatus.CANCELLED, cancelledAt: new Date() },
     });
 
@@ -586,7 +605,7 @@ export class BillingService {
         qrUrl,
         expiresAt: new Date(Date.now() + ORDER_TTL_MS),
       },
-      include: { plan: true },
+      include: { plan: true, creditPackage: true },
     });
 
     await this.audit.log({
@@ -601,6 +620,64 @@ export class BillingService {
     return this.mapOrder(order);
   }
 
+  async createCreditOrder(organizationId: string, userId: string, packageCode: string) {
+    const pkg = await this.prisma.creditPackage.findFirst({
+      where: { code: packageCode, status: 'ACTIVE' },
+    });
+    if (!pkg) throw new BadRequestException('Gói Credit không hợp lệ');
+
+    await this.prisma.paymentOrder.updateMany({
+      where: {
+        organizationId,
+        status: PaymentOrderStatus.PENDING,
+        creditPackageId: { not: null },
+      },
+      data: { status: PaymentOrderStatus.CANCELLED, cancelledAt: new Date() },
+    });
+
+    const code = await this.generateUniqueOrderCode();
+    const amountVnd = Number(pkg.priceVnd);
+    const qrUrl = this.buildVietQrUrl({
+      amount: amountVnd,
+      addInfo: code,
+      accountName: this.accountName(),
+    });
+
+    const order = await this.prisma.paymentOrder.create({
+      data: {
+        code,
+        organizationId,
+        creditPackageId: pkg.id,
+        createdByUserId: userId,
+        amountVnd,
+        status: PaymentOrderStatus.PENDING,
+        transferContent: code,
+        bankCode: this.bankCode(),
+        accountNumber: this.accountNumber(),
+        accountName: this.accountName(),
+        qrUrl,
+        expiresAt: new Date(Date.now() + ORDER_TTL_MS),
+      },
+      include: { plan: true, creditPackage: true },
+    });
+
+    await this.audit.log({
+      organizationId,
+      userId,
+      action: 'CREDIT_ORDER_CREATED',
+      entityType: 'PAYMENT_ORDER',
+      entityId: order.id,
+      metadata: {
+        code,
+        packageCode: pkg.code,
+        amountVnd,
+        credits: Number(pkg.credits),
+      },
+    });
+
+    return this.mapOrder(order);
+  }
+
   async getOrder(organizationId: string, orderIdOrCode: string) {
     await this.expireStaleOrders(organizationId);
     const order = await this.prisma.paymentOrder.findFirst({
@@ -608,7 +685,7 @@ export class BillingService {
         organizationId,
         OR: [{ id: orderIdOrCode }, { code: orderIdOrCode }],
       },
-      include: { plan: true, transactions: { orderBy: { createdAt: 'desc' }, take: 5 } },
+      include: { plan: true, creditPackage: true, transactions: { orderBy: { createdAt: 'desc' }, take: 5 } },
     });
     if (!order) throw new NotFoundException('Không tìm thấy đơn thanh toán');
     return this.mapOrder(order);
@@ -618,7 +695,7 @@ export class BillingService {
     await this.expireStaleOrders(organizationId);
     const rows = await this.prisma.paymentOrder.findMany({
       where: { organizationId },
-      include: { plan: true },
+      include: { plan: true, creditPackage: true },
       orderBy: { createdAt: 'desc' },
       take: 50,
     });
@@ -636,7 +713,7 @@ export class BillingService {
     const updated = await this.prisma.paymentOrder.update({
       where: { id: order.id },
       data: { status: PaymentOrderStatus.CANCELLED, cancelledAt: new Date() },
-      include: { plan: true },
+      include: { plan: true, creditPackage: true },
     });
     await this.audit.log({
       organizationId,
@@ -719,7 +796,7 @@ export class BillingService {
           const order = orderCode
             ? await tx.paymentOrder.findUnique({
                 where: { code: orderCode },
-                include: { plan: true, organization: true },
+                include: { plan: true, creditPackage: true, organization: true },
               })
             : null;
 
@@ -871,13 +948,7 @@ export class BillingService {
             };
           }
 
-          const period = await this.extendSubscriptionTx(
-            tx,
-            order.organizationId,
-            order.planId,
-            order.plan.durationMonths,
-            now,
-          );
+          const fulfilled = await this.fulfillPaidOrderTx(tx, order, now);
 
           return {
             success: true,
@@ -887,17 +958,23 @@ export class BillingService {
             sepayTransactionId: sepayId,
             authMethod: auth.method,
             authVerified: true,
-            activated: true,
-            periodEnd: period.currentPeriodEnd,
+            activated: fulfilled.kind === 'subscription',
+            credited: fulfilled.creditsGranted > 0,
+            kind: fulfilled.kind,
+            periodEnd: fulfilled.periodEnd,
+            creditsGranted: fulfilled.creditsGranted,
+            creditsIdempotent: fulfilled.creditsIdempotent,
             _notify: {
+              kind: fulfilled.kind,
               orderId: order.id,
               organizationId: order.organizationId,
               createdByUserId: order.createdByUserId,
               code: order.code,
-              planName: order.plan.name,
+              planName: fulfilled.label,
               amount,
               sepayId,
-              periodEnd: period.currentPeriodEnd,
+              periodEnd: fulfilled.periodEnd,
+              creditsGranted: fulfilled.creditsGranted,
             },
           };
         })
@@ -905,6 +982,7 @@ export class BillingService {
           const notify = (
             result as {
               _notify?: {
+                kind?: 'subscription' | 'credit';
                 orderId: string;
                 organizationId: string;
                 createdByUserId: string | null;
@@ -912,7 +990,8 @@ export class BillingService {
                 planName: string;
                 amount: number;
                 sepayId: string;
-                periodEnd: Date;
+                periodEnd: Date | null;
+                creditsGranted: number;
               };
             }
           )._notify;
@@ -924,39 +1003,40 @@ export class BillingService {
               entityType: 'PAYMENT_ORDER',
               entityId: notify.orderId,
               metadata: {
+                kind: notify.kind ?? 'subscription',
                 code: notify.code,
                 amount: notify.amount,
                 sepayId: notify.sepayId,
-                periodEnd: notify.periodEnd.toISOString(),
+                periodEnd: notify.periodEnd?.toISOString() ?? null,
+                creditsGranted: notify.creditsGranted,
               },
             });
-            const emailTarget = await this.prisma.user.findFirst({
-              where: { organizationId: notify.organizationId, isActive: true },
-              orderBy: { createdAt: 'asc' },
-            });
-            if (emailTarget) {
-              void this.mail.sendPaymentSuccess({
-                email: emailTarget.email,
-                name: emailTarget.name,
-                orderCode: notify.code,
-                planName: notify.planName,
-                amountVnd: notify.amount,
-                periodEnd: notify.periodEnd,
+            if (notify.kind !== 'credit' && notify.periodEnd) {
+              const emailTarget = await this.prisma.user.findFirst({
+                where: { organizationId: notify.organizationId, isActive: true },
+                orderBy: { createdAt: 'asc' },
               });
+              if (emailTarget) {
+                void this.mail.sendPaymentSuccess({
+                  email: emailTarget.email,
+                  name: emailTarget.name,
+                  orderCode: notify.code,
+                  planName: notify.planName,
+                  amountVnd: notify.amount,
+                  periodEnd: notify.periodEnd,
+                });
+              }
+              void this.affiliate
+                .onOrderPaid({
+                  orderId: notify.orderId,
+                  organizationId: notify.organizationId,
+                  createdByUserId: notify.createdByUserId,
+                  code: notify.code,
+                  amount: notify.amount,
+                  sepayId: notify.sepayId,
+                })
+                .catch((err) => this.logger.warn(`Affiliate commission skipped: ${String(err)}`));
             }
-            // Affiliate commission — idempotent theo orderId; không đụng activation
-            void this.affiliate
-              .onOrderPaid({
-                orderId: notify.orderId,
-                organizationId: notify.organizationId,
-                createdByUserId: notify.createdByUserId,
-                code: notify.code,
-                amount: notify.amount,
-                sepayId: notify.sepayId,
-              })
-              .catch((err) =>
-                this.logger.warn(`Affiliate commission skipped: ${String(err)}`),
-              );
             const { _notify: _, ...clean } = result as { _notify?: unknown };
             void _;
             return clean;
@@ -1010,6 +1090,7 @@ export class BillingService {
         where,
         include: {
           plan: true,
+          creditPackage: true,
           organization: { select: { id: true, name: true, slug: true, email: true } },
           transactions: { orderBy: { createdAt: 'desc' }, take: 3 },
         },
@@ -1099,7 +1180,7 @@ export class BillingService {
     const txn = await this.prisma.paymentTransaction.findUnique({
       where: { id: transactionId },
       include: {
-        paymentOrder: { include: { plan: true, organization: true } },
+        paymentOrder: { include: { plan: true, creditPackage: true, organization: true } },
       },
     });
     if (!txn) throw new NotFoundException('Không tìm thấy giao dịch');
@@ -1228,22 +1309,16 @@ export class BillingService {
         data: {
           status: PaymentOrderStatus.PAID,
           paidAt: new Date(),
-          reviewNote: force
-            ? `ADMIN_FORCE_REPROCESS: ${dto.reason}`
-            : order.reviewNote,
+          reviewNote: force ? `ADMIN_FORCE_REPROCESS: ${dto.reason}` : order.reviewNote,
         },
       });
       if (paid.count === 0) {
-        throw new BadRequestException('Không cập nhật được đơn — có thể đã PAID (chống double-activate)');
+        throw new BadRequestException(
+          'Không cập nhật được đơn — có thể đã PAID (chống double-activate)',
+        );
       }
 
-      const period = await this.extendSubscriptionTx(
-        tx,
-        order.organizationId,
-        order.planId,
-        order.plan.durationMonths,
-        new Date(),
-      );
+      const fulfilled = await this.fulfillPaidOrderTx(tx, order, new Date());
 
       const t = await tx.paymentTransaction.update({
         where: { id: txn.id },
@@ -1264,6 +1339,7 @@ export class BillingService {
               organizationId: true,
               amountVnd: true,
               plan: { select: { code: true, name: true, durationMonths: true } },
+              creditPackage: { select: { code: true, name: true, credits: true } },
               organization: { select: { id: true, name: true, email: true, slug: true } },
             },
           },
@@ -1276,7 +1352,9 @@ export class BillingService {
         txnMatched: true,
         txnProcessedAt: new Date().toISOString(),
         matchedReason: force ? 'ADMIN_FORCE_OK' : 'ADMIN_REPROCESS_OK',
-        subscriptionEnd: period.currentPeriodEnd.toISOString(),
+        subscriptionEnd: fulfilled.periodEnd?.toISOString() ?? null,
+        kind: fulfilled.kind,
+        creditsGranted: fulfilled.creditsGranted,
       };
 
       await this.audit.log(
@@ -1295,14 +1373,15 @@ export class BillingService {
             after,
             sepayTransactionId: txn.sepayTransactionId,
             orderCode: order.code,
-            planCode: order.plan.code,
+            planCode: order.plan?.code ?? null,
+            packageCode: order.creditPackage?.code ?? null,
             amountVnd: amount,
           },
         },
         tx,
       );
 
-      return { transaction: t, before, after, periodEnd: period.currentPeriodEnd };
+      return { transaction: t, before, after, periodEnd: fulfilled.periodEnd };
     });
 
     // Admin reprocess / force — không tạo hoa hồng affiliate
@@ -1374,7 +1453,7 @@ export class BillingService {
       const u = await tx.paymentOrder.update({
         where: { id: orderId },
         data: { status: PaymentOrderStatus.REVIEW_REQUIRED, reviewNote: note },
-        include: { plan: true },
+        include: { plan: true, creditPackage: true },
       });
       await this.audit.log(
         {
@@ -1414,10 +1493,7 @@ export class BillingService {
 
     const authHeader = String(headers['authorization'] || headers['Authorization'] || '');
     const hasAuthHeader = authHeader.length > 0;
-    const hasHmacHeader = !!(
-      headers['x-sepay-signature'] ||
-      headers['X-SePay-Signature']
-    );
+    const hasHmacHeader = !!(headers['x-sepay-signature'] || headers['X-SePay-Signature']);
 
     if (apiToken) {
       if (
@@ -1566,6 +1642,190 @@ export class BillingService {
     });
   }
 
+  /**
+   * Kích hoạt đơn đã PAID: gói đăng ký → gia hạn + grant; gói Credit → chỉ cộng Credit.
+   */
+  private async fulfillPaidOrderTx(
+    tx: Prisma.TransactionClient,
+    order: {
+      id: string;
+      organizationId: string;
+      planId: string | null;
+      creditPackageId?: string | null;
+      createdByUserId?: string | null;
+      plan: {
+        code: string;
+        name: string;
+        durationMonths: number;
+        creditGrant?: Prisma.Decimal | number | null;
+      } | null;
+      creditPackage: {
+        code: string;
+        name: string;
+        credits: Prisma.Decimal | number;
+      } | null;
+    },
+    paidAt: Date,
+  ): Promise<{
+    kind: 'subscription' | 'credit';
+    periodEnd: Date | null;
+    creditsGranted: number;
+    creditsIdempotent: boolean;
+    label: string;
+  }> {
+    if (order.creditPackageId) {
+      const pkg = order.creditPackage;
+      if (!pkg) throw new BadRequestException('Gói Credit không hợp lệ');
+      const purchase = await this.grantPurchasedCreditsTx(tx, {
+        organizationId: order.organizationId,
+        orderId: order.id,
+        userId: order.createdByUserId,
+        pkg,
+      });
+      return {
+        kind: 'credit',
+        periodEnd: null,
+        creditsGranted: purchase.granted,
+        creditsIdempotent: purchase.idempotent,
+        label: pkg.name,
+      };
+    }
+    if (!order.planId || !order.plan) {
+      throw new BadRequestException('Đơn thiếu gói đăng ký');
+    }
+    const existingSub = await tx.subscription.findFirst({
+      where: {
+        organizationId: order.organizationId,
+        status: {
+          in: [
+            SubscriptionStatus.ACTIVE,
+            SubscriptionStatus.TRIALING,
+            SubscriptionStatus.TRIAL_EXPIRED,
+            SubscriptionStatus.EXPIRED,
+          ],
+        },
+      },
+      orderBy: { currentPeriodEnd: 'desc' },
+    });
+    const fromTrial =
+      existingSub?.status === SubscriptionStatus.TRIALING ||
+      existingSub?.status === SubscriptionStatus.TRIAL_EXPIRED;
+    const grantSource =
+      existingSub && !fromTrial
+        ? CREDIT_GRANT_SOURCES.RENEWAL
+        : CREDIT_GRANT_SOURCES.PURCHASE;
+    const period = await this.extendSubscriptionTx(
+      tx,
+      order.organizationId,
+      order.planId,
+      order.plan.durationMonths,
+      paidAt,
+    );
+    const creditGrant = await this.grantPlanCreditsTx(tx, {
+      organizationId: order.organizationId,
+      orderId: order.id,
+      userId: order.createdByUserId,
+      subscriptionId: period.id,
+      source: grantSource,
+      plan: order.plan,
+    });
+    return {
+      kind: 'subscription',
+      periodEnd: period.currentPeriodEnd,
+      creditsGranted: creditGrant.granted,
+      creditsIdempotent: creditGrant.idempotent,
+      label: order.plan.name,
+    };
+  }
+
+  /**
+   * Cộng AI Credit của Plan đúng 1 lần theo orderId.
+   * Số lượng lấy từ `plan.creditGrant` (DB), cộng dồn — không reset số dư cũ.
+   */
+  private trialCreditGrantKey(organizationId: string) {
+    return `trial:${organizationId}:credit-grant`;
+  }
+
+  private paymentCreditGrantKey(orderId: string) {
+    return `payment:${orderId}:credit-grant`;
+  }
+
+  private paymentCreditPurchaseKey(orderId: string) {
+    return `payment:${orderId}:credit-purchase`;
+  }
+
+  private async grantPurchasedCreditsTx(
+    tx: Prisma.TransactionClient,
+    params: {
+      organizationId: string;
+      orderId: string;
+      userId?: string | null;
+      pkg: { code: string; name: string; credits: Prisma.Decimal | number };
+    },
+  ): Promise<{ granted: number; idempotent: boolean; skipped: boolean }> {
+    const amount = Number(params.pkg.credits);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return { granted: 0, idempotent: false, skipped: true };
+    }
+    const result = await this.credit.purchase(
+      {
+        organizationId: params.organizationId,
+        amount,
+        userId: params.userId ?? undefined,
+        source: CREDIT_GRANT_SOURCES.PURCHASE,
+        paymentId: params.orderId,
+        idempotencyKey: this.paymentCreditPurchaseKey(params.orderId),
+        referenceId: params.orderId,
+        reason: `Mua gói ${params.pkg.name}`,
+        metadata: {
+          source: CREDIT_GRANT_SOURCES.PURCHASE,
+          packageCode: params.pkg.code,
+          orderId: params.orderId,
+          delta: amount,
+        },
+      },
+      tx,
+    );
+    return { granted: amount, idempotent: result.idempotent, skipped: false };
+  }
+
+  private async grantPlanCreditsTx(
+    tx: Prisma.TransactionClient,
+    params: {
+      organizationId: string;
+      orderId: string;
+      userId?: string | null;
+      subscriptionId: string;
+      source: typeof CREDIT_GRANT_SOURCES.PURCHASE | typeof CREDIT_GRANT_SOURCES.RENEWAL;
+      plan: { code: string; name: string; creditGrant?: Prisma.Decimal | number | null };
+    },
+  ): Promise<{ granted: number; idempotent: boolean; skipped: boolean }> {
+    const amount = Number(params.plan.creditGrant ?? 0);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return { granted: 0, idempotent: false, skipped: true };
+    }
+    const result = await this.credit.grant(
+      {
+        organizationId: params.organizationId,
+        amount,
+        userId: params.userId ?? undefined,
+        source: params.source,
+        subscriptionId: params.subscriptionId,
+        paymentId: params.orderId,
+        idempotencyKey: this.paymentCreditGrantKey(params.orderId),
+        referenceId: params.orderId,
+        reason: `Thanh toán gói ${params.plan.name}`,
+        metadata: {
+          source: params.source,
+          planCode: params.plan.code,
+          orderId: params.orderId,
+        },
+      },
+      tx,
+    );
+    return { granted: amount, idempotent: result.idempotent, skipped: false };
+  }
+
   private async extendSubscriptionTx(
     tx: Prisma.TransactionClient,
     organizationId: string,
@@ -1610,9 +1870,10 @@ export class BillingService {
         data: {
           planId,
           status: SubscriptionStatus.ACTIVE,
-          currentPeriodStart: fromTrial || existing.currentPeriodEnd.getTime() <= paidAt.getTime()
-            ? paidAt
-            : existing.currentPeriodStart,
+          currentPeriodStart:
+            fromTrial || existing.currentPeriodEnd.getTime() <= paidAt.getTime()
+              ? paidAt
+              : existing.currentPeriodStart,
           currentPeriodEnd: end,
           cancelledAt: null,
           // Giữ lịch sử trial; entitlement ACTIVE không phụ thuộc trialEndsAt
@@ -1635,7 +1896,8 @@ export class BillingService {
     id: string;
     code: string;
     organizationId: string;
-    planId: string;
+    planId: string | null;
+    creditPackageId?: string | null;
     amountVnd: Prisma.Decimal | number;
     status: PaymentOrderStatus;
     transferContent: string;
@@ -1654,7 +1916,13 @@ export class BillingService {
       name: string;
       durationMonths: number;
       priceVnd: Prisma.Decimal | number;
-    };
+    } | null;
+    creditPackage?: {
+      code: string;
+      name: string;
+      credits: Prisma.Decimal | number;
+      priceVnd?: Prisma.Decimal | number;
+    } | null;
     transactions?: unknown[];
   }) {
     return {
@@ -1662,6 +1930,8 @@ export class BillingService {
       code: order.code,
       organizationId: order.organizationId,
       planId: order.planId,
+      creditPackageId: order.creditPackageId ?? null,
+      kind: order.creditPackageId ? 'credit' : 'subscription',
       amountVnd: Number(order.amountVnd),
       status: order.status,
       statusLabel: STATUS_LABELS[order.status] ?? order.status,
@@ -1682,6 +1952,15 @@ export class BillingService {
             name: order.plan.name,
             durationMonths: order.plan.durationMonths,
             priceVnd: Number(order.plan.priceVnd),
+          }
+        : undefined,
+      creditPackage: order.creditPackage
+        ? {
+            code: order.creditPackage.code,
+            name: order.creditPackage.name,
+            credits: Number(order.creditPackage.credits),
+            priceVnd:
+              order.creditPackage.priceVnd != null ? Number(order.creditPackage.priceVnd) : undefined,
           }
         : undefined,
       transactions: order.transactions,

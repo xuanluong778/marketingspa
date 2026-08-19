@@ -16,11 +16,11 @@ function redirectToLogin() {
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const [ready, setReady] = useState(false);
   const [hasToken, setHasToken] = useState(false);
-  const { isLoading, isError, error, refetch, isSuccess, data } = useCurrentUser();
+  const { isLoading, isError, error, refetch, isSuccess, data, isFetching } = useCurrentUser();
 
   const apiError = error as ApiError | undefined;
-  const isUnauthorized = isError && apiError?.statusCode === 401;
-  const isNetworkError = isError && !apiError?.statusCode;
+  const isUnauthorized = isError && apiError?.statusCode === 401 && !data;
+  const isNetworkError = isError && !apiError?.statusCode && !data;
 
   useEffect(() => {
     const authenticated = authStorage.isAuthenticated();
@@ -32,6 +32,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // Only hard-redirect when we truly have no session (no prior /auth/me data)
     if (!isUnauthorized) return;
     authStorage.clear();
     setHasToken(false);
@@ -46,18 +47,34 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!hasToken || !authStorage.isAuthenticated() || isUnauthorized) {
+  if (!hasToken || !authStorage.isAuthenticated()) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#0A3D30]">
         <LoadingState
-          message={isUnauthorized ? 'Phiên đăng nhập hết hạn...' : 'Đang chuyển đến trang đăng nhập...'}
+          message="Đang chuyển đến trang đăng nhập..."
           className="text-white [&_svg]:text-white"
         />
       </div>
     );
   }
 
-  if (isLoading || (!isSuccess && !isError && !data)) {
+  // Keep children mounted once we have user data — temporary 401/refetch must NOT remount Teleprompter
+  if (data || isSuccess) {
+    return <>{children}</>;
+  }
+
+  if (isUnauthorized) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#0A3D30]">
+        <LoadingState
+          message="Phiên đăng nhập hết hạn..."
+          className="text-white [&_svg]:text-white"
+        />
+      </div>
+    );
+  }
+
+  if (isLoading || isFetching || (!isSuccess && !isError && !data)) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#0A3D30]">
         <LoadingState message="Đang xác thực..." className="text-white [&_svg]:text-white" />

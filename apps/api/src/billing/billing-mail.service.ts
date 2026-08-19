@@ -83,4 +83,59 @@ export class BillingMailService {
       );
     }
   }
+
+  async sendGiftNotice(params: {
+    email: string;
+    name: string;
+    durationLabel: string;
+    creditsGranted: number;
+    periodEnd: Date;
+  }) {
+    const hasDuration = Boolean(params.durationLabel?.trim());
+    const hasCredit = params.creditsGranted > 0;
+    const subject = hasDuration && hasCredit
+      ? 'Bạn được tặng thời hạn sử dụng và AI Credit'
+      : hasCredit
+        ? 'Bạn được tặng AI Credit'
+        : 'Bạn được tặng thời hạn sử dụng';
+    const end = params.periodEnd.toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+    const creditLine = hasCredit
+      ? `AI Credit tặng: ${params.creditsGranted.toLocaleString('vi-VN')}`
+      : null;
+    const intro = hasDuration && hasCredit
+      ? 'Tài khoản của bạn vừa được tặng thời hạn sử dụng và AI Credit MarketingAutoAZ.'
+      : hasCredit
+        ? 'Tài khoản của bạn vừa được tặng AI Credit MarketingAutoAZ.'
+        : 'Tài khoản của bạn vừa được tặng thời hạn sử dụng MarketingAutoAZ.';
+    const text = [
+      `Xin chào ${params.name},`,
+      '',
+      intro,
+      ...(hasDuration ? [`Thời hạn: ${params.durationLabel}`] : []),
+      ...(creditLine ? [creditLine] : []),
+      `Hạn sử dụng đến: ${end}`,
+      '',
+      'Cảm ơn bạn đã sử dụng MarketingAutoAZ.',
+    ].join('\n');
+
+    if (!this.smtpConfigured()) {
+      this.logger.warn(`[billing-mail:dev] ${subject} → ${params.email}`);
+      this.logger.log(text);
+      return;
+    }
+
+    try {
+      await this.getTransporter().sendMail({
+        from: this.fromAddress(),
+        to: params.email,
+        subject,
+        text,
+      });
+      this.logger.log(`[billing-mail:gift-sent] ${params.email}`);
+    } catch (e) {
+      this.logger.error(
+        `[billing-mail:gift-fail] ${params.email} ${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+  }
 }

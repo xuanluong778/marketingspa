@@ -37,9 +37,14 @@ import { MessagingIdentityModule } from './messaging-identity/messaging-identity
 import { MessagingModule } from './messaging/messaging.module';
 import { MessagingCampaignModule } from './messaging-campaign/messaging-campaign.module';
 import { BillingModule } from './billing/billing.module';
+import { CreditModule } from './credit/credit.module';
 import { PlatformAdminModule } from './platform-admin/platform-admin.module';
 import { AffiliateModule } from './affiliate/affiliate.module';
 import { VideoTranscriptionModule } from './video-transcription/video-transcription.module';
+import { AssistantModule } from './assistant/assistant.module';
+import { FunnelBuilderModule } from './funnel-builder/funnel-builder.module';
+import { EmailMarketingModule } from './email-marketing/email-marketing.module';
+import { ZaloMarketingModule } from './zalo-marketing/zalo-marketing.module';
 
 @Module({
   imports: [
@@ -79,13 +84,18 @@ import { VideoTranscriptionModule } from './video-transcription/video-transcript
     RagKbModule,
     AttributionModule,
     CrmModule,
+    FunnelBuilderModule,
     MessagingIdentityModule,
     MessagingModule,
     MessagingCampaignModule,
+    EmailMarketingModule,
+    ZaloMarketingModule,
+    CreditModule,
     BillingModule,
     PlatformAdminModule,
     AffiliateModule,
     VideoTranscriptionModule,
+    AssistantModule,
   ],
 })
 export class AppModule {}

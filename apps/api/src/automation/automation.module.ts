@@ -7,5 +7,6 @@ import { MessagingModule } from '../messaging/messaging.module';
   imports: [MessagingModule],
   controllers: [AutomationController],
   providers: [AutomationService],
+  exports: [AutomationService],
 })
 export class AutomationModule {}

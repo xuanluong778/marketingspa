@@ -11,8 +11,9 @@ import {
   type MessagingCampaignPlanJobData,
   buildCampaignDispatchJobId,
   buildRecipientIdempotencyKey,
+  MESSAGING_NAME_FALLBACKS,
+  renderTemplateWithFallbacks,
 } from '@marketingspa/shared';
-import { renderTemplate } from '../lib/template';
 import { checkCampaignRecipientEligibility } from '../lib/messaging-campaign-eligibility';
 import {
   buildRecipientRenderContext,
@@ -88,7 +89,18 @@ export async function processMessagingCampaignPlan(
       });
 
       const context = await buildRecipientRenderContext(organizationId, identity, variables);
-      const renderedContent = template ? renderTemplate(template.body, context) : null;
+      const bodySource =
+        template?.body ||
+        variables.body?.trim() ||
+        variables.message?.trim() ||
+        variables.content?.trim() ||
+        '';
+      const renderedContent = bodySource
+        ? renderTemplateWithFallbacks(bodySource, context, {
+            ...MESSAGING_NAME_FALLBACKS,
+            ...((template?.variableFallbacks ?? {}) as Record<string, string>),
+          }).rendered
+        : null;
       const eligible = eligibility.eligible;
 
       if (eligible) {

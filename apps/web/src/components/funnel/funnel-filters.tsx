@@ -17,27 +17,38 @@ interface FunnelFilterBarProps {
   filters: FunnelFilters;
   onChange: (f: FunnelFilters) => void;
   leadSources?: { id: string; name: string }[];
+  funnels?: { id: string; name: string }[];
   branches?: { id: string; name: string }[];
   employees?: { id: string; name: string }[];
   campaigns?: { id: string; name: string }[];
+  advanced?: boolean;
 }
 
 export function FunnelFilterBar({
   filters,
   onChange,
   leadSources = [],
+  funnels = [],
   branches = [],
   employees = [],
   campaigns = [],
+  advanced = false,
 }: FunnelFilterBarProps) {
   const hasExtra =
-    filters.leadSourceId || filters.assignedToId || filters.branchId || filters.adCampaignId;
+    filters.leadSourceId ||
+    filters.funnelRecommendationId ||
+    filters.assignedToId ||
+    filters.branchId ||
+    filters.adCampaignId ||
+    filters.utmSource ||
+    filters.utmMedium ||
+    filters.utmCampaign;
 
   return (
-    <div className="flex flex-col gap-3 p-4 rounded-lg border bg-card mb-6">
+    <div className="flex flex-col gap-3 rounded-lg border bg-card p-4">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className="space-y-1">
-          <Label className="text-xs">Từ ngày</Label>
+          <Label className="text-xs">Thời gian — từ ngày</Label>
           <Input
             type="date"
             value={filters.from}
@@ -45,7 +56,7 @@ export function FunnelFilterBar({
           />
         </div>
         <div className="space-y-1">
-          <Label className="text-xs">Đến ngày</Label>
+          <Label className="text-xs">Thời gian — đến ngày</Label>
           <Input
             type="date"
             value={filters.to}
@@ -53,7 +64,28 @@ export function FunnelFilterBar({
           />
         </div>
         <div className="space-y-1">
-          <Label className="text-xs">Nguồn lead</Label>
+          <Label className="text-xs">Funnel</Label>
+          <Select
+            value={filters.funnelRecommendationId || 'all'}
+            onValueChange={(v) =>
+              onChange({ ...filters, funnelRecommendationId: v === 'all' ? '' : v })
+            }
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Tất cả" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tất cả phễu</SelectItem>
+              {funnels.map((f) => (
+                <SelectItem key={f.id} value={f.id}>
+                  {f.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Nguồn khách</Label>
           <Select
             value={filters.leadSourceId || 'all'}
             onValueChange={(v) => onChange({ ...filters, leadSourceId: v === 'all' ? '' : v })}
@@ -71,64 +103,111 @@ export function FunnelFilterBar({
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Chiến dịch ads</Label>
-          <Select
-            value={filters.adCampaignId || 'all'}
-            onValueChange={(v) => onChange({ ...filters, adCampaignId: v === 'all' ? '' : v })}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Tất cả" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Tất cả chiến dịch</SelectItem>
-              {campaigns.map((c) => (
-                <SelectItem key={c.id} value={c.id}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Nhân viên</Label>
-          <Select
-            value={filters.assignedToId || 'all'}
-            onValueChange={(v) => onChange({ ...filters, assignedToId: v === 'all' ? '' : v })}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Tất cả" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Tất cả NV</SelectItem>
-              {employees.map((e) => (
-                <SelectItem key={e.id} value={e.id}>
-                  {e.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1">
-          <Label className="text-xs">Chi nhánh</Label>
-          <Select
-            value={filters.branchId || 'all'}
-            onValueChange={(v) => onChange({ ...filters, branchId: v === 'all' ? '' : v })}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Tất cả" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Tất cả chi nhánh</SelectItem>
-              {branches.map((b) => (
-                <SelectItem key={b.id} value={b.id}>
-                  {b.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
       </div>
+
+      {advanced && (
+        <div className="grid gap-3 border-t pt-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="space-y-1">
+            <Label className="text-xs">Attribution</Label>
+            <Select
+              value={filters.touchModel}
+              onValueChange={(v) =>
+                onChange({ ...filters, touchModel: v as FunnelFilters['touchModel'] })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="last">Last Touch</SelectItem>
+                <SelectItem value="first">First Touch</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Chiến dịch ads</Label>
+            <Select
+              value={filters.adCampaignId || 'all'}
+              onValueChange={(v) => onChange({ ...filters, adCampaignId: v === 'all' ? '' : v })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Tất cả" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tất cả chiến dịch</SelectItem>
+                {campaigns.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Nhân viên sale</Label>
+            <Select
+              value={filters.assignedToId || 'all'}
+              onValueChange={(v) => onChange({ ...filters, assignedToId: v === 'all' ? '' : v })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Tất cả" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tất cả NV</SelectItem>
+                {employees.map((e) => (
+                  <SelectItem key={e.id} value={e.id}>
+                    {e.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Chi nhánh</Label>
+            <Select
+              value={filters.branchId || 'all'}
+              onValueChange={(v) => onChange({ ...filters, branchId: v === 'all' ? '' : v })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Tất cả" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tất cả chi nhánh</SelectItem>
+                {branches.map((b) => (
+                  <SelectItem key={b.id} value={b.id}>
+                    {b.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">UTM Source</Label>
+            <Input
+              placeholder="facebook, google…"
+              value={filters.utmSource}
+              onChange={(e) => onChange({ ...filters, utmSource: e.target.value })}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">UTM Medium</Label>
+            <Input
+              placeholder="cpc, email…"
+              value={filters.utmMedium}
+              onChange={(e) => onChange({ ...filters, utmMedium: e.target.value })}
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">UTM Campaign</Label>
+            <Input
+              placeholder="summer-promo…"
+              value={filters.utmCampaign}
+              onChange={(e) => onChange({ ...filters, utmCampaign: e.target.value })}
+            />
+          </div>
+        </div>
+      )}
+
       {hasExtra && (
         <Button
           variant="ghost"
@@ -138,13 +217,17 @@ export function FunnelFilterBar({
             onChange({
               ...filters,
               leadSourceId: '',
+              funnelRecommendationId: '',
               assignedToId: '',
               branchId: '',
               adCampaignId: '',
+              utmSource: '',
+              utmMedium: '',
+              utmCampaign: '',
             })
           }
         >
-          <X className="h-4 w-4 mr-1" />
+          <X className="mr-1 h-4 w-4" />
           Xóa bộ lọc
         </Button>
       )}

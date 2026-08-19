@@ -31,3 +31,42 @@ export function buildIntegrationScopeKey(params: {
   }
   return `${params.channel.toLowerCase()}:${ref}`;
 }
+
+/**
+ * Canonical + legacy scope keys cho cùng một Fanpage/OA.
+ * Chatbot CSKH từng ghi `messenger_page:{pageId}`; campaign dùng `messenger:{pageId}`.
+ */
+export function resolveIntegrationScopeKeys(params: {
+  integrationId?: string | null;
+  channel: string;
+  channelAccountRef?: string | null;
+  integrationScopeKey?: string | null;
+}): string[] {
+  const keys = new Set<string>();
+  if (params.integrationScopeKey?.trim()) {
+    keys.add(params.integrationScopeKey.trim());
+  }
+  if (params.integrationId || params.channelAccountRef) {
+    try {
+      keys.add(
+        buildIntegrationScopeKey({
+          integrationId: params.integrationId,
+          channel: params.channel,
+          channelAccountRef: params.channelAccountRef,
+        }),
+      );
+    } catch {
+      /* thiếu ref */
+    }
+  }
+  const channel = params.channel.toUpperCase();
+  const ref =
+    params.channelAccountRef?.trim() ||
+    params.integrationScopeKey?.split(':').slice(1).join(':') ||
+    '';
+  if (channel === 'MESSENGER' && ref) {
+    keys.add(`messenger:${ref}`);
+    keys.add(`messenger_page:${ref}`);
+  }
+  return [...keys];
+}

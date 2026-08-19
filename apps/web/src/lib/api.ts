@@ -1,8 +1,7 @@
 function resolveApiUrl(): string {
   const fromEnv = process.env.NEXT_PUBLIC_API_URL?.trim();
-  if (fromEnv && !fromEnv.includes('localhost') && !fromEnv.includes('127.0.0.1')) {
-    return fromEnv.replace(/\/$/, '');
-  }
+  // Always prefer explicit env (works for both local and prod).
+  if (fromEnv) return fromEnv.replace(/\/$/, '');
   if (typeof window !== 'undefined' && window.location?.origin) {
     return window.location.origin;
   }

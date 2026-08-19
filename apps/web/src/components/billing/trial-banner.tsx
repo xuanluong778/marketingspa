@@ -31,8 +31,8 @@ export function TrialBanner() {
       }`}
     >
       <p className="text-white">
-        {warn ? '⚠️ Dùng thử sắp hết hạn — ' : 'Dùng thử miễn phí — '}
-        còn <strong className="text-white">{formatRemaining(trial.remainingMs)}</strong>
+        {warn ? '⚠️ ' : ''}
+        Dùng thử còn <strong className="text-white">{formatRemaining(trial.remainingMs)}</strong>
         {trial.trialEndsAt
           ? ` (đến ${new Date(trial.trialEndsAt).toLocaleString('vi-VN')})`
           : ''}

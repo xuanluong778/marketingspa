@@ -1,22 +1,21 @@
 import type { Job } from 'bullmq';
 import {
   AutomationLogStatus,
+  AutomationTriggerType,
   LeadAssignmentMode,
   MessageChannel,
   Prisma,
   prisma,
 } from '@marketingspa/database';
+import {
+  automationFlowMatchesFunnel,
+  isSafeWebhookUrl,
+  normalizeAutomationAction,
+  type NormalizedAutomationAction,
+} from '@marketingspa/shared';
 import { renderTemplate } from '../lib/template';
 import { checkMessagingEligibilityBeforeSend } from '../lib/messaging-eligibility';
-
-type AutomationAction =
-  | { type: 'SEND_MESSAGE'; templateId?: string }
-  | { type: 'SEND_EMAIL'; templateId?: string }
-  | { type: 'CREATE_TASK'; title: string; dueInMinutes?: number }
-  | { type: 'ASSIGN_EMPLOYEE'; employeeId?: string }
-  | { type: 'CHANGE_STATUS'; pipelineStatus: string }
-  | { type: 'ADD_TAG'; tag: string }
-  | { type: 'CREATE_APPOINTMENT'; branchId?: string; delayMinutes?: number };
+import { dispatchFunnelAutomation } from '../lib/dispatch-funnel-automation';
 
 function inQuietHours(start?: string | null, end?: string | null) {
   if (!start || !end) return false;
@@ -27,14 +26,21 @@ function inQuietHours(start?: string | null, end?: string | null) {
 }
 
 export async function processAutomationMessage(job: Job) {
+  if (job.name === 'run-canvas-runtime') {
+    const { processCanvasRuntime } = await import('../lib/run-canvas-runtime');
+    return processCanvasRuntime(job);
+  }
+
   const data = job.data as {
     organizationId: string;
     flowId: string;
+    funnelId?: string | null;
     customerId?: string | null;
     leadId?: string | null;
     appointmentId?: string | null;
     context?: Record<string, string>;
     idempotencyKey?: string;
+    fromStep?: number;
   };
 
   const { organizationId, flowId } = data;
@@ -59,6 +65,43 @@ export async function processAutomationMessage(job: Job) {
   });
   if (!flow || !flow.isActive || flow.isPaused) {
     return { skipped: true, reason: 'flow_inactive' };
+  }
+
+  if (data.leadId) {
+    const lead = await prisma.lead.findFirst({
+      where: { id: data.leadId, organizationId },
+      select: { funnelRecommendationId: true },
+    });
+    if (!automationFlowMatchesFunnel(flow.funnelId, lead?.funnelRecommendationId)) {
+      return { skipped: true, reason: 'funnel_mismatch' };
+    }
+  }
+
+  if (flow.triggerType === AutomationTriggerType.NO_REPLY) {
+    const watch = data.context?.noReplyWatchStartedAt
+      ? new Date(data.context.noReplyWatchStartedAt)
+      : null;
+    const inbound = await prisma.messagingContactIdentity.findFirst({
+      where: {
+        organizationId,
+        OR: [
+          ...(data.leadId ? [{ leadId: data.leadId }] : []),
+          ...(data.customerId ? [{ customerId: data.customerId }] : []),
+        ],
+        lastInboundAt:
+          watch && !Number.isNaN(watch.getTime()) ? { gt: watch } : { not: null },
+      },
+      select: { id: true },
+    });
+    if (inbound) return { skipped: true, reason: 'replied' };
+    const { applyFunnelScoreEvent } = await import('../lib/apply-funnel-score');
+    void applyFunnelScoreEvent({
+      organizationId,
+      leadId: data.leadId,
+      customerId: data.customerId,
+      eventType: 'NO_REPLY',
+      source: 'automation_no_reply',
+    }).catch(() => undefined);
   }
 
   if (inQuietHours(flow.quietHoursStart, flow.quietHoursEnd)) {
@@ -125,13 +168,16 @@ export async function processAutomationMessage(job: Job) {
     }
   }
 
-  const actions = (Array.isArray(flow.actions) ? flow.actions : []) as AutomationAction[];
-  const steps: AutomationAction[] =
-    actions.length > 0 ? actions : flow.messageTemplate ? [{ type: 'SEND_MESSAGE' }] : [];
+  const steps = (Array.isArray(flow.actions) ? flow.actions : [])
+    .map((raw) => normalizeAutomationAction(raw))
+    .filter((a): a is Exclude<NormalizedAutomationAction, { type: 'UNKNOWN' }> => a.type !== 'UNKNOWN');
+  const effective: Array<Exclude<NormalizedAutomationAction, { type: 'UNKNOWN' }>> =
+    steps.length > 0 ? steps : flow.messageTemplate ? [{ type: 'SEND_MESSAGE' }] : [];
 
   let lastContent: string | undefined;
-  for (let i = 0; i < steps.length; i++) {
-    const action = steps[i]!;
+  const fromStep = Math.max(0, data.fromStep ?? 0);
+  for (let i = fromStep; i < effective.length; i++) {
+    const action = effective[i]!;
     switch (action.type) {
       case 'SEND_MESSAGE':
       case 'SEND_EMAIL': {
@@ -192,10 +238,31 @@ export async function processAutomationMessage(job: Job) {
         break;
       }
       case 'CHANGE_STATUS': {
-        if (data.leadId && action.pipelineStatus) {
+        if (data.leadId && (action.pipelineStatus || action.stageId)) {
+          const stage = action.stageId
+            ? await prisma.funnelStage.findFirst({
+                where: { id: action.stageId, organizationId, isActive: true },
+              })
+            : await prisma.funnelStage.findFirst({
+                where: {
+                  organizationId,
+                  isActive: true,
+                  OR: [
+                    { code: action.pipelineStatus! },
+                    { legacyStatus: action.pipelineStatus as never },
+                  ],
+                },
+                orderBy: { position: 'asc' },
+              });
+          const status = stage?.legacyStatus ?? action.pipelineStatus;
           await prisma.lead.update({
             where: { id: data.leadId },
-            data: { pipelineStatus: action.pipelineStatus as never },
+            data: {
+              ...(status ? { pipelineStatus: status as never } : {}),
+              ...(stage
+                ? { stageId: stage.id, pipelineId: stage.pipelineId }
+                : {}),
+            },
           });
         }
         break;
@@ -232,6 +299,32 @@ export async function processAutomationMessage(job: Job) {
         }
         break;
       }
+      case 'WAIT':
+        break;
+      case 'WEBHOOK': {
+        if (!isSafeWebhookUrl(action.url)) break;
+        const ac = new AbortController();
+        const timer = setTimeout(() => ac.abort(), 8_000);
+        try {
+          await fetch(action.url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              organizationId,
+              flowId: flow.id,
+              leadId: data.leadId ?? null,
+              customerId: data.customerId ?? null,
+              event: 'automation.webhook',
+            }),
+            signal: ac.signal,
+          });
+        } catch {
+          /* logged as step success with skip — don't fail the flow */
+        } finally {
+          clearTimeout(timer);
+        }
+        break;
+      }
       default:
         break;
     }
@@ -260,6 +353,47 @@ export async function processAutomationMessage(job: Job) {
         },
       })
       .catch(() => undefined);
+
+    if (action.type === 'SEND_MESSAGE' || action.type === 'SEND_EMAIL') {
+      void dispatchFunnelAutomation(organizationId, AutomationTriggerType.NO_REPLY, {
+        leadId: data.leadId,
+        customerId: data.customerId,
+        appointmentId: data.appointmentId,
+        context: {
+          ...(data.context ?? {}),
+          noReplyWatchStartedAt: new Date().toISOString(),
+        },
+        dedupeKey: `NO_REPLY:${flow.id}:${data.leadId ?? data.customerId ?? ''}`,
+      });
+    }
+
+    if (action.type === 'WAIT') {
+      const { Queue } = await import('bullmq');
+      const { QUEUE_NAMES } = await import('@marketingspa/shared');
+      const { bullConnection, queuePrefix } = await import('../config');
+      const queue = new Queue(QUEUE_NAMES.AUTOMATION_MESSAGE, {
+        connection: bullConnection,
+        prefix: queuePrefix,
+      });
+      try {
+        await queue.add(
+          'run-automation',
+          {
+            ...data,
+            fromStep: i + 1,
+            idempotencyKey: `${idempotencyKey}:from:${i + 1}`,
+          },
+          {
+            jobId: `auto:${idempotencyKey}:from:${i + 1}`.slice(0, 120),
+            delay: Math.max(0, action.minutes) * 60_000,
+            attempts: 3,
+          },
+        );
+      } finally {
+        await queue.close();
+      }
+      return { waiting: true, nextStep: i + 1 };
+    }
   }
 
   const log = await prisma.automationLog.create({

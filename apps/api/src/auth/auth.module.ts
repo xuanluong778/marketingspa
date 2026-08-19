@@ -9,11 +9,13 @@ import { AuthMailService } from './auth-mail.service';
 import { GoogleTokenVerifier } from './google-token.verifier';
 import { AuditModule } from '../audit/audit.module';
 import { AffiliateModule } from '../affiliate/affiliate.module';
+import { BillingModule } from '../billing/billing.module';
 
 @Module({
   imports: [
     AuditModule,
     AffiliateModule,
+    BillingModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       inject: [ConfigService],

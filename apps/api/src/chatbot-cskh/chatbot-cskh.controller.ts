@@ -51,8 +51,8 @@ export class ChatbotCskhController {
   }
 
   @Post('suggest')
-  suggest(@Body() dto: ChatbotSuggestDto) {
-    return this.suggestService.suggest(dto);
+  suggest(@CurrentUser() user: AuthUser, @Body() dto: ChatbotSuggestDto) {
+    return this.suggestService.suggest(dto, user.organizationId);
   }
 
   @Get('overview')
@@ -160,14 +160,64 @@ export class ChatbotCskhController {
     return this.service.deleteChannel(user.organizationId, id);
   }
 
+  @Get('inbox/channel-options')
+  listInboxChannelOptions(
+    @CurrentUser() user: AuthUser,
+    @Query('botId') botId?: string,
+  ) {
+    return this.service.listInboxChannelOptions(user.organizationId, botId || null);
+  }
+
   @Get('inbox')
-  listInbox(@CurrentUser() user: AuthUser, @Query('limit') limit?: string) {
-    return this.service.listConversations(user.organizationId, limit ? Number(limit) : 50);
+  listInbox(
+    @CurrentUser() user: AuthUser,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+    @Query('botId') botId?: string,
+    @Query('channel') channel?: string,
+    @Query('channelId') channelId?: string,
+  ) {
+    return this.service.listConversations(
+      user.organizationId,
+      limit ? Number(limit) : 25,
+      cursor || null,
+      {
+        maxLimit: 50,
+        botId: botId || null,
+        channel: channel || null,
+        channelId: channelId || null,
+      },
+    );
+  }
+
+  /** Badge + dropdown header — phải khai báo trước inbox/:id */
+  @Get('inbox/unread-summary')
+  getUnreadSummary(
+    @CurrentUser() user: AuthUser,
+    @Query('limit') limit?: string,
+    @Query('botId') botId?: string,
+    @Query('channel') channel?: string,
+    @Query('channelId') channelId?: string,
+  ) {
+    return this.service.getUnreadInboxSummary(
+      user.organizationId,
+      limit ? Number(limit) : 15,
+      {
+        botId: botId || null,
+        channel: channel || null,
+        channelId: channelId || null,
+      },
+    );
   }
 
   @Get('inbox/:id')
   getInbox(@CurrentUser() user: AuthUser, @Param('id') id: string) {
     return this.service.getConversation(user.organizationId, id);
+  }
+
+  @Post('inbox/:id/read')
+  markInboxRead(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.service.markConversationRead(user.organizationId, id);
   }
 
   @Post('inbox/:id/takeover')
@@ -202,8 +252,8 @@ export class ChatbotCskhController {
   @Get('facebook/pages')
   @UseGuards(PermissionsGuard)
   @RequirePermissions('automation.view')
-  listFacebook(@CurrentUser() user: AuthUser) {
-    return this.service.listFacebookPages(user.organizationId);
+  listFacebook(@CurrentUser() user: AuthUser, @Query('botId') botId?: string) {
+    return this.service.listFacebookPages(user.organizationId, botId || null);
   }
 
   @Get('facebook/webhook-status')
@@ -229,6 +279,14 @@ export class ChatbotCskhController {
   @RequirePermissions('automation.integration.manage')
   syncMessagingFromChatbot(@CurrentUser() user: AuthUser) {
     return this.service.syncMessagingFromChatbotPages(user.organizationId, user.id);
+  }
+
+  @Post('facebook/pages/resubscribe-webhooks')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('automation.integration.manage')
+  resubscribeWebhooks(@CurrentUser() user: AuthUser) {
+    // App callback URL + page subscribed_apps — thiếu app subscription thì Meta không gửi tin
+    return this.facebookWebhook.ensureAppAndPageWebhooks();
   }
 
   @Delete('facebook/pages/:id')

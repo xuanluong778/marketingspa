@@ -317,14 +317,8 @@ function evaluateMessenger(
   const withinWindow =
     lastInbound != null && now.getTime() - lastInbound.getTime() <= MESSENGER_INTERACTION_WINDOW_MS;
 
+  // Bulk/broadcast trong sản phẩm = gửi hàng loạt qua cửa sổ 24h (RESPONSE), không phải Meta message tag.
   if (withinWindow) {
-    if (input.campaignType === 'broadcast') {
-      return block(
-        'MESSENGER_STANDARD',
-        ELIGIBILITY_REASON.MESSENGER_TAG_NOT_ALLOWED,
-        'Messenger không hỗ trợ broadcast — chỉ gửi trong cửa sổ tương tác',
-      );
-    }
     return allow('MESSENGER_STANDARD', cost);
   }
 

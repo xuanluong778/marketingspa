@@ -140,19 +140,16 @@ export function AutoPostHistoryTable({
                         Hủy lịch
                       </Button>
                     )}
-                    {(item.status === 'DRAFT' ||
-                      item.status === 'FAILED' ||
-                      item.status === 'CANCELLED') && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-slate-700 hover:text-slate-900"
-                        disabled={busy}
-                        onClick={() => onDelete(item.id)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-red-200 bg-white text-red-700 hover:bg-red-50 hover:text-red-800"
+                      disabled={busy}
+                      onClick={() => onDelete(item.id)}
+                    >
+                      <Trash2 className="mr-1 h-3.5 w-3.5" />
+                      Xóa
+                    </Button>
                   </div>
                 </td>
               </tr>

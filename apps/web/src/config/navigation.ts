@@ -22,6 +22,10 @@ import {
   User,
   BookOpen,
   KeyRound,
+  ListTodo,
+  BarChart3,
+  Mail,
+  Coins,
   type LucideIcon,
 } from 'lucide-react';
 import { CONTENT_AUTO_POST_BASE } from '@/lib/content-auto-post-routes';
@@ -39,7 +43,7 @@ export interface NavGroup {
   items?: NavItem[];
 }
 
-export const SETTINGS_TABS = ['account', 'knowledge', 'api', 'system'] as const;
+export const SETTINGS_TABS = ['account', 'knowledge', 'api', 'system', 'assignment'] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 export const settingsNavItems: NavItem[] = [
@@ -47,6 +51,7 @@ export const settingsNavItems: NavItem[] = [
   { title: 'AI Knowledge Base', href: '/settings?tab=knowledge', icon: BookOpen },
   { title: 'API', href: '/settings?tab=api', icon: KeyRound },
   { title: 'System', href: '/settings?tab=system', icon: Settings },
+  { title: 'Phân lead & SLA', href: '/settings?tab=assignment', icon: UserPlus },
 ];
 
 export const mainNav: NavItem[] = [
@@ -62,8 +67,10 @@ export const mainNav: NavItem[] = [
   { title: 'Doanh thu & Lãi lỗ', href: '/finance', icon: TrendingUp },
   { title: 'Mục tiêu kinh doanh', href: '/business-goals', icon: Target },
   { title: 'Chatbot CSKH', href: '/chatbot-cskh', icon: MessageCircle },
+  { title: 'Email Marketing', href: '/email-marketing', icon: Mail },
   { title: 'Content Studio', href: CONTENT_AUTO_POST_BASE, icon: Layers },
   { title: 'Bảng giá', href: '/pricing', icon: CreditCard },
+  { title: 'AI Credit', href: '/credits', icon: Coins },
   { title: 'Báo cáo', href: '/reports', icon: FileBarChart },
   { title: 'Cài đặt', href: '/settings', icon: Settings },
 ];
@@ -136,6 +143,8 @@ export const sidebarNavGroups: NavGroup[] = [
       { title: 'Tệp khách hàng', href: '/automation?tab=audience', icon: Users },
       { title: 'Tin nhắn tự động', href: '/automation?tab=flows', icon: Bot },
       { title: 'Chatbot CSKH', href: '/chatbot-cskh', icon: MessageCircle },
+      { title: 'Email Marketing', href: '/email-marketing', icon: Mail },
+      { title: 'Zalo Marketing', href: '/zalo-marketing', icon: MessageCircle },
     ],
   },
   {
@@ -147,6 +156,9 @@ export const sidebarNavGroups: NavGroup[] = [
       { title: 'Bảng công', href: '/hrm/attendance', icon: CalendarRange },
       { title: 'Phép & OT', href: '/hrm/leave', icon: CalendarDays },
       { title: 'Công việc & Dự án', href: '/work-management', icon: Target },
+      { title: 'Việc của tôi', href: '/work-management/my', icon: ListTodo },
+      { title: 'Dashboard công việc', href: '/work-management/dashboard', icon: BarChart3 },
+      { title: 'Lịch công việc', href: '/work-management/calendar', icon: CalendarDays },
     ],
   },
   {
@@ -157,6 +169,7 @@ export const sidebarNavGroups: NavGroup[] = [
       { title: 'Mục tiêu kinh doanh', href: '/business-goals', icon: Target },
       { title: 'Affiliate', href: '/affiliate', icon: Handshake },
       { title: 'Bảng giá', href: '/pricing', icon: CreditCard },
+      { title: 'AI Credit', href: '/credits', icon: Coins },
     ],
   },
   { title: 'Báo cáo', href: '/reports', icon: FileBarChart },
@@ -173,20 +186,36 @@ export function parseSettingsTab(raw: string | null | undefined): SettingsTab {
   if (v === 'knowledge' || v === 'knowledge-base' || v === 'kb') return 'knowledge';
   if (v === 'api' || v === 'integrations') return 'api';
   if (v === 'system' || v === 'general') return 'system';
+  if (v === 'assignment' || v === 'sla' || v === 'assign') return 'assignment';
   return 'account';
 }
 
 export function getPageTitle(pathname: string): string {
+  if (pathname === '/email-marketing' || pathname.startsWith('/email-marketing/')) {
+    return 'Email Marketing';
+  }
+  if (pathname === '/zalo-marketing' || pathname.startsWith('/zalo-marketing/')) {
+    return 'Zalo Marketing';
+  }
+  if (pathname === '/messages' || pathname.startsWith('/messages/')) {
+    return 'Tin nhắn';
+  }
   if (pathname === '/teleprompter' || pathname.startsWith('/teleprompter/')) {
     return 'Kịch bản quay video';
   }
   if (pathname === '/pricing' || pathname.startsWith('/pricing/')) {
     return 'Bảng giá';
   }
+  if (pathname === '/credits' || pathname.startsWith('/credits/')) {
+    return 'AI Credit';
+  }
   if (pathname === '/admin' || pathname.startsWith('/admin/')) {
     return 'Quản trị viên';
   }
   if (pathname === '/work-management' || pathname.startsWith('/work-management/')) {
+    if (pathname.includes('/my')) return 'Việc của tôi';
+    if (pathname.includes('/dashboard')) return 'Dashboard công việc';
+    if (pathname.includes('/calendar')) return 'Lịch công việc';
     return 'Công việc & Dự án';
   }
   if (pathname === '/hrm/employees' || pathname.startsWith('/hrm/employees/')) {
@@ -218,5 +247,5 @@ export function getPageTitle(pathname: string): string {
     return 'Content Studio';
   }
   const item = mainNav.find((n) => pathname === n.href || pathname.startsWith(`${n.href}/`));
-  return item?.title ?? 'MarketingSpa';
+  return item?.title ?? 'Marketing Auto AZ';
 }

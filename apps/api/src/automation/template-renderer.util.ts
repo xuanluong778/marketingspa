@@ -1,4 +1,6 @@
 export const TEMPLATE_VARIABLES = [
+  { key: 'full_name', placeholder: '{{full_name}}', label: 'Tên khách hàng (Facebook)' },
+  { key: 'first_name', placeholder: '{{first_name}}', label: 'Tên gọi' },
   { key: 'customer_name', placeholder: '{{customer_name}}', label: 'Tên khách hàng' },
   { key: 'appointment_time', placeholder: '{{appointment_time}}', label: 'Thời gian hẹn' },
   { key: 'branch_name', placeholder: '{{branch_name}}', label: 'Chi nhánh' },

@@ -1,4 +1,5 @@
-import { Controller, Get, Inject } from '@nestjs/common';
+import { Controller, Get, Inject, Logger } from '@nestjs/common';
+import { getEmailProviderHealth } from '@marketingspa/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { REDIS_CLIENT } from '../redis/redis.constants';
 import type Redis from 'ioredis';
@@ -16,6 +17,8 @@ async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 
 @Controller('health')
 export class HealthController {
+  private readonly logger = new Logger(HealthController.name);
+
   constructor(
     private readonly prisma: PrismaService,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
@@ -54,6 +57,14 @@ export class HealthController {
     }
 
     const coreOk = dbOk && redisOk;
+    const email = getEmailProviderHealth();
+    if (email.resolved === 'ses' && !email.configured) {
+      this.logger.warn(
+        `Email provider ses not configured (missing: ${email.missingEnv.join(', ') || 'unknown'})`,
+      );
+    } else {
+      this.logger.debug(`Email provider resolved=${email.resolved} configured=${email.configured}`);
+    }
     return {
       status: coreOk && workerOk ? 'ok' : coreOk ? 'degraded' : 'degraded',
       timestamp: new Date().toISOString(),
@@ -61,6 +72,19 @@ export class HealthController {
         database: dbOk,
         redis: redisOk,
         worker: workerOk,
+      },
+      emailProvider: {
+        requested: email.requested,
+        resolved: email.resolved,
+        configured: email.configured,
+        eventLoopConfigured: email.eventLoopConfigured,
+        configurationSet: email.configurationSet,
+        snsTopicArnConfigured: email.snsTopicArnConfigured,
+        region: email.region,
+        fromConfigured: email.fromConfigured,
+        ...(email.missingEnv.length ? { missingEnv: email.missingEnv } : {}),
+        ...(email.eventLoopMissingEnv.length ? { eventLoopMissingEnv: email.eventLoopMissingEnv } : {}),
+        ...(email.sandboxNote ? { sandboxNote: email.sandboxNote } : {}),
       },
     };
   }

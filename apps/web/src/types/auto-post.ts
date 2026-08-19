@@ -39,6 +39,11 @@ export interface AutoPostFacebookPage {
   pagePictureUrl: string | null;
   tasks?: string[];
   canManagePosts?: boolean;
+  lastSyncedAt?: string | null;
+  lastPostCreatedAt?: string | null;
+  lastSyncedAtDisplay?: string | null;
+  lastPostCreatedAtDisplay?: string | null;
+  lastSyncError?: string | null;
 }
 
 export type OAuthPagesStatus =
@@ -136,10 +141,16 @@ export interface FanpageDetailsPage {
   pageId: string;
   name: string;
   pictureUrl: string | null;
+  coverUrl?: string | null;
   category: string | null;
   about: string | null;
+  description?: string | null;
   website: string | null;
   link: string | null;
+  username?: string | null;
+  phone?: string | null;
+  emails?: string[] | null;
+  location?: string | null;
   followersCount: number | null;
   fanCount: number | null;
 }
@@ -171,7 +182,15 @@ export interface FanpageDetailsResponse {
   warnings: string[];
   cached?: boolean;
   stale?: boolean;
-  dataSource?: 'live' | 'cache' | 'stale';
+  dataSource?: 'live' | 'cache' | 'stale' | 'sync' | 'none';
+  pageTokenRefreshed?: boolean;
+  syncStatus?: string | null;
+  graphEndpoints?: { page: string; posts: string };
+  postsError?: string | null;
+  lastSyncedAt?: string | null;
+  lastPostCreatedAt?: string | null;
+  lastSyncedAtDisplay?: string | null;
+  lastPostCreatedAtDisplay?: string | null;
 }
 
 export interface AutoPostPlatformStatus {

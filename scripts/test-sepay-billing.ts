@@ -38,12 +38,15 @@ function mktaCode() {
 }
 
 async function ensureFixtures() {
-  const plan = await prisma.subscriptionPlan.findFirst({ where: { code: 'msp-pro-6m' } });
-  if (!plan) throw new Error('Missing plan msp-pro-6m — run seed');
+  const plan6 = await prisma.subscriptionPlan.findFirst({ where: { code: 'msp-pro-6m' } });
+  const plan12 = await prisma.subscriptionPlan.findFirst({ where: { code: 'msp-pro-12m' } });
+  if (!plan6 || !plan12) throw new Error('Missing MSP plans — run seed');
+  const amount6 = Number(plan6.priceVnd);
+  const amount12 = Number(plan12.priceVnd);
   const org = await prisma.organization.findFirst({ orderBy: { createdAt: 'asc' } });
   if (!org) throw new Error('No organization');
   const user = await prisma.user.findFirst({ where: { organizationId: org.id } });
-  return { plan, org, user };
+  return { plan: plan6, plan6, plan12, amount6, amount12, org, user };
 }
 
 async function makeOrder(opts: {
@@ -75,23 +78,38 @@ async function makeOrder(opts: {
 
 async function run() {
   const results: CaseResult[] = [];
-  const { plan, org, user } = await ensureFixtures();
+  const { plan, plan6, plan12, amount6, amount12, org, user } = await ensureFixtures();
+
+  results.push({
+    name: 'plan_prices_configured',
+    ok:
+      amount6 === 5500000 &&
+      amount12 === 8500000 &&
+      Number(plan12.savingsAmount) === 2500000,
+    detail: `6m=${amount6} 12m=${amount12} savings=${plan12.savingsAmount}`,
+  });
+
+  results.push({
+    name: 'plan_credit_grant_configured',
+    ok: Number(plan6.creditGrant) > 0 && Number(plan12.creditGrant) > 0,
+    detail: `6m=${plan6.creditGrant} 12m=${plan12.creditGrant}`,
+  });
 
   {
-    const name = 'exact_amount_activates';
+    const name = 'exact_amount_activates_6m';
     const code = mktaCode();
     const order = await makeOrder({
       orgId: org.id,
       planId: plan.id,
       userId: user?.id,
-      amount: 3900000,
+      amount: amount6,
       code,
     });
     const id = sepayId();
     const r = await postWebhook({
       id,
       transferType: 'in',
-      transferAmount: 3900000,
+      transferAmount: amount6,
       accountNumber: ACCOUNT,
       content: `CK ${code} spa`,
       gateway: 'ACB',
@@ -119,7 +137,7 @@ async function run() {
     const order = await makeOrder({
       orgId: org.id,
       planId: plan.id,
-      amount: 3900000,
+      amount: amount6,
       code,
     });
     const r = await postWebhook({
@@ -145,13 +163,13 @@ async function run() {
     const order = await makeOrder({
       orgId: org.id,
       planId: plan.id,
-      amount: 3900000,
+      amount: amount6,
       code,
     });
     const r = await postWebhook({
       id: sepayId(),
       transferType: 'in',
-      transferAmount: 5000000,
+      transferAmount: amount6 + 1_000_000,
       accountNumber: ACCOUNT,
       content: code,
     });
@@ -168,7 +186,7 @@ async function run() {
     const r = await postWebhook({
       id: sepayId(),
       transferType: 'in',
-      transferAmount: 3900000,
+      transferAmount: amount6,
       accountNumber: ACCOUNT,
       content: `${PREFIX}999999`,
     });
@@ -182,12 +200,12 @@ async function run() {
   {
     const name = 'webhook_replay_idempotent';
     const code = mktaCode();
-    await makeOrder({ orgId: org.id, planId: plan.id, amount: 3900000, code });
+    await makeOrder({ orgId: org.id, planId: plan.id, amount: amount6, code });
     const id = sepayId();
     const body = {
       id,
       transferType: 'in',
-      transferAmount: 3900000,
+      transferAmount: amount6,
       accountNumber: ACCOUNT,
       content: code,
     };
@@ -206,12 +224,12 @@ async function run() {
   {
     const name = 'concurrent_same_txid';
     const code = mktaCode();
-    await makeOrder({ orgId: org.id, planId: plan.id, amount: 3900000, code });
+    await makeOrder({ orgId: org.id, planId: plan.id, amount: amount6, code });
     const id = sepayId();
     const body = {
       id,
       transferType: 'in',
-      transferAmount: 3900000,
+      transferAmount: amount6,
       accountNumber: ACCOUNT,
       content: code,
     };
@@ -232,14 +250,14 @@ async function run() {
     const order = await makeOrder({
       orgId: org.id,
       planId: plan.id,
-      amount: 3900000,
+      amount: amount6,
       code,
       expiresAt: new Date(Date.now() - 60_000),
     });
     const r = await postWebhook({
       id: sepayId(),
       transferType: 'in',
-      transferAmount: 3900000,
+      transferAmount: amount6,
       accountNumber: ACCOUNT,
       content: code,
     });
@@ -264,11 +282,11 @@ async function run() {
     } else {
       const before = existing.currentPeriodEnd.getTime();
       const code = mktaCode();
-      await makeOrder({ orgId: org.id, planId: plan.id, amount: 3900000, code });
+      await makeOrder({ orgId: org.id, planId: plan.id, amount: amount6, code });
       await postWebhook({
         id: sepayId(),
         transferType: 'in',
-        transferAmount: 3900000,
+        transferAmount: amount6,
         accountNumber: ACCOUNT,
         content: code,
       });
@@ -289,7 +307,7 @@ async function run() {
       {
         id: sepayId(),
         transferType: 'in',
-        transferAmount: 3900000,
+        transferAmount: amount6,
         accountNumber: ACCOUNT,
         content: `${PREFIX}000001`,
       },
@@ -305,11 +323,11 @@ async function run() {
   {
     const name = 'wrong_account';
     const code = mktaCode();
-    const order = await makeOrder({ orgId: org.id, planId: plan.id, amount: 3900000, code });
+    const order = await makeOrder({ orgId: org.id, planId: plan.id, amount: amount6, code });
     const r = await postWebhook({
       id: sepayId(),
       transferType: 'in',
-      transferAmount: 3900000,
+      transferAmount: amount6,
       accountNumber: '000000000',
       content: code,
     });
@@ -321,6 +339,56 @@ async function run() {
         updated?.status === 'REVIEW_REQUIRED',
       detail: `reason=${(r.json as { reason?: string }).reason} status=${updated?.status}`,
     });
+  }
+
+  {
+    const name = 'exact_amount_activates_12m';
+    const code = mktaCode();
+    const stamp = Date.now();
+    const org12 = await prisma.organization.create({
+      data: {
+        name: `SePay 12m ${stamp}`,
+        slug: `sepay-12m-${stamp}`,
+        email: `sepay12.${stamp}@example.com`,
+      },
+    });
+    await prisma.creditWallet.create({ data: { organizationId: org12.id, balance: 0 } });
+    const order = await makeOrder({
+      orgId: org12.id,
+      planId: plan12.id,
+      amount: amount12,
+      code,
+    });
+    const before = Date.now();
+    const r = await postWebhook({
+      id: sepayId(),
+      transferType: 'in',
+      transferAmount: amount12,
+      accountNumber: ACCOUNT,
+      content: `CK ${code} spa 12m`,
+      gateway: 'ACB',
+    });
+    const updated = await prisma.paymentOrder.findUnique({ where: { id: order.id } });
+    const sub = await prisma.subscription.findFirst({
+      where: { organizationId: org12.id },
+      include: { plan: true },
+    });
+    const monthsMs = sub
+      ? sub.currentPeriodEnd.getTime() - sub.currentPeriodStart.getTime()
+      : 0;
+    const approx12Months = monthsMs > 330 * 24 * 3600 * 1000;
+    const ok =
+      (r.status === 201 || r.status === 200) &&
+      updated?.status === 'PAID' &&
+      sub?.plan?.durationMonths === 12 &&
+      approx12Months &&
+      (r.json as { matched?: boolean }).matched === true;
+    results.push({
+      name,
+      ok: Boolean(ok),
+      detail: `http=${r.status} order=${updated?.status} months=${sub?.plan?.durationMonths} start=${sub?.currentPeriodStart.toISOString()} end=${sub?.currentPeriodEnd.toISOString()} elapsed=${Date.now() - before}ms`,
+    });
+    await prisma.organization.delete({ where: { id: org12.id } }).catch(() => undefined);
   }
 
   console.log('\n=== SePay billing test results (MKTA / 7982468) ===');

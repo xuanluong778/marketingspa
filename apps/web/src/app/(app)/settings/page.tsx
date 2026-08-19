@@ -8,6 +8,7 @@ import { parseSettingsTab, type SettingsTab } from '@/config/navigation';
 import { SettingsAccountPanel } from '@/components/settings/settings-account-panel';
 import { SettingsApiPanel } from '@/components/settings/settings-api-panel';
 import { SettingsSystemPanel } from '@/components/settings/settings-system-panel';
+import { SettingsAssignmentPanel } from '@/components/settings/settings-assignment-panel';
 import { KnowledgeBasePage } from '@/components/knowledge-base/knowledge-base-page';
 
 export default function SettingsPage() {
@@ -38,6 +39,7 @@ export default function SettingsPage() {
           <TabsTrigger value="knowledge">AI Knowledge Base</TabsTrigger>
           <TabsTrigger value="api">API</TabsTrigger>
           <TabsTrigger value="system">System</TabsTrigger>
+          <TabsTrigger value="assignment">Phân lead & SLA</TabsTrigger>
         </TabsList>
 
         <TabsContent value="account" className="mt-2">
@@ -54,6 +56,9 @@ export default function SettingsPage() {
 
         <TabsContent value="system" className="mt-2">
           <SettingsSystemPanel />
+        </TabsContent>
+        <TabsContent value="assignment" className="mt-2">
+          <SettingsAssignmentPanel />
         </TabsContent>
       </Tabs>
     </div>

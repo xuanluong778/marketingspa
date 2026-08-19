@@ -11,11 +11,13 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Req,
   StreamableFile,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { VIDEO_TRANSCRIPTION_LIMITS } from '@marketingspa/shared';
 import { JwtAuthGuard } from '../common/guards/auth.guard';
@@ -28,6 +30,7 @@ import {
   PatchVideoTranscriptionTextDto,
   ProbeVideoTranscriptionUrlDto,
   RetryVideoTranscriptionChunkDto,
+  parseStrictBool,
 } from './dto/video-transcription.dto';
 import { videoTranscriptionUploadsRoot } from './video-transcription-files';
 
@@ -61,8 +64,16 @@ export class VideoTranscriptionController {
   create(
     @CurrentUser() user: AuthUser,
     @Body() dto: CreateVideoTranscriptionDto,
+    @Req() req: Request,
     @UploadedFile() file?: Express.Multer.File,
   ) {
+    // Raw multipart field — bypass ValidationPipe Boolean("false")===true pitfall
+    const rawKeep = (req.body as { keepVideo?: unknown } | undefined)?.keepVideo;
+    dto.keepVideo = parseStrictBool(rawKeep, false);
+    dto.ownershipConfirmed = parseStrictBool(
+      (req.body as { ownershipConfirmed?: unknown } | undefined)?.ownershipConfirmed,
+      false,
+    );
     return this.service.create(user, dto, file);
   }
 

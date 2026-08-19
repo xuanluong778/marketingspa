@@ -23,11 +23,21 @@ import {
   buildPermissionsFlags,
   mergeConnectionScopes,
   FANPAGE_DETAILS_SAFE_POST_FIELDS,
+  formatHoChiMinhDateTime,
 } from '../apps/api/src/auto-post/auto-post-facebook-page-details.logic';
 import { FanpageDetailsRedisCache } from '../apps/api/src/auto-post/auto-post-facebook-page-details.cache';
 import type { FanpageDetailsResponse } from '../apps/api/src/auto-post/auto-post-facebook-page-details.types';
 
 type Case = { name: string; ok: boolean; detail?: string };
+
+type AutoPostFacebookStatusLike = {
+  pages?: Array<{
+    id: string;
+    lastSyncedAt?: string | null;
+    lastSyncedAtDisplay?: string | null;
+    lastPostCreatedAtDisplay?: string | null;
+  }>;
+};
 
 const API = (process.env.API_URL?.replace(/\/$/, '') || 'http://127.0.0.1:4000').replace(
   /\/api\/v1$/,
@@ -161,6 +171,12 @@ async function main() {
     detail: declined.code,
   });
 
+  results.push({
+    name: 'unit_format_hcm_datetime',
+    ok: formatHoChiMinhDateTime(new Date('2026-08-13T10:10:00.000Z')) === '17:10 13/08/2026',
+    detail: String(formatHoChiMinhDateTime(new Date('2026-08-13T10:10:00.000Z'))),
+  });
+
   // --- Unit: empty posts + mapping ---
   const emptyPosts = mapMetaPosts([], 10);
   results.push({
@@ -186,6 +202,30 @@ async function main() {
       pagePictureUrl: null,
     },
   );
+  const mappedPageCover = mapMetaPageToDetails(
+    {
+      id: '111',
+      name: 'Demo Page',
+      category: 'Business',
+      about: 'About text',
+      description: 'Long description',
+      website: 'https://example.com',
+      username: 'demopage',
+      phone: '0123456789',
+      emails: ['page@example.com'],
+      fan_count: 12,
+      followers_count: 20,
+      picture: { data: { url: 'https://example.com/p.jpg' } },
+      cover: { source: 'https://example.com/cover.jpg' },
+      location: { city: 'Hanoi', country: 'Vietnam' },
+    },
+    {
+      id: 'row-1',
+      pageId: '111',
+      pageName: 'Fallback',
+      pagePictureUrl: null,
+    },
+  );
   results.push({
     name: 'unit_map_page_full',
     ok:
@@ -195,6 +235,16 @@ async function main() {
       mappedPage.followersCount === 20 &&
       mappedPage.fanCount === 12 &&
       mappedPage.website === 'https://example.com',
+  });
+  results.push({
+    name: 'unit_map_page_cover_description',
+    ok:
+      mappedPageCover.coverUrl === 'https://example.com/cover.jpg' &&
+      mappedPageCover.description === 'Long description' &&
+      mappedPageCover.username === 'demopage' &&
+      mappedPageCover.phone === '0123456789' &&
+      mappedPageCover.emails?.[0] === 'page@example.com' &&
+      mappedPageCover.location === 'Hanoi, Vietnam',
   });
 
   const mappedSparse = mapMetaPageToDetails(
@@ -374,6 +424,55 @@ async function main() {
         detail: `status=${refreshed.status} cached=${String(rb.cached)}`,
       });
 
+      const synced = await api(`/auto-post/facebook/pages/${fp.id}/sync`, token, {
+        method: 'POST',
+      });
+      const sb = synced.json as FanpageDetailsResponse & { code?: string; message?: string };
+      const hcmTime =
+        typeof sb.lastSyncedAtDisplay === 'string' &&
+        /^\d{2}:\d{2} \d{2}\/\d{2}\/\d{4}$/.test(sb.lastSyncedAtDisplay);
+      results.push({
+        name: 'live_sync_from_facebook',
+        ok:
+          (synced.status === 200 &&
+            sb.dataSource === 'live' &&
+            sb.syncStatus === 'Đồng bộ thành công từ Facebook' &&
+            typeof sb.lastSyncedAt === 'string' &&
+            hcmTime &&
+            Boolean(sb.graphEndpoints?.page) &&
+            Boolean(sb.graphEndpoints?.posts) &&
+            !hasTokenLeak(sb)) ||
+          (synced.status >= 400 &&
+            typeof sb.message === 'string' &&
+            sb.message.length > 0 &&
+            !hasTokenLeak(sb)),
+        detail: `status=${synced.status} source=${sb.dataSource ?? '-'} at=${sb.lastSyncedAtDisplay ?? '-'} code=${sb.code ?? 'ok'}`,
+      });
+
+      if (synced.status === 200) {
+        const after = await api(`/auto-post/facebook/pages/${fp.id}/details`, token);
+        const ab = after.json as FanpageDetailsResponse;
+        results.push({
+          name: 'live_details_reads_last_sync',
+          ok:
+            after.status === 200 &&
+            ab.dataSource === 'sync' &&
+            ab.lastSyncedAt === sb.lastSyncedAt &&
+            Array.isArray(ab.recentPosts) &&
+            !hasTokenLeak(ab),
+          detail: `status=${after.status} source=${ab.dataSource ?? '-'} posts=${ab.recentPosts?.length ?? '-'}`,
+        });
+
+        const stAfter = await api('/auto-post/facebook/status', token);
+        const pagesAfter = (stAfter.json as AutoPostFacebookStatusLike).pages ?? [];
+        const card = pagesAfter.find((p) => p.id === fp.id);
+        results.push({
+          name: 'live_status_shows_last_synced_at',
+          ok: Boolean(card?.lastSyncedAt && card.lastSyncedAtDisplay),
+          detail: `display=${card?.lastSyncedAtDisplay ?? '-'} post=${card?.lastPostCreatedAtDisplay ?? '-'}`,
+        });
+      }
+
       // 6. Connection still present after details (rate-limit path not triggered, but connection intact)
       const st2 = await api('/auto-post/facebook/status', token);
       results.push({
@@ -399,24 +498,27 @@ async function main() {
     }
   }
 
-  // 8. Responsive UI is FE — assert sheet component exists
+  // 8. Responsive UI is FE — assert drawer + sync CTA
   try {
     const fs = await import('node:fs');
-    const sheet = fs.readFileSync(
+    const drawer = fs.readFileSync(
       new URL(
-        '../apps/web/src/components/content-auto-post/fanpage-details-sheet.tsx',
+        '../apps/web/src/components/content-auto-post/fanpage-details-drawer.tsx',
         import.meta.url,
       ),
       'utf8',
     );
     results.push({
-      name: 'ui_sheet_responsive_classes',
+      name: 'ui_drawer_sync_and_posts',
       ok:
-        sheet.includes('sm:max-w-xl') &&
-        sheet.includes('md:max-w-2xl') &&
-        sheet.includes('Làm mới dữ liệu') &&
-        sheet.includes('Đóng') &&
-        sheet.includes('Mở bài trên Facebook'),
+        drawer.includes('Đồng bộ thành công từ Facebook') &&
+        drawer.includes('Dữ liệu được cập nhật trực tiếp từ Facebook') &&
+        !drawer.includes('Quyền pages_read_engagement đã dùng') &&
+        drawer.includes('Làm mới từ Facebook') &&
+        drawer.includes('Bài viết từ Facebook') &&
+        drawer.includes('Facebook Post ID') &&
+        drawer.includes('Mở bài trên Facebook') &&
+        drawer.includes('pages_read_engagement'),
     });
     const panel = fs.readFileSync(
       new URL(
@@ -426,12 +528,20 @@ async function main() {
       'utf8',
     );
     results.push({
-      name: 'ui_channels_has_xem_thong_tin',
-      ok: panel.includes('Xem thông tin') && panel.includes('FanpageDetailsSheet'),
+      name: 'ui_channels_has_dong_bo_fanpage',
+      ok:
+        panel.includes('Đồng bộ thông tin Fanpage') &&
+        panel.includes('Xem chi tiết') &&
+        panel.includes('Cập nhật lần cuối') &&
+        panel.includes('Dữ liệu được cập nhật trực tiếp từ Facebook') &&
+        panel.includes('Bài đăng mới nhất') &&
+        panel.includes('FanpageDetailsDrawer') &&
+        panel.includes('Quyền pages_read_engagement') &&
+        !panel.includes('Quyền pages_read_engagement đã dùng'),
     });
   } catch (e) {
     results.push({
-      name: 'ui_sheet_responsive_classes',
+      name: 'ui_drawer_sync_and_posts',
       ok: false,
       detail: e instanceof Error ? e.message : String(e),
     });

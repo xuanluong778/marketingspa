@@ -19,7 +19,9 @@ import {
   useAutoPostMutations,
   useAutoPostOauthPages,
   useAutoPostStatus,
+  useSyncFanpageDetails,
 } from '@/hooks/use-auto-post';
+import { formatFanpageSyncDisplay } from '@/lib/format-fanpage-sync';
 import { formatMutationError } from '@/lib/format-mutation-error';
 import { redactClientSecrets } from '@/lib/redact-client-secrets';
 import { buildContentAutoPostHref } from '@/lib/content-auto-post-routes';
@@ -67,6 +69,9 @@ export function AutoPostChannelsPanel() {
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
   const [detailsPage, setDetailsPage] = useState<AutoPostFacebookPage | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsAutoSync, setDetailsAutoSync] = useState(false);
+  const [syncingId, setSyncingId] = useState<string | null>(null);
+  const syncFanpage = useSyncFanpageDetails();
 
   const facebookParam = searchParams.get('facebook');
 
@@ -270,7 +275,7 @@ export function AutoPostChannelsPanel() {
         )}
 
         {msg && (
-          <div className="mt-4 rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-100">
+          <div className="mt-4 whitespace-pre-line rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-100">
             {msg}
           </div>
         )}
@@ -564,6 +569,29 @@ export function AutoPostChannelsPanel() {
                         <CheckCircle2 className="h-3 w-3" />
                         Đã kết nối
                       </span>
+                      {formatFanpageSyncDisplay(p.lastSyncedAtDisplay, p.lastSyncedAt) ? (
+                        <p className="mt-1.5 text-xs text-white/70">
+                          Cập nhật lần cuối:{' '}
+                          {formatFanpageSyncDisplay(p.lastSyncedAtDisplay, p.lastSyncedAt)}{' '}
+                          · Dữ liệu được cập nhật trực tiếp từ Facebook
+                        </p>
+                      ) : (
+                        <p className="mt-1.5 text-xs text-white/45">Chưa đồng bộ từ Facebook</p>
+                      )}
+                      {formatFanpageSyncDisplay(p.lastPostCreatedAtDisplay, p.lastPostCreatedAt) ? (
+                        <p className="text-xs text-white/70">
+                          Bài đăng mới nhất:{' '}
+                          {formatFanpageSyncDisplay(
+                            p.lastPostCreatedAtDisplay,
+                            p.lastPostCreatedAt,
+                          )}
+                        </p>
+                      ) : null}
+                      {p.lastSyncError ? (
+                        <p className="mt-1 text-xs text-red-300">
+                          Lỗi đồng bộ: {p.lastSyncError}
+                        </p>
+                      ) : null}
                     </div>
                     <div className="flex shrink-0 flex-wrap gap-2">
                       <Button
@@ -573,11 +601,51 @@ export function AutoPostChannelsPanel() {
                         className="border-white/25 bg-transparent text-white hover:bg-white/10"
                         onClick={() => {
                           setDetailsPage(p);
+                          setDetailsAutoSync(false);
                           setDetailsOpen(true);
                         }}
                       >
                         <Eye className="mr-1 h-3.5 w-3.5" />
                         Xem chi tiết
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="bg-[#F97316] text-white hover:bg-[#ea6a0c]"
+                        disabled={syncingId === p.id}
+                        onClick={async () => {
+                          setSyncingId(p.id);
+                          setErrorMsg('');
+                          try {
+                            const synced = await syncFanpage.mutateAsync(p.id);
+                            const when = formatFanpageSyncDisplay(
+                              synced.lastSyncedAtDisplay,
+                              synced.lastSyncedAt,
+                            );
+                            setMsg(
+                              when
+                                ? `Đồng bộ thành công từ Facebook\nCập nhật lần cuối: ${when} · Dữ liệu được cập nhật trực tiếp từ Facebook`
+                                : 'Đồng bộ thành công từ Facebook',
+                            );
+                            await refetchFbStatus();
+                          } catch (err) {
+                            setErrorMsg(
+                              formatMutationError(
+                                err,
+                                'Không đồng bộ được từ Facebook. Dữ liệu cũ được giữ nguyên.',
+                              ),
+                            );
+                          } finally {
+                            setSyncingId(null);
+                          }
+                        }}
+                      >
+                        {syncingId === p.id ? (
+                          <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="mr-1 h-3.5 w-3.5" />
+                        )}
+                        Đồng bộ thông tin Fanpage
                       </Button>
                       <Button
                         type="button"
@@ -606,9 +674,13 @@ export function AutoPostChannelsPanel() {
         open={detailsOpen}
         onOpenChange={(open) => {
           setDetailsOpen(open);
-          if (!open) setDetailsPage(null);
+          if (!open) {
+            setDetailsPage(null);
+            setDetailsAutoSync(false);
+          }
         }}
         page={detailsPage}
+        autoSync={detailsAutoSync}
       />
 
       <div className="rounded-xl border border-white/10 bg-[#0A3D30]/80 p-5 sm:p-6">
@@ -621,6 +693,23 @@ export function AutoPostChannelsPanel() {
           hiển thị những Fanpage mà người dùng được Facebook cho phép quản lý. Người dùng tự chọn
           Fanpage muốn kết nối. Hệ thống không tự động kết nối hoặc đăng bài lên Fanpage chưa được
           chọn.
+        </p>
+      </div>
+
+      <div className="rounded-xl border border-white/10 bg-[#0A3D30]/80 p-5 sm:p-6">
+        <div className="mb-2 flex items-center gap-2 text-[#F97316]">
+          <ShieldCheck className="h-5 w-5 shrink-0" />
+          <h3 className="text-sm font-semibold uppercase tracking-wide">
+            Quyền pages_read_engagement
+          </h3>
+        </div>
+        <p className="text-sm leading-relaxed text-white/85 sm:text-[15px]">
+          Nút <strong className="text-white">Đồng bộ thông tin Fanpage</strong> và{' '}
+          <strong className="text-white">Làm mới từ Facebook</strong> gọi Facebook Graph API bằng
+          Page Access Token (quyền{' '}
+          <strong className="text-white">pages_read_engagement</strong>) để đọc metadata Page và bài
+          viết do chính Fanpage đã đăng. Dữ liệu không lấy từ cache/database cũ. Auto Post vẫn dùng
+          riêng quyền <strong className="text-white">pages_manage_posts</strong> để đăng bài.
         </p>
       </div>
     </div>

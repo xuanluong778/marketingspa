@@ -28,8 +28,12 @@ import { processAffiliateHoldRelease } from './processors/affiliate-hold';
 import { processMessagingWebhook } from './processors/messaging-webhook';
 import { processMessagingCampaignPlan } from './processors/messaging-campaign-plan';
 import { processMessagingCampaignDispatch } from './processors/messaging-campaign-dispatch';
+import { processMessagingCampaignScheduledScan } from './processors/messaging-campaign-scheduled-scan';
 import { processMessagingSend } from './processors/messaging-send';
 import { processOfflineConversion } from './processors/offline-conversion';
+import { processEmailCampaignPlan } from './processors/email-campaign-plan';
+import { processEmailCampaignSend, processEmailNotOpenFollowup } from './processors/email-campaign-send';
+import { processEmailCampaignScheduledScan } from './processors/email-campaign-scheduled-scan';
 
 initSentry();
 
@@ -158,7 +162,12 @@ async function start() {
     ),
     new Worker(
       QUEUE_NAMES.MESSAGING_CAMPAIGN_PLAN,
-      (job) => processMessagingCampaignPlan(job, redis),
+      async (job) => {
+        if (job.name === 'scan-due-scheduled-campaigns') {
+          return processMessagingCampaignScheduledScan(job);
+        }
+        return processMessagingCampaignPlan(job, redis);
+      },
       { ...opts, concurrency: 1 },
     ),
     new Worker(
@@ -174,6 +183,33 @@ async function start() {
       ...opts,
       concurrency: 1,
     }),
+    new Worker(
+      QUEUE_NAMES.EMAIL_CAMPAIGN_PLAN,
+      async (job) => {
+        if (job.name === 'scan-due-scheduled-email-campaigns') {
+          return processEmailCampaignScheduledScan(job);
+        }
+        return processEmailCampaignPlan(job);
+      },
+      { ...opts, concurrency: 1 },
+    ),
+    new Worker(
+      QUEUE_NAMES.EMAIL_CAMPAIGN_SEND,
+      (job) => {
+        if (job.name === 'email-not-open-followup') {
+          return processEmailNotOpenFollowup(job, redis);
+        }
+        return processEmailCampaignSend(job, redis);
+      },
+      {
+        ...opts,
+        concurrency: 3,
+        limiter: {
+          max: Math.max(1, Number(process.env.EMAIL_SEND_RATE_PER_SEC || 14) || 14),
+          duration: 1000,
+        },
+      },
+    ),
   );
 
   for (const w of workers) {

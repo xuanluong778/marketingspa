@@ -8,8 +8,12 @@ import {
   Post,
   Query,
   Res,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import type { Response } from 'express';
 import { MessagingCampaignService } from './messaging-campaign.service';
 import { JwtAuthGuard } from '../common/guards/auth.guard';
@@ -42,6 +46,18 @@ export class MessagingCampaignController {
   @RequirePermissions('automation.campaign.create')
   create(@CurrentUser() user: AuthUser, @Body() dto: CreateMessagingCampaignDto) {
     return this.service.create(user.organizationId, dto, user.id);
+  }
+
+  @Post('upload-media')
+  @RequirePermissions('automation.campaign.create')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 25 * 1024 * 1024 },
+    }),
+  )
+  uploadMedia(@CurrentUser() user: AuthUser, @UploadedFile() file?: Express.Multer.File) {
+    return this.service.uploadMedia(user.organizationId, file);
   }
 
   @Get(':id/dashboard')

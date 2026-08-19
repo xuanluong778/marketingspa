@@ -3,7 +3,9 @@
  * Browser APIs are injected via optional params for unit tests.
  */
 
-export type TeleprompterRecordMode = 'video_audio' | 'video_only' | 'audio_only';
+export type TeleprompterRecordMode = 'video_audio' | 'video_only' | 'audio_only' | 'screen_camera';
+
+export type TeleprompterVideoQuality = 'economy' | 'standard';
 
 export type TeleprompterRecorderState =
   'idle' | 'requesting' | 'ready' | 'countdown' | 'recording' | 'paused' | 'stopped' | 'error';
@@ -18,6 +20,8 @@ export type TeleprompterMediaErrorCode =
   | 'not_supported'
   | 'unknown';
 
+export type TeleprompterFacingMode = 'user' | 'environment';
+
 /** Priority order for MediaRecorder MIME selection */
 export const VIDEO_MIME_CANDIDATES = [
   'video/webm;codecs=vp9,opus',
@@ -27,6 +31,18 @@ export const VIDEO_MIME_CANDIDATES = [
 ] as const;
 
 export const AUDIO_MIME_CANDIDATES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'] as const;
+
+export const COUNTDOWN_OPTIONS = [0, 3, 5, 10] as const;
+export type TeleprompterCountdownSeconds = (typeof COUNTDOWN_OPTIONS)[number];
+
+/** Recommended max session length (seconds) */
+export const MAX_RECOMMENDED_SECONDS = 30 * 60;
+
+/** Soft warn when accumulated size exceeds this (bytes) */
+export const WARN_SIZE_BYTES = 400 * 1024 * 1024;
+
+/** Stronger warn (near browser memory limits) */
+export const CRITICAL_SIZE_BYTES = 800 * 1024 * 1024;
 
 export type MimeIsTypeSupported = (mimeType: string) => boolean;
 
@@ -79,25 +95,194 @@ export function buildRecordingFilename(
   return `teleprompter-${kind}-${stamp}.${ext}`;
 }
 
+/** Keep user-provided name but force a safe basename + correct extension for mime. */
+export function sanitizeRecordingFilename(name: string, mimeType: string): string {
+  const ext = extensionForMime(mimeType);
+  let base = (name || '').trim().replace(/[/\\?%*:|"<>]/g, '_');
+  base = base.replace(/\.+$/g, '');
+  // strip existing extension
+  base = base.replace(/\.(webm|mp4|ogg|mp3|bin)$/i, '');
+  base = base.replace(/\s+/g, ' ').trim() || 'teleprompter-recording';
+  if (base.length > 120) base = base.slice(0, 120);
+  return `${base}.${ext}`;
+}
+
+export function qualityToResolution(quality: TeleprompterVideoQuality): {
+  width: number;
+  height: number;
+  label: string;
+} {
+  if (quality === 'standard') {
+    return { width: 1920, height: 1080, label: '1080p' };
+  }
+  return { width: 1280, height: 720, label: '720p' };
+}
+
+/** Minimum video encode bitrate for 1080p standard quality (user contract). */
+export const VIDEO_BITS_PER_SECOND_1080P = 8_000_000;
+/** Encode bitrate target for 720p economy. */
+export const VIDEO_BITS_PER_SECOND_720P = 4_000_000;
+/** Shared audio bitrate when recording with mic. */
+export const AUDIO_BITS_PER_SECOND = 128_000;
+
+/** MediaRecorder videoBitsPerSecond for selected quality. */
+export function videoBitsPerSecondForQuality(quality: TeleprompterVideoQuality): number {
+  return quality === 'standard' ? VIDEO_BITS_PER_SECOND_1080P : VIDEO_BITS_PER_SECOND_720P;
+}
+
+/**
+ * Build MediaRecorder options: sharp encode + correct mime.
+ * 1080p always requests ≥ 8 Mbps video.
+ */
+export function mediaRecorderOptionsForQuality(
+  mimeType: string,
+  mode: TeleprompterRecordMode,
+  quality: TeleprompterVideoQuality,
+): MediaRecorderOptions {
+  const opts: MediaRecorderOptions = { mimeType };
+  if (mode === 'audio_only') {
+    opts.audioBitsPerSecond = AUDIO_BITS_PER_SECOND;
+    return opts;
+  }
+  opts.videoBitsPerSecond = videoBitsPerSecondForQuality(quality);
+  if (mode !== 'video_only') {
+    opts.audioBitsPerSecond = AUDIO_BITS_PER_SECOND;
+  }
+  return opts;
+}
+
+/** Rough average bitrate (bits/s) for size estimates — not a compressor. */
+export function estimateBitrateBps(
+  mode: TeleprompterRecordMode,
+  quality: TeleprompterVideoQuality,
+): number {
+  if (mode === 'audio_only') return AUDIO_BITS_PER_SECOND;
+  if (mode === 'screen_camera') {
+    const video = videoBitsPerSecondForQuality(quality);
+    return video + AUDIO_BITS_PER_SECOND;
+  }
+  const video = videoBitsPerSecondForQuality(quality);
+  const audio = mode === 'video_only' ? 0 : AUDIO_BITS_PER_SECOND;
+  return video + audio;
+}
+
+/**
+ * Read live track resolution from getSettings() (preferred) with safe fallbacks.
+ * Used to verify canvas.captureStream matches native camera pixels.
+ */
+export function videoTrackSettingsResolution(track: MediaStreamTrack | null | undefined): {
+  width: number;
+  height: number;
+  frameRate: number | null;
+} {
+  if (!track || typeof track.getSettings !== 'function') {
+    return { width: 0, height: 0, frameRate: null };
+  }
+  try {
+    const s = track.getSettings();
+    const width = Math.round(Number(s.width) || 0);
+    const height = Math.round(Number(s.height) || 0);
+    const frameRate =
+      typeof s.frameRate === 'number' && Number.isFinite(s.frameRate) ? s.frameRate : null;
+    return { width, height, frameRate };
+  } catch {
+    return { width: 0, height: 0, frameRate: null };
+  }
+}
+
+export function estimateRecordingBytes(
+  elapsedSeconds: number,
+  mode: TeleprompterRecordMode,
+  quality: TeleprompterVideoQuality,
+): number {
+  const s = Math.max(0, elapsedSeconds);
+  return Math.round((estimateBitrateBps(mode, quality) / 8) * s);
+}
+
+export function formatByteSize(bytes: number): string {
+  const n = Math.max(0, bytes);
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+export function sizeWarningLevel(bytes: number): 'none' | 'warn' | 'critical' {
+  if (bytes >= CRITICAL_SIZE_BYTES) return 'critical';
+  if (bytes >= WARN_SIZE_BYTES) return 'warn';
+  return 'none';
+}
+
 export function constraintsForMode(
   mode: TeleprompterRecordMode,
-  deviceIds: { videoId?: string; audioId?: string },
+  opts: {
+    videoId?: string;
+    audioId?: string;
+    quality?: TeleprompterVideoQuality;
+    facingMode?: TeleprompterFacingMode;
+  } = {},
 ): MediaStreamConstraints {
-  const video: boolean | MediaTrackConstraints =
-    mode === 'audio_only'
-      ? false
-      : deviceIds.videoId
-        ? { deviceId: { exact: deviceIds.videoId }, width: { ideal: 1280 }, height: { ideal: 720 } }
-        : { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' };
+  const quality = opts.quality ?? 'economy';
+  const { width, height } = qualityToResolution(quality);
+  const facing = opts.facingMode ?? 'user';
+
+  // screen_camera: mic always from getUserMedia; camera may be requested separately or with mic.
+  // Screen comes from getDisplayMedia (not this function).
+  let video: boolean | MediaTrackConstraints = false;
+  if (mode !== 'audio_only') {
+    if (opts.videoId) {
+      video = {
+        deviceId: { exact: opts.videoId },
+        width: { ideal: width },
+        height: { ideal: height },
+        frameRate: { ideal: 30, max: 30 },
+        // Prefer native sensor frames over browser soft-scaling (Chrome)
+        ...({ resizeMode: 'none' } as MediaTrackConstraints),
+      };
+    } else {
+      video = {
+        facingMode: { ideal: facing },
+        width: { ideal: width },
+        height: { ideal: height },
+        frameRate: { ideal: 30, max: 30 },
+        ...({ resizeMode: 'none' } as MediaTrackConstraints),
+      };
+    }
+  }
 
   const audio: boolean | MediaTrackConstraints =
     mode === 'video_only'
       ? false
-      : deviceIds.audioId
-        ? { deviceId: { exact: deviceIds.audioId }, echoCancellation: true, noiseSuppression: true }
+      : opts.audioId
+        ? { deviceId: { exact: opts.audioId }, echoCancellation: true, noiseSuppression: true }
         : { echoCancellation: true, noiseSuppression: true };
 
   return { video, audio };
+}
+
+/** getDisplayMedia constraints — video only (mic is always from getUserMedia). */
+export function displayMediaConstraints(
+  quality: TeleprompterVideoQuality = 'economy',
+): DisplayMediaStreamOptions {
+  const { width, height } = qualityToResolution(quality);
+  return {
+    video: {
+      width: { ideal: width },
+      height: { ideal: height },
+      frameRate: { ideal: 24, max: 30 },
+    },
+    audio: false,
+  };
+}
+
+/** Whether the record mode includes a display-capture (screen) layer. */
+export function modeIncludesScreenShare(mode: TeleprompterRecordMode): boolean {
+  return mode === 'screen_camera';
+}
+
+/** Whether the record mode needs a user-facing camera track. */
+export function modeIncludesCamera(mode: TeleprompterRecordMode): boolean {
+  return mode !== 'audio_only';
 }
 
 export function classifyMediaError(err: unknown): {
@@ -116,7 +301,7 @@ export function classifyMediaError(err: unknown): {
   if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
     return {
       code: 'permission_denied',
-      message: 'Bạn đã từ chối quyền camera/microphone. Hãy bật lại trong cài đặt trình duyệt.',
+      message: 'Bạn đã từ chối quyền camera/microphone. Xem hướng dẫn bên dưới để bật lại.',
     };
   }
   if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
@@ -140,7 +325,8 @@ export function classifyMediaError(err: unknown): {
   if (name === 'OverconstrainedError' || name === 'ConstraintNotSatisfiedError') {
     return {
       code: 'device_not_found',
-      message: 'Không thể dùng thiết bị đã chọn. Hãy chọn camera/mic khác.',
+      message:
+        'Không thể dùng thiết bị/độ phân giải đã chọn. Thử “Tiết kiệm (720p)” hoặc camera khác.',
     };
   }
   if (name === 'NotSupportedError' || /mime|not supported/i.test(msg)) {
@@ -156,6 +342,16 @@ export function classifyMediaError(err: unknown): {
     };
   }
   return { code: 'unknown', message: msg || 'Lỗi media không xác định.' };
+}
+
+/** Human steps when permission was denied (Chrome / Edge / Safari / Android / iOS). */
+export function permissionRecoverySteps(): string[] {
+  return [
+    'Chrome / Edge (máy tính): bấm biểu tượng ổ khóa (hoặc camera) trên thanh địa chỉ → Camera & Microphone = Cho phép → tải lại trang.',
+    'Chrome Android: Cài đặt site (ⓘ) → Quyền → Camera / Micro = Cho phép.',
+    'Safari iPhone: Cài đặt → Safari → Camera / Microphone → Cho phép; hoặc Cài đặt → [tên site] → Camera/Mic.',
+    'Nếu vẫn bị chặn: xóa quyền site cho tên miền này, rồi bấm “Bật camera” lại để xin quyền mới.',
+  ];
 }
 
 export function stopMediaStream(stream: MediaStream | null | undefined): void {
@@ -195,7 +391,7 @@ export function audioLevelFromAnalyser(analyser: AnalyserNode, buffer: Uint8Arra
 const TRANSITIONS: Record<TeleprompterRecorderState, TeleprompterRecorderState[]> = {
   idle: ['requesting', 'error'],
   requesting: ['ready', 'error', 'idle'],
-  ready: ['countdown', 'requesting', 'idle', 'error'],
+  ready: ['countdown', 'requesting', 'idle', 'error', 'recording'],
   countdown: ['recording', 'ready', 'idle', 'error'],
   recording: ['paused', 'stopped', 'error'],
   paused: ['recording', 'stopped', 'error'],
@@ -219,4 +415,14 @@ export function formatRecordingClock(totalSeconds: number): string {
   const two = (n: number) => String(n).padStart(2, '0');
   if (h > 0) return `${two(h)}:${two(m)}:${two(sec)}`;
   return `${two(m)}:${two(sec)}`;
+}
+
+/** Whether leave-page warn should engage */
+export function shouldBlockUnload(
+  state: TeleprompterRecorderState,
+  hasUndownloadedBlob: boolean,
+): boolean {
+  if (state === 'recording' || state === 'paused' || state === 'countdown') return true;
+  if (state === 'stopped' && hasUndownloadedBlob) return true;
+  return false;
 }

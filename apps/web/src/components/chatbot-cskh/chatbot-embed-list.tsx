@@ -29,6 +29,10 @@ interface ChatbotEmbedListProps {
   isLoading: boolean;
   selectedBotId: string | null;
   embedCode?: string;
+  /** Hiện block Mã nhúng website (mặc định true) */
+  showEmbed?: boolean;
+  /** Hiện bảng Danh sách chatbot (mặc định true) */
+  showList?: boolean;
   onSelectBot: (id: string) => void;
   onDelete: (id: string) => void;
   onEdit: (bot: ChatbotBot) => void;
@@ -41,6 +45,8 @@ export function ChatbotEmbedList({
   isLoading,
   selectedBotId,
   embedCode,
+  showEmbed = true,
+  showList = true,
   onSelectBot,
   onDelete,
   onEdit,
@@ -65,7 +71,8 @@ export function ChatbotEmbedList({
   }, []);
 
   return (
-    <div className="space-y-6 pt-4 border-t">
+    <div className="space-y-6">
+      {showEmbed && (
       <section className="rounded-lg border bg-[#0B2115] text-white p-5 space-y-3">
         <h3 className="font-semibold text-lg">Mã nhúng website</h3>
         <p className="text-sm text-white/75">
@@ -143,7 +150,9 @@ export function ChatbotEmbedList({
           <p className="text-sm text-white/60">Tạo và kích hoạt chatbot để lấy mã nhúng.</p>
         )}
       </section>
+      )}
 
+      {showList && (
       <section className="space-y-3">
         <h3 className="font-semibold text-lg">Danh sách chatbot</h3>
 
@@ -266,6 +275,7 @@ export function ChatbotEmbedList({
           </div>
         )}
       </section>
+      )}
     </div>
   );
 }

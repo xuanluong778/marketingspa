@@ -177,6 +177,7 @@ async function main() {
   {
     const plan = await prisma.subscriptionPlan.findFirst({ where: { code: 'msp-pro-6m' } });
     if (!plan) throw new Error('no plan');
+    const planAmount = Number(plan.priceVnd);
 
     // Create a fresh org+user for referred customer
     const slug = `aff-ref-${Date.now().toString(36)}`;
@@ -237,7 +238,7 @@ async function main() {
         organizationId: referred.org.id,
         planId: plan.id,
         createdByUserId: referred.user.id,
-        amountVnd: new Decimal(3900000),
+        amountVnd: new Decimal(planAmount),
         status: PaymentOrderStatus.PENDING,
         transferContent: code,
         bankCode: 'ACB',
@@ -251,7 +252,7 @@ async function main() {
     const body = {
       id: sepayId,
       transferType: 'in',
-      transferAmount: 3900000,
+      transferAmount: planAmount,
       accountNumber: ACCOUNT,
       content: `CK ${code}`,
       gateway: 'ACB',
@@ -277,7 +278,7 @@ async function main() {
         wh1.status === 200 &&
         !!commission &&
         commission.status === AffiliateCommissionStatus.PENDING &&
-        Number(commission.commissionVnd) === Math.floor(3900000 * 0.3),
+        Number(commission.commissionVnd) === Math.floor(planAmount * 0.3),
       detail: `http=${wh1.status} status=${commission?.status} hh=${commission?.commissionVnd}`,
     });
 

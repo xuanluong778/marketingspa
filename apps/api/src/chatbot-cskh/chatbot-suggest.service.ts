@@ -7,10 +7,19 @@ import {
   servicesForIndustry,
 } from './utils/chatbot-suggest-options';
 import { OpenAiService } from '../openai/openai.service';
+import { RagKbService } from '../rag-kb/rag-kb.service';
+import { buildRagQuery } from '../rag-kb/rag-prompt.util';
+import { CreditService } from '../credit/credit.service';
+import { CREDIT_FEATURE_CODES } from '@marketingspa/shared';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class ChatbotSuggestService {
-  constructor(private readonly openAi: OpenAiService) {}
+  constructor(
+    private readonly openAi: OpenAiService,
+    private readonly ragKb: RagKbService,
+    private readonly credit: CreditService,
+  ) {}
   getOptions(industry?: string) {
     return {
       industries: [...CHATBOT_INDUSTRY_OPTIONS],
@@ -19,9 +28,9 @@ export class ChatbotSuggestService {
     };
   }
 
-  async suggest(dto: ChatbotSuggestDto) {
+  async suggest(dto: ChatbotSuggestDto, organizationId?: string) {
     if (dto.type === 'greeting') {
-      const text = await this.suggestGreeting(dto);
+      const text = await this.suggestGreeting(dto, organizationId);
       return { type: 'greeting', text, suggestions: this.greetingVariants(dto) };
     }
 
@@ -40,36 +49,56 @@ export class ChatbotSuggestService {
     return tones.map((t) => defaultGreeting(botName, business, t));
   }
 
-  private async suggestGreeting(dto: ChatbotSuggestDto): Promise<string> {
+  private async suggestGreeting(
+    dto: ChatbotSuggestDto,
+    organizationId?: string,
+  ): Promise<string> {
     const tone = dto.consultationTone || 'friendly';
     const botName = dto.botName || 'Chatbot';
     const business = dto.businessName || botName;
     const industry = dto.industry || 'dịch vụ';
 
     const template = defaultGreeting(botName, business, tone);
-    if (!this.openAi.isConfigured()) return template;
+    if (!this.openAi.isConfigured() || !organizationId) return template;
 
     try {
-      const text = await this.openAi.chatCompletion({
-        model: this.openAi.getDefaultModel(),
-        maxTokens: 200,
-        temperature: 0.7,
-        messages: [
-          {
-            role: 'system',
-            content:
-              'Viết 1 câu chào ngắn (tối đa 2 câu) cho chatbot CSKH tiếng Việt. Không dùng emoji. Không bịa giá hay cam kết.',
-          },
-          {
-            role: 'user',
-            content: `Doanh nghiệp: ${business}. Ngành: ${industry}. Giọng điệu: ${tone}. Dịch vụ: ${dto.mainServices || 'chưa rõ'}.`,
-          },
-        ],
+      return await this.credit.runPaidFeature({
+        organizationId,
+        featureCode: CREDIT_FEATURE_CODES.CONTENT_AI_GENERATE,
+        referenceId: `chatbot.suggest:${organizationId}:${randomUUID()}`,
+        reason: 'chatbot suggest greeting',
+        fn: async (ctx) => {
+          const kbBlock = await this.ragKb.getPromptBlock(
+            organizationId,
+            buildRagQuery(business, industry, dto.mainServices),
+            { limit: 3, mode: 'content' },
+          );
+          ctx.markProviderStarted();
+          const text = await this.openAi.chatCompletion({
+            model: this.openAi.getDefaultModel(),
+            maxTokens: 200,
+            temperature: 0.7,
+            messages: [
+              {
+                role: 'system',
+                content:
+                  'Viết 1 câu chào ngắn (tối đa 2 câu) cho chatbot CSKH tiếng Việt. Không dùng emoji. Không bịa giá hay cam kết. Ưu tiên sự thật từ Knowledge Base nếu có.',
+              },
+              ...(kbBlock ? [{ role: 'system' as const, content: kbBlock }] : []),
+              {
+                role: 'user',
+                content: `Doanh nghiệp: ${business}. Ngành: ${industry}. Giọng điệu: ${tone}. Dịch vụ: ${dto.mainServices || 'chưa rõ'}.`,
+              },
+            ],
+          });
+          return text || template;
+        },
       });
-      return text || template;
-    } catch {
+    } catch (err) {
+      if (err instanceof Error && err.message.includes('Không đủ AI Credit')) throw err;
       return template;
-    }  }
+    }
+  }
 
   private suggestServices(dto: ChatbotSuggestDto): string[] {
     const base = servicesForIndustry(dto.industry);

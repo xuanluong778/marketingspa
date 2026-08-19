@@ -206,7 +206,11 @@ function AutomationPageInner() {
                     <div className="space-y-1">
                       <h3 className="font-semibold">{f.name}</h3>
                       <p className="text-sm text-muted-foreground">
-                        Trigger: {triggerLabel(f.triggerType)} · Kênh:{' '}
+                        Funnel:{' '}
+                        {f.funnel?.selectedSlug ||
+                          f.funnel?.prompt?.slice(0, 40) ||
+                          (f.funnelId ? f.funnelId.slice(0, 8) : 'Toàn tổ chức')}{' '}
+                        · Trigger: {triggerLabel(f.triggerType)} · Kênh:{' '}
                         {channelLabel(f.channel ?? f.messageTemplate?.channel)} · Delay:{' '}
                         {f.delayMinutes} phút
                       </p>

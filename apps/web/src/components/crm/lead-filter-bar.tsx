@@ -3,6 +3,9 @@
 export type LeadFilters = {
   search?: string;
   pipelineStatus?: string;
+  pipelineStatusIn?: string;
+  qualification?: string;
+  qualificationIn?: string;
   leadSourceId?: string;
   assignedToId?: string;
   branchId?: string;

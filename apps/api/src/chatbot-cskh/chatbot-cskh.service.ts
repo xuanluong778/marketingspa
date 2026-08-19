@@ -446,47 +446,420 @@ export class ChatbotCskhService {
     return { success: true };
   }
 
-  async listConversations(organizationId: string, limit = 50) {
-    // Backfill nhẹ tên/avatar khi còn đủ pageId + PSID
-    await this.backfillMessengerProfiles(organizationId, 8).catch((e) =>
-      this.logger.warn(`backfillMessengerProfiles: ${e instanceof Error ? e.message : String(e)}`),
+  private isInboundMessage(m: {
+    role?: string | null;
+    direction?: string | null;
+    senderType?: string | null;
+  }): boolean {
+    if (m.direction === 'INBOUND') return true;
+    if (m.direction === 'OUTBOUND') return false;
+    if (m.senderType === 'CUSTOMER') return true;
+    return m.role === 'user';
+  }
+
+  /** Unread = tin inbound sau staffReadAt (PostgreSQL là source of truth). */
+  private unreadInboundMessages<
+    T extends {
+      role?: string | null;
+      direction?: string | null;
+      senderType?: string | null;
+      createdAt: Date;
+    },
+  >(messages: T[] | undefined, staffReadAt: Date | null | undefined): T[] {
+    const cutoff = staffReadAt?.getTime() ?? 0;
+    return (messages || []).filter(
+      (m) => this.isInboundMessage(m) && m.createdAt.getTime() > cutoff,
     );
+  }
+
+  /** Throttle Meta profile/picture maintenance so inbox list is never blocked. */
+  private inboxMaintenanceAt = new Map<string, number>();
+  private static readonly INBOX_MAINTENANCE_TTL_MS = 90_000;
+
+  private scheduleInboxProfileMaintenance(organizationId: string) {
+    const now = Date.now();
+    const last = this.inboxMaintenanceAt.get(organizationId) ?? 0;
+    if (now - last < ChatbotCskhService.INBOX_MAINTENANCE_TTL_MS) return;
+    this.inboxMaintenanceAt.set(organizationId, now);
+    void this.backfillMessengerProfiles(organizationId, 6).catch((e) =>
+      this.logger.warn(
+        `backfillMessengerProfiles: ${e instanceof Error ? e.message : String(e)}`,
+      ),
+    );
+    void this.refreshConnectedPagePictures(organizationId, 4).catch(() => undefined);
+  }
+
+  private encodeInboxCursor(row: { updatedAt: Date; id: string }) {
+    return Buffer.from(`${row.updatedAt.toISOString()}|${row.id}`, 'utf8').toString(
+      'base64url',
+    );
+  }
+
+  private decodeInboxCursor(
+    cursor: string,
+  ): { updatedAt: Date; id: string } | null {
+    try {
+      const raw = Buffer.from(cursor, 'base64url').toString('utf8');
+      const sep = raw.lastIndexOf('|');
+      if (sep <= 0) return null;
+      const iso = raw.slice(0, sep);
+      const id = raw.slice(sep + 1);
+      const updatedAt = new Date(iso);
+      if (!id || Number.isNaN(updatedAt.getTime())) return null;
+      return { updatedAt, id };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Danh sách hội thoại inbox — chỉ last message + unread count (SQL).
+   * Không await Graph API; pagination cursor theo updatedAt+id.
+   */
+  async listConversations(
+    organizationId: string,
+    limit = 25,
+    cursor?: string | null,
+    opts?: {
+      maxLimit?: number;
+      /** Project/Bot — bắt buộc để không trộn hộp thư */
+      botId?: string | null;
+      /** all | facebook | website */
+      channel?: string | null;
+      /** pageId (Fanpage) hoặc domain (Website) */
+      channelId?: string | null;
+    },
+  ) {
+    this.scheduleInboxProfileMaintenance(organizationId);
+
+    const maxLimit = opts?.maxLimit ?? 200;
+    const take = Math.min(Math.max(Number(limit) || 25, 1), maxLimit);
+    const decoded = cursor ? this.decodeInboxCursor(cursor) : null;
+    const botId = opts?.botId?.trim() || null;
+    const channelRaw = (opts?.channel || '').trim().toLowerCase();
+    const channel =
+      channelRaw === 'facebook' || channelRaw === 'website' || channelRaw === 'messenger'
+        ? channelRaw === 'messenger'
+          ? 'facebook'
+          : channelRaw
+        : null;
+    const channelId = opts?.channelId?.trim() || null;
+
+    // Không chọn Project → không trả hộp thư chung (tránh trộn)
+    if (!botId) {
+      return { items: [], nextCursor: null, hasMore: false, requiresBotId: true };
+    }
+
+    const scopeWhere = {
+      organizationId,
+      botId,
+      ...(channel ? { channel } : {}),
+      ...(channelId
+        ? channel === 'website' || (!channel && channelId.includes('.'))
+          ? {
+              OR: [
+                { channelRef: channelId },
+                { channelRef: { endsWith: channelId } },
+                { channelRef: `www.${channelId}` },
+              ],
+            }
+          : { channelRef: channelId }
+        : {}),
+    };
 
     const rows = await this.prisma.chatbotConversation.findMany({
-      where: { organizationId },
+      where: {
+        ...scopeWhere,
+        ...(decoded
+          ? {
+              OR: [
+                { updatedAt: { lt: decoded.updatedAt } },
+                {
+                  AND: [{ updatedAt: decoded.updatedAt }, { id: { lt: decoded.id } }],
+                },
+              ],
+            }
+          : {}),
+      },
       include: {
         bot: { select: { id: true, botName: true } },
         messages: { orderBy: { createdAt: 'desc' }, take: 1 },
-        _count: { select: { messages: true } },
       },
-      orderBy: { updatedAt: 'desc' },
-      take: Math.min(limit, 200),
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      take: take + 1,
     });
+
+    const hasMore = rows.length > take;
+    const pageRows = hasMore ? rows.slice(0, take) : rows;
+
+    const unreadCounts = await this.countUnreadByConversationIds(
+      organizationId,
+      pageRows.map((r) => r.id),
+    );
 
     const pageIds = [
       ...new Set(
-        rows
+        pageRows
           .filter((r) => r.channel === 'facebook' && r.channelRef)
           .map((r) => r.channelRef as string),
       ),
     ];
     const pages = pageIds.length
       ? await this.prisma.chatbotFacebookPage.findMany({
-          where: { organizationId, pageId: { in: pageIds } },
+          where: { organizationId, botId, pageId: { in: pageIds } },
           select: { pageId: true, pageName: true, pagePictureUrl: true },
         })
       : [];
     const pageMap = new Map(pages.map((p) => [p.pageId, p]));
 
-    return rows.map((c) => this.serializeConversation(c, pageMap.get(c.channelRef || '')));
+    const items = pageRows.map((c) =>
+      this.serializeConversation(c, pageMap.get(c.channelRef || ''), false, {
+        unreadMessageCount: unreadCounts.get(c.id) ?? 0,
+      }),
+    );
+    const last = pageRows[pageRows.length - 1];
+    return {
+      items,
+      nextCursor: hasMore && last ? this.encodeInboxCursor(last) : null,
+      hasMore,
+      requiresBotId: false,
+    };
   }
 
+  /** Refresh Fanpage picture URLs (Meta CDN signed URLs expire → 403). */
+  private async refreshConnectedPagePictures(organizationId: string, limit = 6) {
+    const pages = await this.prisma.chatbotFacebookPage.findMany({
+      where: { organizationId, status: 'connected' },
+      take: Math.min(limit, 20),
+      orderBy: { updatedAt: 'desc' },
+    });
+    for (const page of pages) {
+      const token = this.facebookWebhook.decodePageToken(page.pageAccessTokenEncrypted);
+      if (!token) continue;
+      const pic = await this.facebookWebhook.resolvePagePictureUrl(page.pageId, token);
+      if (!pic || pic === page.pagePictureUrl) continue;
+      await this.prisma.chatbotFacebookPage
+        .update({
+          where: { id: page.id },
+          data: { pagePictureUrl: pic.slice(0, 2000) },
+        })
+        .catch(() => undefined);
+    }
+  }
+
+  /**
+   * Badge header + dropdown — scope theo Project/Bot (+ channel).
+   * Trả thêm unreadByBot để UI badge từng Project.
+   */
+  async getUnreadInboxSummary(
+    organizationId: string,
+    limit = 15,
+    opts?: { botId?: string | null; channel?: string | null; channelId?: string | null },
+  ) {
+    const take = Math.min(Math.max(limit, 1), 40);
+    const botId = opts?.botId?.trim() || null;
+    const channelRaw = (opts?.channel || '').trim().toLowerCase();
+    const channel =
+      channelRaw === 'facebook' || channelRaw === 'website' || channelRaw === 'messenger'
+        ? channelRaw === 'messenger'
+          ? 'facebook'
+          : channelRaw
+        : null;
+    const channelId = opts?.channelId?.trim() || null;
+
+    const scopeWhere = {
+      organizationId,
+      lastUserMessageAt: { not: null } as const,
+      ...(botId ? { botId } : {}),
+      ...(channel ? { channel } : {}),
+      ...(channelId ? { channelRef: channelId } : {}),
+    };
+
+    const rows = await this.prisma.chatbotConversation.findMany({
+      where: scopeWhere,
+      select: {
+        id: true,
+        botId: true,
+        visitorName: true,
+        visitorAvatarUrl: true,
+        channel: true,
+        channelRef: true,
+        externalUserId: true,
+        lastUserMessageAt: true,
+      },
+      orderBy: { lastUserMessageAt: 'desc' },
+      take: botId ? 150 : 300,
+    });
+
+    const unreadCounts = await this.countUnreadByConversationIds(
+      organizationId,
+      rows.map((r) => r.id),
+    );
+    const unreadRows = rows.filter((r) => (unreadCounts.get(r.id) ?? 0) > 0);
+
+    const unreadByBot: Record<string, number> = {};
+    const unreadByChannel: Record<string, number> = {};
+    let unreadCount = 0;
+    for (const r of unreadRows) {
+      const n = unreadCounts.get(r.id) ?? 0;
+      unreadCount += n;
+      unreadByBot[r.botId] = (unreadByBot[r.botId] || 0) + n;
+      const chKey = `${r.botId}:${r.channel}:${r.channelRef || ''}`;
+      unreadByChannel[chKey] = (unreadByChannel[chKey] || 0) + n;
+    }
+
+    const top = unreadRows.slice(0, take);
+    const previewById = new Map<string, { message: string; createdAt: Date }>();
+    if (top.length) {
+      const topIds = top.map((r) => r.id);
+      const previews = await this.prisma.$queryRawUnsafe<
+        Array<{ conversation_id: string; message: string; created_at: Date }>
+      >(
+        `
+        SELECT DISTINCT ON (m.conversation_id)
+          m.conversation_id AS conversation_id,
+          m.message,
+          m.created_at
+        FROM chatbot_messages m
+        INNER JOIN chatbot_conversations c ON c.id = m.conversation_id
+        WHERE m.conversation_id = ANY($1::text[])
+          AND (
+            m.direction = 'INBOUND'
+            OR (m.direction IS NULL AND (m.sender_type = 'CUSTOMER' OR m.role = 'user'))
+          )
+          AND (c.staff_read_at IS NULL OR m.created_at > c.staff_read_at)
+        ORDER BY m.conversation_id, m.created_at DESC
+        `,
+        topIds,
+      );
+      for (const p of previews) {
+        previewById.set(p.conversation_id, {
+          message: p.message,
+          createdAt: p.created_at,
+        });
+      }
+    }
+
+    const pageIds = [
+      ...new Set(
+        top
+          .filter((r) => r.channel === 'facebook' && r.channelRef)
+          .map((r) => r.channelRef as string),
+      ),
+    ];
+    const pages = pageIds.length
+      ? await this.prisma.chatbotFacebookPage.findMany({
+          where: {
+            organizationId,
+            ...(botId ? { botId } : {}),
+            pageId: { in: pageIds },
+          },
+          select: { pageId: true, pageName: true, pagePictureUrl: true },
+        })
+      : [];
+    const pageMap = new Map(pages.map((p) => [p.pageId, p]));
+
+    const items = top.map((row) => {
+      const preview = previewById.get(row.id);
+      const page = pageMap.get(row.channelRef || '');
+      const name =
+        row.visitorName && !/^Khách Messenger$/i.test(row.visitorName)
+          ? row.visitorName
+          : row.externalUserId
+            ? `PSID …${row.externalUserId.slice(-4)}`
+            : row.visitorName || 'Khách';
+      const avatarProxy =
+        row.channel === 'facebook' && row.externalUserId
+          ? this.facebookWebhook.buildSignedVisitorAvatarUrl(row.id)
+          : '';
+      return {
+        conversationId: row.id,
+        botId: row.botId,
+        visitorName: name,
+        visitorAvatarUrl:
+          avatarProxy ||
+          this.facebookWebhook.sanitizeAvatarUrl(row.visitorAvatarUrl) ||
+          null,
+        preview: String(preview?.message || '').slice(0, 160),
+        channel: row.channel,
+        channelRef: row.channelRef,
+        pageName: page?.pageName || null,
+        pagePictureUrl: page?.pagePictureUrl || null,
+        lastMessageAt: (preview?.createdAt || row.lastUserMessageAt || new Date()).toISOString(),
+        unreadMessageCount: unreadCounts.get(row.id) ?? 0,
+        isUnread: true as const,
+      };
+    });
+
+    return {
+      unreadCount,
+      unreadConversationCount: unreadRows.length,
+      items,
+      unreadByBot,
+      unreadByChannel,
+      requiresBotId: !botId,
+    };
+  }
+
+  async markConversationRead(organizationId: string, conversationId: string) {
+    const conv = await this.prisma.chatbotConversation.findFirst({
+      where: { id: conversationId, organizationId },
+      select: { id: true, staffReadAt: true },
+    });
+    if (!conv) throw new NotFoundException('Không tìm thấy hội thoại');
+    const now = new Date();
+    await this.prisma.chatbotConversation.update({
+      where: { id: conv.id },
+      data: { staffReadAt: now },
+    });
+    return {
+      ok: true,
+      conversationId: conv.id,
+      staffReadAt: now.toISOString(),
+    };
+  }
+
+  /** SQL COUNT unread inbound — không load toàn bộ messages vào Node. */
+  private async countUnreadByConversationIds(
+    organizationId: string,
+    ids: string[],
+  ): Promise<Map<string, number>> {
+    const map = new Map<string, number>();
+    if (!ids.length) return map;
+    for (const id of ids) map.set(id, 0);
+
+    const rows = await this.prisma.$queryRawUnsafe<Array<{ id: string; cnt: number }>>(
+      `
+      SELECT c.id AS id, COUNT(m.id)::int AS cnt
+      FROM chatbot_conversations c
+      LEFT JOIN chatbot_messages m
+        ON m.conversation_id = c.id
+       AND (
+         m.direction = 'INBOUND'
+         OR (m.direction IS NULL AND (m.sender_type = 'CUSTOMER' OR m.role = 'user'))
+       )
+       AND (c.staff_read_at IS NULL OR m.created_at > c.staff_read_at)
+      WHERE c.organization_id = $1
+        AND c.id = ANY($2::text[])
+      GROUP BY c.id
+      `,
+      organizationId,
+      ids,
+    );
+    for (const row of rows) {
+      map.set(row.id, Number(row.cnt) || 0);
+    }
+    return map;
+  }
+
+  /** Chi tiết 1 hội thoại — chỉ fetch messages khi mở (limit gần nhất). */
   async getConversation(organizationId: string, id: string) {
+    const MESSAGE_TAKE = 200;
     const conv = await this.prisma.chatbotConversation.findFirst({
       where: { id, organizationId },
       include: {
         bot: { select: { id: true, botName: true } },
-        messages: { orderBy: { createdAt: 'asc' } },
+        messages: { orderBy: { createdAt: 'desc' }, take: MESSAGE_TAKE },
       },
     });
     if (!conv) throw new NotFoundException('Không tìm thấy hội thoại');
@@ -499,7 +872,15 @@ export class ChatbotCskhService {
           })
         : null;
 
-    return this.serializeConversation(conv, fanpage || undefined, true);
+    const messagesAsc = [...conv.messages].reverse();
+    const unreadCounts = await this.countUnreadByConversationIds(organizationId, [conv.id]);
+
+    return this.serializeConversation(
+      { ...conv, messages: messagesAsc },
+      fanpage || undefined,
+      true,
+      { unreadMessageCount: unreadCounts.get(conv.id) ?? 0 },
+    );
   }
 
   private serializeConversation(
@@ -519,6 +900,7 @@ export class ChatbotCskhService {
       updatedAt: Date;
       createdAt: Date;
       lastUserMessageAt?: Date | null;
+      staffReadAt?: Date | null;
       bot?: { id: string; botName: string } | null;
       messages?: Array<{
         id: string;
@@ -535,6 +917,7 @@ export class ChatbotCskhService {
     },
     fanpage?: { pageId: string; pageName: string; pagePictureUrl: string | null } | null,
     includeAllMessages = false,
+    extras?: { unreadMessageCount?: number },
   ) {
     const psid = conv.externalUserId || null;
     const customerName =
@@ -543,6 +926,19 @@ export class ChatbotCskhService {
         : psid
           ? `PSID …${psid.slice(-4)}`
           : conv.visitorName;
+
+    // Messenger: luôn trả signed proxy URL (Graph CDN hết hạn / null) — <img> không gửi JWT
+    const storedVisitorAvatar = this.facebookWebhook.sanitizeAvatarUrl(
+      conv.visitorAvatarUrl ?? null,
+    );
+    const facebookProxyAvatar =
+      conv.channel === 'facebook' && conv.externalUserId
+        ? this.facebookWebhook.buildSignedVisitorAvatarUrl(conv.id)
+        : '';
+    const cleanVisitorAvatar = facebookProxyAvatar || storedVisitorAvatar;
+    const cleanPageAvatar = this.facebookWebhook.sanitizeAvatarUrl(
+      fanpage?.pagePictureUrl ?? null,
+    );
 
     const messages = (conv.messages || []).map((m) => {
       const direction =
@@ -570,6 +966,10 @@ export class ChatbotCskhService {
       };
     });
 
+    const unreadMessageCount =
+      extras?.unreadMessageCount ??
+      this.unreadInboundMessages(conv.messages, conv.staffReadAt).length;
+
     return {
       id: conv.id,
       organizationId: conv.organizationId,
@@ -577,7 +977,7 @@ export class ChatbotCskhService {
       sessionId: conv.sessionId,
       visitorName: customerName,
       visitorPhone: conv.visitorPhone,
-      visitorAvatarUrl: conv.visitorAvatarUrl ?? null,
+      visitorAvatarUrl: cleanVisitorAvatar ?? null,
       channel: conv.channel,
       externalUserId: psid,
       channelRef: conv.channelRef,
@@ -586,11 +986,14 @@ export class ChatbotCskhService {
       updatedAt: conv.updatedAt,
       createdAt: conv.createdAt,
       lastUserMessageAt: conv.lastUserMessageAt ?? null,
+      staffReadAt: conv.staffReadAt?.toISOString() ?? null,
+      isUnread: unreadMessageCount > 0,
+      unreadMessageCount,
       bot: conv.bot ?? undefined,
       _count: conv._count,
       customer: {
         name: customerName,
-        avatarUrl: conv.visitorAvatarUrl ?? null,
+        avatarUrl: cleanVisitorAvatar ?? null,
         psid,
       },
       fanpage:
@@ -598,7 +1001,7 @@ export class ChatbotCskhService {
           ? {
               pageId: fanpage?.pageId || conv.channelRef,
               pageName: fanpage?.pageName || null,
-              avatarUrl: fanpage?.pagePictureUrl || null,
+              avatarUrl: cleanPageAvatar ?? null,
             }
           : null,
       messages: includeAllMessages || messages.length ? messages : messages,
@@ -641,7 +1044,14 @@ export class ChatbotCskhService {
 
       try {
         const profile = await this.facebookWebhook.resolveMessengerProfile(pageId, psid, token);
-        if (!profile?.name && !profile?.profilePic) {
+        // Prefetch binary vào disk cache (proxy URL) — ngay cả khi profile_pic field null
+        const binary = await this.facebookWebhook.fetchMessengerAvatarBinary(pageId, psid, token);
+        const cleanPic =
+          this.facebookWebhook.sanitizeAvatarUrl(profile?.profilePic) ||
+          this.facebookWebhook.sanitizeAvatarUrl(binary?.sourceUrl) ||
+          undefined;
+
+        if (!profile?.name && !cleanPic && !binary) {
           if (!row.visitorName || row.visitorName === 'Khách Messenger') {
             await this.prisma.chatbotConversation.update({
               where: { id: row.id },
@@ -651,29 +1061,27 @@ export class ChatbotCskhService {
           }
           continue;
         }
+
+        if (binary) {
+          this.facebookWebhook.materializeVisitorAvatarCache(
+            row.id,
+            binary.buffer,
+            binary.contentType,
+          );
+        }
+
         await this.prisma.chatbotConversation.update({
           where: { id: row.id },
           data: {
-            ...(profile.name ? { visitorName: profile.name.slice(0, 190) } : {}),
-            ...(profile.profilePic ? { visitorAvatarUrl: profile.profilePic.slice(0, 2000) } : {}),
+            ...(profile?.name ? { visitorName: profile.name.slice(0, 190) } : {}),
+            ...(cleanPic ? { visitorAvatarUrl: cleanPic.slice(0, 2000) } : {}),
           },
         });
         updated += 1;
 
-        if (!page.pagePictureUrl) {
-          const pUrl = new URL(
-            `https://graph.facebook.com/${
-              this.config.get<string>('META_API_VERSION') || 'v21.0'
-            }/${encodeURIComponent(pageId)}`,
-          );
-          pUrl.searchParams.set('fields', 'picture.width(200).height(200)');
-          pUrl.searchParams.set('access_token', token);
-          const pRes = await fetch(pUrl.toString());
-          const pData = (await pRes.json().catch(() => ({}))) as {
-            picture?: { data?: { url?: string } };
-          };
-          const pic = pData.picture?.data?.url;
-          if (pic) {
+        {
+          const pic = await this.facebookWebhook.resolvePagePictureUrl(pageId, token);
+          if (pic && pic !== page.pagePictureUrl) {
             await this.prisma.chatbotFacebookPage.update({
               where: { id: page.id },
               data: { pagePictureUrl: pic.slice(0, 2000) },
@@ -768,9 +1176,112 @@ export class ChatbotCskhService {
     });
   }
 
-  async listFacebookPages(organizationId: string) {
+  async listInboxChannelOptions(organizationId: string, botId?: string | null) {
+    // Luôn trả toàn bộ Fanpage + Website của org (kèm botId) — UI tự đổi Project khi chọn
     const pages = await this.prisma.chatbotFacebookPage.findMany({
       where: { organizationId },
+      include: { bot: { select: { id: true, botName: true, businessName: true } } },
+      orderBy: [{ pageName: 'asc' }, { createdAt: 'desc' }],
+    });
+
+    const bots = await this.prisma.chatbotBot.findMany({
+      where: { organizationId },
+      select: { id: true, botName: true, businessName: true, websiteUrl: true, allowedDomains: true },
+    });
+
+    const fromConv = await this.prisma.chatbotConversation.findMany({
+      where: {
+        organizationId,
+        channel: 'website',
+        channelRef: { not: null },
+      },
+      distinct: ['channelRef', 'botId'],
+      select: { channelRef: true, botId: true },
+      take: 200,
+    });
+
+    type WebRow = { domain: string; botId: string; botName: string };
+    const webMap = new Map<string, WebRow>();
+
+    const botNameOf = (id: string) => {
+      const b = bots.find((x) => x.id === id);
+      return b?.botName || b?.businessName || id.slice(0, 8);
+    };
+
+    for (const row of fromConv) {
+      const domain = (row.channelRef || '').trim();
+      if (!domain) continue;
+      const key = `${row.botId}::${domain}`;
+      if (!webMap.has(key)) {
+        webMap.set(key, { domain, botId: row.botId, botName: botNameOf(row.botId) });
+      }
+    }
+
+    for (const bot of bots) {
+      const addDomain = (raw: string | null | undefined) => {
+        const s = String(raw || '').trim();
+        if (!s) return;
+        let host = s;
+        try {
+          host = new URL(s.includes('://') ? s : `https://${s}`).hostname;
+        } catch {
+          host = s.replace(/^https?:\/\//, '').split('/')[0] || s;
+        }
+        host = host.replace(/^www\./, '').slice(0, 128);
+        if (!host) return;
+        const key = `${bot.id}::${host}`;
+        if (!webMap.has(key)) {
+          webMap.set(key, {
+            domain: host,
+            botId: bot.id,
+            botName: bot.botName || bot.businessName || bot.id.slice(0, 8),
+          });
+        }
+      };
+      addDomain(bot.websiteUrl);
+      for (const d of (bot.allowedDomains || '').split(/[\s,;]+/)) addDomain(d);
+    }
+
+    const fanpages = pages.map((p) => ({
+      pageId: p.pageId,
+      pageName: p.pageName,
+      status: p.status,
+      botId: p.botId,
+      botName: p.bot?.botName || p.bot?.businessName || p.botId.slice(0, 8),
+    }));
+
+    // Nếu đang chọn Project — đưa kênh của Project đó lên đầu
+    const sortedFanpages = botId
+      ? [
+          ...fanpages.filter((p) => p.botId === botId),
+          ...fanpages.filter((p) => p.botId !== botId),
+        ]
+      : fanpages;
+
+    const websites = [...webMap.values()].sort((a, b) => {
+      if (botId) {
+        const aMine = a.botId === botId ? 0 : 1;
+        const bMine = b.botId === botId ? 0 : 1;
+        if (aMine !== bMine) return aMine - bMine;
+      }
+      return a.domain.localeCompare(b.domain);
+    });
+
+    return {
+      fanpages: sortedFanpages,
+      websites,
+      /** Số Fanpage thuộc Project đang chọn (tiện UI) */
+      projectFanpageCount: botId ? fanpages.filter((p) => p.botId === botId).length : fanpages.length,
+      projectWebsiteCount: botId ? websites.filter((w) => w.botId === botId).length : websites.length,
+    };
+  }
+
+  async listFacebookPages(organizationId: string, botId?: string | null) {
+    const pages = await this.prisma.chatbotFacebookPage.findMany({
+      where: {
+        organizationId,
+        ...(botId ? { botId } : {}),
+      },
       include: { bot: { select: { id: true, botName: true } } },
       orderBy: { createdAt: 'desc' },
     });
@@ -1074,7 +1585,7 @@ export class ChatbotCskhService {
           },
           update: {
             organizationId,
-            botId: bot.id,
+            // KHÔNG ghi đè botId — giữ Project/Bot đã gán (tránh gộp mọi Fanpage về 1 bot)
             pageName,
             pageAccessTokenEncrypted: tokenStored,
             status: 'connected',

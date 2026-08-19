@@ -23,6 +23,7 @@ const ALLOW_PREFIXES = [
   // Public webhooks / OAuth callback — không có user hoặc không cần gói
   '/chatbot-cskh/public',
   '/chatbot-cskh/facebook',
+  '/funnel-builder/public',
   '/messaging/webhooks',
   '/ad-performance/facebook/oauth',
   '/ad-performance/google/oauth',

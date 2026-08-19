@@ -13,6 +13,7 @@ import { publishRealtime } from '../lib/realtime';
 import { renderTemplate } from '../lib/template';
 import { captureException } from '../sentry';
 import { staleLeadMinutes } from '../config';
+import { processSlaBreachScan } from '../lib/sla-breach-scan';
 
 const STALE_ALERT_TTL_SEC = 30 * 60;
 
@@ -58,7 +59,19 @@ export async function processLeadAlertScan(redis: Redis) {
     });
   }
 
-  return { organizations: orgs.length, alertsSent: totalAlerts };
+  const sla = await processSlaBreachScan(redis);
+  if (sla.breached > 0) {
+    console.log(
+      `[lead-alert] SLA breached=${sla.breached} reassigned=${sla.reassigned}`,
+    );
+  }
+
+  return {
+    organizations: orgs.length,
+    alertsSent: totalAlerts,
+    slaBreached: sla.breached,
+    slaReassigned: sla.reassigned,
+  };
 }
 
 export async function processAppointmentReminders(redis: Redis) {
@@ -167,54 +180,7 @@ export async function processAppointmentReminders(redis: Redis) {
   return { logsCreated };
 }
 
-export async function processAutomationMessage(job: Job) {
-  const { organizationId, flowId, customerId, leadId } = job.data as {
-    organizationId: string;
-    flowId: string;
-    customerId?: string;
-    leadId?: string;
-  };
-
-  const flow = await prisma.automationFlow.findFirst({
-    where: { id: flowId, organizationId },
-    include: { messageTemplate: true },
-  });
-  if (!flow) throw new Error(`Flow ${flowId} not found`);
-
-  let context: Record<string, string> = {};
-  if (customerId) {
-    const c = await prisma.customer.findFirst({
-      where: { id: customerId, organizationId },
-      include: { branch: true },
-    });
-    if (!c) throw new Error(`Customer ${customerId} not in org ${organizationId}`);
-    context = { customer_name: c.name, branch_name: c.branch?.name ?? '' };
-  }
-  if (leadId) {
-    const l = await prisma.lead.findFirst({ where: { id: leadId, organizationId } });
-    if (!l) throw new Error(`Lead ${leadId} not in org ${organizationId}`);
-    context = { ...context, customer_name: l.name };
-  }
-
-  const body = flow.messageTemplate?.body ?? 'Tin nhắn automation giả lập';
-  const renderedContent = renderTemplate(body, context);
-
-  const log = await prisma.automationLog.create({
-    data: {
-      organizationId,
-      automationFlowId: flow.id,
-      customerId,
-      leadId,
-      channel: flow.channel ?? flow.messageTemplate?.channel ?? undefined,
-      renderedContent,
-      status: AutomationLogStatus.SENT,
-      executedAt: new Date(),
-      result: { simulated: true, jobId: job.id },
-    },
-  });
-
-  return { logId: log.id };
-}
+export { processAutomationMessage } from './automation-run';
 
 export async function processDailyReport(redis: Redis) {
   const start = new Date();

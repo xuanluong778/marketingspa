@@ -104,8 +104,8 @@ export class MetaFanpageService {
       return {
         connected: false,
         configured: true,
-        pageId,
-        pageIdMasked: this.maskPageId(pageId),
+        pageId: null as string | null,
+        pageIdMasked: null as string | null,
         pageName: null as string | null,
         graphVersion: this.graphVersion,
         message: mapped.message,

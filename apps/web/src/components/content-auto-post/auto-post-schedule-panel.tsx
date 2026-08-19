@@ -80,7 +80,13 @@ export function AutoPostSchedulePanel() {
           onRetry={(id) => mutations.retry.mutate(id)}
           onCancel={(id) => mutations.cancelSchedule.mutate(id)}
           onDelete={(id) => {
-            if (window.confirm('Xóa bài này?')) mutations.deletePost.mutate(id);
+            if (
+              window.confirm(
+                'Xóa bài này khỏi lịch đăng trên web? Bài đã đăng trên Facebook sẽ không bị xóa.',
+              )
+            ) {
+              mutations.deletePost.mutate(id);
+            }
           }}
         />
       )}

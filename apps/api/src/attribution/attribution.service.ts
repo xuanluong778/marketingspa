@@ -205,13 +205,37 @@ export class AttributionService {
       });
     }
 
-    return this.prisma.leadAttribution.create({ data });
+    const created = await this.prisma.leadAttribution.create({ data });
+
+    const hasClick =
+      input.fbclid || input.gclid || input.adCampaignId || input.utmSource;
+    if (hasClick) {
+      void this.recordFunnelEvent({
+        organizationId,
+        leadId,
+        funnelId: lead.funnelRecommendationId,
+        eventType: MarketingFunnelEventType.AD_CLICK,
+        idempotencyKey: `AD_CLICK:${leadId}`,
+        adCampaignId: input.adCampaignId,
+        metadata: {
+          utmSource: input.utmSource,
+          utmCampaign: input.utmCampaign,
+          fbclid: input.fbclid,
+          gclid: input.gclid,
+          landingPage: input.landingPage,
+        },
+        occurredAt: touch.capturedAt ? new Date(touch.capturedAt) : undefined,
+      });
+    }
+
+    return created;
   }
 
   async recordFunnelEvent(params: {
     organizationId: string;
     eventType: MarketingFunnelEventType;
     idempotencyKey: string;
+    funnelId?: string | null;
     leadId?: string | null;
     customerId?: string | null;
     appointmentId?: string | null;
@@ -233,20 +257,38 @@ export class AttributionService {
         },
       },
     });
-    if (existing) return { event: existing, created: false };
+    if (existing) {
+      if (params.metadata != null) {
+        const event = await this.prisma.marketingFunnelEvent.update({
+          where: { id: existing.id },
+          data: { metadata: params.metadata },
+        });
+        return { event, created: false };
+      }
+      return { event: existing, created: false };
+    }
 
     let adCampaignId = params.adCampaignId ?? null;
-    if (!adCampaignId && params.leadId) {
-      const attr = await this.prisma.leadAttribution.findFirst({
-        where: { organizationId: params.organizationId, leadId: params.leadId },
-        select: { adCampaignId: true },
+    let funnelId = params.funnelId ?? null;
+    if (params.leadId) {
+      const lead = await this.prisma.lead.findFirst({
+        where: { organizationId: params.organizationId, id: params.leadId },
+        select: { funnelRecommendationId: true },
       });
-      adCampaignId = attr?.adCampaignId ?? null;
+      if (!funnelId) funnelId = lead?.funnelRecommendationId ?? null;
+      if (!adCampaignId) {
+        const attr = await this.prisma.leadAttribution.findFirst({
+          where: { organizationId: params.organizationId, leadId: params.leadId },
+          select: { adCampaignId: true },
+        });
+        adCampaignId = attr?.adCampaignId ?? null;
+      }
     }
 
     const event = await this.prisma.marketingFunnelEvent.create({
       data: {
         organizationId: params.organizationId,
+        funnelId: funnelId ?? undefined,
         eventType: params.eventType,
         idempotencyKey: params.idempotencyKey,
         leadId: params.leadId ?? undefined,

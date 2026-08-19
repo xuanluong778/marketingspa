@@ -29,10 +29,12 @@ export interface TemplateInput {
 export interface FlowInput {
   name: string;
   triggerType: AutomationTriggerType;
+  funnelId?: string;
   messageTemplateId?: string;
   channel?: MessageChannel;
   delayMinutes?: number;
   isActive?: boolean;
+  actions?: unknown[];
 }
 
 export function useAutomationVariables() {
@@ -55,6 +57,16 @@ export function useAutomationFlows() {
   return useQuery({
     queryKey: ['automation', 'flows'],
     queryFn: () => apiClient<AutomationFlowDetail[]>('/automation/flows'),
+  });
+}
+
+export function useAutomationFunnels() {
+  return useQuery({
+    queryKey: ['automation', 'funnels'],
+    queryFn: () =>
+      apiClient<import('@/types/automation-messaging').AutomationFunnelOption[]>(
+        '/automation/funnels',
+      ),
   });
 }
 

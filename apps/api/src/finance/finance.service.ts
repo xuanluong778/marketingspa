@@ -15,6 +15,7 @@ import { TenantOwnershipService } from '../common/services/tenant-ownership.serv
 import { AttributionHooksService } from '../attribution/attribution-hooks.service';
 import { AuditService } from '../audit/audit.service';
 import { PipelineService } from '../crm/pipeline.service';
+import { FunnelCanvasRuntimeService } from '../crm/funnel-canvas-runtime.service';
 import { EventsGateway } from '../events/events.gateway';
 import {
   CreateOrderDto,
@@ -40,6 +41,7 @@ export class FinanceService {
     private readonly audit: AuditService,
     private readonly pipeline: PipelineService,
     private readonly events: EventsGateway,
+    private readonly canvasRuntime: FunnelCanvasRuntimeService,
   ) {}
 
   async listOrders(organizationId: string, query: FinanceQueryDto) {
@@ -217,6 +219,14 @@ export class FinanceService {
 
     if (order.leadId && nextOrderStatus === OrderStatus.PAID) {
       await this.promoteLeadPurchased(organizationId, order.leadId, userId);
+      void this.canvasRuntime.advance({
+        organizationId,
+        leadId: order.leadId,
+        event: 'PURCHASE',
+        orderId: order.id,
+        paymentId: payment.id,
+        revenue: Number(dto.amount),
+      });
     }
 
     const priorOrders = await this.prisma.order.count({
@@ -357,7 +367,8 @@ export class FinanceService {
       where: { id: leadId },
       data: {
         pipelineStatus: LeadPipelineStatus.PURCHASED,
-        funnelStageId: stage?.id,
+        stageId: stage?.id,
+        pipelineId: stage?.pipelineId,
         convertedAt: new Date(),
       },
     });

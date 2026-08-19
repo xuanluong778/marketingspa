@@ -25,8 +25,9 @@ function main() {
     mirrorMode: true,
   });
   assert.equal(n.title, 'Test');
-  assert.ok(n.fontSize <= 72);
-  assert.ok(n.scrollSpeed >= 10);
+  assert.ok(n.fontSize <= 96);
+  assert.ok(n.scrollSpeed >= 20 && n.scrollSpeed <= 240);
+  assert.equal(n.playbackSpeed, 1);
   assert.equal(n.countdown, 5);
   assert.equal(n.theme, 'light');
   assert.equal(n.mirrorMode, true);

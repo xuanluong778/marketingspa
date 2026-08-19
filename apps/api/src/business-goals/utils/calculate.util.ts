@@ -1,3 +1,7 @@
+/**
+ * Server-side calculation for business goals — keep parity with
+ * apps/web/src/lib/business-goal-metrics.ts (calculateFromInput + extendBusinessGoalCore).
+ */
 export type ProfitStatus = 'profit' | 'break_even' | 'loss';
 
 export interface BusinessGoalInput {
@@ -24,6 +28,12 @@ export interface BusinessGoalCalculationResult {
   netProfit: number;
   profitMargin: number | null;
   status: ProfitStatus;
+  breakEvenRevenue: number | null;
+  ordersForRevenueTarget: number | null;
+  leadsForRevenueTarget: number | null;
+  costPerOrder: number | null;
+  ordersShortToBreakEven: number | null;
+  ordersShortToProfitTarget: number | null;
 }
 
 function roundMoney(value: number): number {
@@ -90,6 +100,28 @@ export function calculateBusinessGoals(input: BusinessGoalInput): BusinessGoalCa
   else if (netProfit === 0) status = 'break_even';
   else status = 'loss';
 
+  const breakEvenRevenue =
+    grossProfitMargin != null && grossProfitMargin > 0
+      ? roundMoney(fixedCost / (grossProfitMargin / 100))
+      : null;
+
+  const ordersForRevenueTarget =
+    avgRev > 0 && totalRevenue > 0 ? Math.ceil(totalRevenue / avgRev) : null;
+
+  let leadsForRevenueTarget: number | null = null;
+  if (ordersForRevenueTarget != null && convRate > 0) {
+    leadsForRevenueTarget = Math.ceil(ordersForRevenueTarget / (convRate / 100));
+  }
+
+  const costPerOrder =
+    txCount > 0 ? roundMoney((variableCost + fixedCost) / txCount) : null;
+
+  const ordersShortToBreakEven =
+    breakEvenTransactions != null ? Math.max(0, breakEvenTransactions - txCount) : null;
+
+  const ordersShortToProfitTarget =
+    targetTransactions != null ? Math.max(0, targetTransactions - txCount) : null;
+
   return {
     totalRevenue,
     variableCost,
@@ -105,5 +137,11 @@ export function calculateBusinessGoals(input: BusinessGoalInput): BusinessGoalCa
     netProfit,
     profitMargin,
     status,
+    breakEvenRevenue,
+    ordersForRevenueTarget,
+    leadsForRevenueTarget,
+    costPerOrder,
+    ordersShortToBreakEven,
+    ordersShortToProfitTarget,
   };
 }

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { AdPlatform, ChatbotBotStatus } from '@marketingspa/database';
+import { AdPlatform, ChatbotBotStatus, MarketingFunnelEventType } from '@marketingspa/database';
+import { AttributionService } from '../attribution/attribution.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { OpenAiService } from '../openai/openai.service';
 import { ChatbotCskhService } from './chatbot-cskh.service';
@@ -7,7 +8,10 @@ import { EventsGateway } from '../events/events.gateway';
 import { LeadsService } from '../leads/leads.service';
 import { PublicLeadDto, PublicMessageDto } from './dto/chatbot-cskh.dto';
 import { generateAiReply } from './utils/chatbot-ai.util';
-import { CREDIT_EXHAUSTED_MESSAGE, defaultGreeting } from './utils/chatbot-constants';
+import { CREDIT_EXHAUSTED_MESSAGE, INSUFFICIENT_AI_CREDIT_MESSAGE, defaultGreeting } from './utils/chatbot-constants';
+import { RagKbService } from '../rag-kb/rag-kb.service';
+import { CreditService } from '../credit/credit.service';
+import { CREDIT_FEATURE_CODES } from '@marketingspa/shared';
 
 interface RateBucket {
   count: number;
@@ -52,6 +56,9 @@ export class ChatbotCskhPublicService {
     private readonly openAi: OpenAiService,
     private readonly events: EventsGateway,
     private readonly leads: LeadsService,
+    private readonly ragKb: RagKbService,
+    private readonly attribution: AttributionService,
+    private readonly credit: CreditService,
   ) {}
 
   async getPublicConfig(botId: string, pageUrl = '', origin = '') {
@@ -89,20 +96,48 @@ export class ChatbotCskhPublicService {
     }
 
     const sessionId = this.normalizeSession(dto.sessionId);
-    const conversation = await this.getOrCreateConversation(bot.organizationId, bot.id, sessionId);
+    const websiteDomain = this.extractWebsiteDomain(dto.pageUrl || origin || '');
+    const conversation = await this.getOrCreateConversation(
+      bot.organizationId,
+      bot.id,
+      sessionId,
+      websiteDomain,
+    );
 
-    await this.prisma.chatbotMessage.create({
+    const userMsg = await this.prisma.chatbotMessage.create({
       data: {
         conversationId: conversation.id,
         role: 'user',
         message: dto.message.trim(),
+        direction: 'INBOUND',
+        senderType: 'CUSTOMER',
+        status: 'RECEIVED',
       },
     });
+
+    if (conversation.linkedLeadId) {
+      void this.leads.applyScoringEvent({
+        organizationId: bot.organizationId,
+        leadId: conversation.linkedLeadId,
+        eventType: 'CHATBOT_REPLY',
+        text: dto.message,
+        source: 'chatbot_website',
+      });
+      void this.attribution.recordFunnelEvent({
+        organizationId: bot.organizationId,
+        leadId: conversation.linkedLeadId,
+        eventType: MarketingFunnelEventType.CHATBOT,
+        idempotencyKey: `CHATBOT:${conversation.id}`,
+        metadata: { channel: 'website', conversationId: conversation.id, botId: bot.id },
+        occurredAt: conversation.createdAt,
+      });
+    }
 
     try {
       this.events.broadcastChatbotMessageNew(bot.organizationId, {
         conversationId: conversation.id,
         channel: 'website',
+        channelRef: websiteDomain || undefined,
         preview: dto.message.trim().slice(0, 120),
         visitorName: conversation.visitorName || undefined,
         botId: bot.id,
@@ -130,7 +165,7 @@ export class ChatbotCskhPublicService {
       };
     }
 
-    const [sources, history, settings, usage] = await Promise.all([
+    const [sources, history, settings, usage, ragChunks] = await Promise.all([
       this.prisma.chatbotKnowledgeSource.findMany({
         where: { botId: bot.id, status: { in: ['active', 'ready'] } },
       }),
@@ -141,7 +176,18 @@ export class ChatbotCskhPublicService {
       }),
       this.chatbot.getSettings(bot.organizationId),
       this.chatbot.getUsageSnapshot(bot.organizationId),
+      this.ragKb
+        .searchForChatContext(bot.organizationId, dto.message, {
+          limit: 5,
+          minScore: 1,
+          botId: bot.id,
+          pageName: bot.businessName || bot.botName || undefined,
+        })
+        .catch(() => [] as Awaited<ReturnType<RagKbService['searchForChatContext']>>),
     ]);
+
+    const creditCost = await this.credit.getFeatureCost(CREDIT_FEATURE_CODES.CHATBOT_REPLY);
+    const creditOk = await this.credit.checkAvailable(bot.organizationId, creditCost);
 
     const openAiChat = this.openAi.isConfigured()
       ? async (input: {
@@ -151,15 +197,24 @@ export class ChatbotCskhPublicService {
           userText: string;
           temperature: number;
         }) =>
-          this.openAi.chatCompletion({
-            model: input.model,
-            temperature: input.temperature,
-            maxTokens: 500,
-            messages: [
-              { role: 'system', content: input.systemPrompt },
-              ...input.history.slice(-8),
-              { role: 'user', content: input.userText },
-            ],
+          this.credit.runPaidFeature({
+            organizationId: bot.organizationId,
+            featureCode: CREDIT_FEATURE_CODES.CHATBOT_REPLY,
+            referenceId: `chatbot.reply:${conversation.id}:${userMsg.id}`,
+            reason: 'chatbot LLM reply',
+            fn: async (ctx) => {
+              ctx.markProviderStarted();
+              return this.openAi.chatCompletion({
+                model: input.model,
+                temperature: input.temperature,
+                maxTokens: 500,
+                messages: [
+                  { role: 'system', content: input.systemPrompt },
+                  ...input.history.slice(-8),
+                  { role: 'user', content: input.userText },
+                ],
+              });
+            },
           })
       : undefined;
 
@@ -167,9 +222,19 @@ export class ChatbotCskhPublicService {
       bot,
       userText: dto.message,
       sources,
+      ragChunks,
+      channel: {
+        pageName: bot.businessName || bot.botName || undefined,
+        channel: 'widget',
+      },
       history,
       settings,
-      usageAllowed: usage.allowed,
+      usageAllowed: usage.allowed && creditOk,
+      exhaustedMessage: !usage.allowed
+        ? CREDIT_EXHAUSTED_MESSAGE
+        : !creditOk
+          ? INSUFFICIENT_AI_CREDIT_MESSAGE
+          : undefined,
       openAiChat,
     });
 
@@ -212,7 +277,13 @@ export class ChatbotCskhPublicService {
     }
 
     const sessionId = this.normalizeSession(dto.sessionId);
-    const conversation = await this.getOrCreateConversation(bot.organizationId, bot.id, sessionId);
+    const websiteDomain = this.extractWebsiteDomain(dto.pageUrl ?? '');
+    const conversation = await this.getOrCreateConversation(
+      bot.organizationId,
+      bot.id,
+      sessionId,
+      websiteDomain,
+    );
 
     const lead = await this.prisma.chatbotLead.create({
       data: {
@@ -235,23 +306,54 @@ export class ChatbotCskhPublicService {
       },
     });
 
-    const leadSource = await this.prisma.leadSource.findFirst({
+    let leadSource = await this.prisma.leadSource.findFirst({
       where: { organizationId: bot.organizationId, code: 'CHATBOT' },
     });
-
-    if (leadSource) {
-      const crmLead = await this.leads.create(bot.organizationId, {
-        leadSourceId: leadSource.id,
-        name: dto.name || 'Khách chatbot',
-        phone: dto.phone,
-        note: dto.need || 'Lead từ Chatbot CSKH',
-        attribution: parseAttributionFromPageUrl(dto.pageUrl),
-      });
-      await this.prisma.chatbotConversation.update({
-        where: { id: conversation.id },
-        data: { linkedLeadId: crmLead.id, visitorPhone: dto.phone },
+    if (!leadSource) {
+      leadSource = await this.prisma.leadSource.create({
+        data: {
+          organizationId: bot.organizationId,
+          code: 'CHATBOT',
+          name: 'Chatbot CSKH',
+          isActive: true,
+        },
       });
     }
+
+    const funnelRec = await this.prisma.funnelRecommendation.findFirst({
+      where: { organizationId: bot.organizationId, chatbotBotId: bot.id },
+      orderBy: { updatedAt: 'desc' },
+      select: { id: true },
+    });
+
+    const crmLead = await this.leads.create(bot.organizationId, {
+      leadSourceId: leadSource.id,
+      name: dto.name || 'Khách chatbot',
+      phone: dto.phone,
+      note: dto.need || 'Lead từ Chatbot CSKH',
+      funnelRecommendationId: funnelRec?.id,
+      tags: funnelRec ? ['funnel', 'chatbot'] : ['chatbot'],
+      attribution: {
+        ...parseAttributionFromPageUrl(dto.pageUrl),
+        utmSource: 'chatbot',
+        utmMedium: 'cskh',
+        utmCampaign: funnelRec?.id,
+      },
+    });
+    await this.prisma.chatbotConversation.update({
+      where: { id: conversation.id },
+      data: { linkedLeadId: crmLead.id, visitorPhone: dto.phone },
+    });
+
+    void this.attribution.recordFunnelEvent({
+      organizationId: bot.organizationId,
+      leadId: crmLead.id,
+      funnelId: funnelRec?.id,
+      eventType: MarketingFunnelEventType.CHATBOT,
+      idempotencyKey: `CHATBOT:${conversation.id}`,
+      metadata: { channel: 'website', conversationId: conversation.id, botId: bot.id },
+      occurredAt: conversation.createdAt,
+    });
 
     return {
       ok: true,
@@ -349,17 +451,41 @@ export class ChatbotCskhPublicService {
     return true;
   }
 
+  private extractWebsiteDomain(raw: string): string | null {
+    const s = String(raw || '').trim();
+    if (!s) return null;
+    try {
+      const u = new URL(s.includes('://') ? s : `https://${s}`);
+      return u.hostname.replace(/^www\./, '').slice(0, 128) || null;
+    } catch {
+      return s.replace(/^www\./, '').slice(0, 128) || null;
+    }
+  }
+
   private normalizeSession(sessionId?: string): string {
     const s = (sessionId ?? '').trim();
     if (s.length >= 8 && s.length <= 64) return s;
     return this.chatbot.newSessionId();
   }
 
-  private async getOrCreateConversation(organizationId: string, botId: string, sessionId: string) {
+  private async getOrCreateConversation(
+    organizationId: string,
+    botId: string,
+    sessionId: string,
+    channelRef?: string | null,
+  ) {
     const existing = await this.prisma.chatbotConversation.findUnique({
       where: { botId_sessionId: { botId, sessionId } },
     });
-    if (existing) return existing;
+    if (existing) {
+      if (channelRef && existing.channelRef !== channelRef) {
+        return this.prisma.chatbotConversation.update({
+          where: { id: existing.id },
+          data: { channelRef: channelRef.slice(0, 128) },
+        });
+      }
+      return existing;
+    }
 
     return this.prisma.chatbotConversation.create({
       data: {
@@ -367,6 +493,7 @@ export class ChatbotCskhPublicService {
         botId,
         sessionId,
         channel: 'website',
+        channelRef: channelRef ? channelRef.slice(0, 128) : null,
         status: 'OPEN',
       },
     });

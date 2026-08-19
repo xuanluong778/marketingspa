@@ -80,11 +80,13 @@ export type AdminSubscriptionItem = {
   planCode: string;
   planName: string;
   durationMonths: number;
+  planCreditGrant?: number;
   status: string;
   startedAt: string;
   expiresAt: string;
   remainingDays: number;
   isExpired: boolean;
+  creditBalance: number;
 };
 
 type PageResult<T> = {
@@ -213,6 +215,33 @@ export function useAdminGiftTime() {
   });
 }
 
+export function useAdminGiftSubscription() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: {
+      id: string;
+      amount: number;
+      unit: 'days' | 'months' | 'years';
+      permanent?: boolean;
+      reason?: string;
+      creditAmount?: number;
+      idempotencyKey: string;
+    }) =>
+      apiClient(`/admin/subscriptions/${body.id}/gift-time`, {
+        method: 'POST',
+        body: JSON.stringify({
+          amount: body.permanent || !(Number(body.amount) >= 1) ? undefined : body.amount,
+          unit: body.unit,
+          permanent: body.permanent ?? false,
+          reason: body.reason ?? 'Admin tặng thời hạn',
+          creditAmount: body.creditAmount ?? 0,
+          idempotencyKey: body.idempotencyKey,
+        }),
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['platform-admin'] }),
+  });
+}
+
 export function useAdminExtendSub() {
   const qc = useQueryClient();
   return useMutation({
@@ -282,5 +311,94 @@ export function useAdminAuditLogs(params: Record<string, string | number | undef
   return useQuery({
     queryKey: ['platform-admin', 'audit-logs', params],
     queryFn: () => apiClient<PageResult<Record<string, unknown>>>(`/admin/audit-logs?${q}`),
+  });
+}
+
+export type AdminCreditOrgItem = {
+  organizationId: string;
+  name: string;
+  slug: string;
+  email: string | null;
+  isActive: boolean;
+  planCode: string | null;
+  planName: string | null;
+  subscriptionStatus: string | null;
+  expiresAt: string | null;
+  remainingDays: number | null;
+  balance: number;
+  reservedBalance: number;
+  lifetimeEarned: number;
+  lifetimeUsed: number;
+};
+
+export type AdminCreditHistoryItem = {
+  id: string;
+  createdAt: string;
+  type: string;
+  featureCode: string | null;
+  featureLabel: string;
+  reason: string | null;
+  referenceId: string | null;
+  amount: number;
+  balanceAfter: number;
+  reservedAfter: number;
+};
+
+export function useAdminCredits(params: Record<string, string | number | undefined>) {
+  const q = qs(params);
+  return useQuery({
+    queryKey: ['platform-admin', 'credits', params],
+    queryFn: () => apiClient<PageResult<AdminCreditOrgItem>>(`/admin/credits?${q}`),
+  });
+}
+
+export function useAdminCreditHistory(
+  organizationId: string | null,
+  params: { page?: number; pageSize?: number },
+) {
+  const page = params.page ?? 1;
+  const pageSize = params.pageSize ?? 20;
+  return useQuery({
+    queryKey: ['platform-admin', 'credits', organizationId, 'history', page, pageSize],
+    queryFn: () =>
+      apiClient<{
+        organization: { id: string; name: string; email: string | null };
+        balance: {
+          balance: number;
+          reservedBalance: number;
+          lifetimeEarned: number;
+          lifetimeUsed: number;
+        };
+        items: AdminCreditHistoryItem[];
+        total: number;
+        page: number;
+        pageSize: number;
+        totalPages: number;
+      }>(`/admin/credits/${organizationId}/history?page=${page}&pageSize=${pageSize}`),
+    enabled: Boolean(organizationId),
+  });
+}
+
+export function useAdminCreditAdjust() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: {
+      organizationId: string;
+      delta: number;
+      reason: string;
+      idempotencyKey: string;
+    }) =>
+      apiClient(`/admin/credits/${body.organizationId}/adjust`, {
+        method: 'POST',
+        body: JSON.stringify({
+          delta: body.delta,
+          reason: body.reason,
+          idempotencyKey: body.idempotencyKey,
+        }),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['platform-admin'] });
+      void qc.invalidateQueries({ queryKey: ['credits'] });
+    },
   });
 }

@@ -1,9 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState, type ElementType } from 'react';
+import { useEffect, useMemo, useRef, useState, type ElementType, type UIEvent } from 'react';
 import {
   Bot,
-  Copy,
   Globe,
   MessageSquare,
   Plus,
@@ -11,7 +10,6 @@ import {
   Users,
   Zap,
   Facebook,
-  Code2,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { LoadingState, EmptyState, ErrorState } from '@/components/shared/page-state';
@@ -20,6 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Select,
   SelectContent,
@@ -33,6 +32,8 @@ import {
   useChatbotKnowledge,
   useChatbotChannels,
   useChatbotInbox,
+  useChatbotInboxChannelOptions,
+  useChatbotUnreadSummary,
   useChatbotLeads,
   useChatbotSettings,
   useChatbotOpenAiStatus,
@@ -52,14 +53,20 @@ import {
   useSyncChatbotFacebookFromAutoPost,
   useChatbotTakeover,
   useChatbotConversation,
+  useMarkChatbotConversationRead,
 } from '@/hooks/use-chatbot-cskh';
 import { CHANNEL_LABELS, SOURCE_TYPE_LABELS, type ChatbotBot } from '@/types/chatbot-cskh';
 import { formatDateTime } from '@/lib/format';
 import { copyToClipboard } from '@/lib/copy-to-clipboard';
+import Link from 'next/link';
 import { BotFormPanel } from '@/components/chatbot-cskh/bot-form-panel';
 import { ChatbotEmbedList } from '@/components/chatbot-cskh/chatbot-embed-list';
+import { ChatbotVisitorAvatar } from '@/components/chatbot-cskh/chatbot-visitor-avatar';
+import {
+  ChatbotInboxFilters,
+  type InboxChannelFilter,
+} from '@/components/chatbot-cskh/chatbot-inbox-filters';
 import { useAutoPostStatus } from '@/hooks/use-auto-post';
-import Link from 'next/link';
 
 function StatCard({
   label,
@@ -81,13 +88,50 @@ function StatCard({
   );
 }
 
-function copyText(text: string) {
-  void copyToClipboard(text);
+function InboxListSkeleton({ count = 6 }: { count?: number }) {
+  return (
+    <div className="space-y-2">
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="rounded-lg border p-3">
+          <div className="flex items-start gap-2">
+            <Skeleton className="h-9 w-9 shrink-0 rounded-full" />
+            <div className="min-w-0 flex-1 space-y-2">
+              <Skeleton className="h-4 w-2/3 max-w-[180px]" />
+              <Skeleton className="h-3 w-1/2 max-w-[140px]" />
+              <Skeleton className="h-3 w-full" />
+            </div>
+            <Skeleton className="h-7 w-7 shrink-0 rounded-full" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
+
+function ConversationDetailSkeleton() {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 border-b pb-2">
+        <Skeleton className="h-8 w-8 rounded-full" />
+        <div className="space-y-2">
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-3 w-48" />
+        </div>
+      </div>
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div key={i} className={`flex ${i % 2 === 0 ? 'justify-end' : 'justify-start'}`}>
+          <Skeleton className={`h-10 rounded-lg ${i % 2 === 0 ? 'w-2/3' : 'w-1/2'}`} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 
 export default function ChatbotCskhPage() {
   const [selectedBotId, setSelectedBotId] = useState<string | null>(null);
   const [inboxId, setInboxId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState('bots');
   const [botForm, setBotForm] = useState<Partial<ChatbotBot> | null>(null);
   const [kbForm, setKbForm] = useState({ title: '', content: '', sourceType: 'FAQ' });
   const [fbForm, setFbForm] = useState({ pageName: '', pageId: '', pageAccessToken: '' });
@@ -98,6 +142,9 @@ export default function ChatbotCskhPage() {
     monthlyLimit?: number;
   } | null>(null);
   const [testOpenAi, setTestOpenAi] = useState(false);
+  const [inboxChannel, setInboxChannel] = useState<InboxChannelFilter>('all');
+  const [inboxChannelId, setInboxChannelId] = useState<string | null>(null);
+  const inboxScrollRef = useRef<HTMLDivElement | null>(null);
 
   const overview = useChatbotOverview();
   const bots = useChatbotBots();
@@ -105,8 +152,18 @@ export default function ChatbotCskhPage() {
   const { data: autoPostStatus } = useAutoPostStatus();
   const canPastePageToken = Boolean(autoPostStatus?.canUseServerEnv);
   const channels = useChatbotChannels();
-  const inbox = useChatbotInbox();
+  const inbox = useChatbotInbox({
+    enabled: activeTab === 'inbox',
+    botId: selectedBotId,
+    channel: inboxChannel,
+    channelId: inboxChannelId,
+  });
+  const channelOptions = useChatbotInboxChannelOptions(selectedBotId);
+  const unreadSummary = useChatbotUnreadSummary(15, {
+    botId: activeTab === 'inbox' ? selectedBotId : null,
+  });
   const conversation = useChatbotConversation(inboxId);
+  const markRead = useMarkChatbotConversationRead();
   const leads = useChatbotLeads();
   const settings = useChatbotSettings();
   const openAiStatus = useChatbotOpenAiStatus(testOpenAi);
@@ -127,11 +184,22 @@ export default function ChatbotCskhPage() {
   const syncFbFromAutoPost = useSyncChatbotFacebookFromAutoPost();
   const takeover = useChatbotTakeover();
 
+  const inboxItems = useMemo(
+    () => inbox.data?.pages.flatMap((p) => p.items) ?? [],
+    [inbox.data],
+  );
+
   useEffect(() => {
     if (!selectedBotId && bots.data?.[0]?.id) {
       setSelectedBotId(bots.data[0].id);
     }
   }, [bots.data, selectedBotId]);
+
+  useEffect(() => {
+    if (!inboxId) return;
+    markRead.mutate(inboxId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inboxId]);
 
   const activeBot = useMemo(
     () => bots.data?.find((b) => b.id === selectedBotId) ?? bots.data?.[0],
@@ -139,6 +207,14 @@ export default function ChatbotCskhPage() {
   );
 
   const botId = activeBot?.id ?? null;
+
+  const onInboxScroll = (e: UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight > 80) return;
+    if (inbox.hasNextPage && !inbox.isFetchingNextPage) {
+      void inbox.fetchNextPage();
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -167,7 +243,7 @@ export default function ChatbotCskhPage() {
         </div>
       )}
 
-      <Tabs defaultValue="bots">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="flex flex-wrap h-auto gap-1">
           <TabsTrigger value="bots">Chatbot</TabsTrigger>
           <TabsTrigger value="knowledge">Kiến thức</TabsTrigger>
@@ -464,6 +540,16 @@ export default function ChatbotCskhPage() {
                   <li className="break-all">
                     Callback URL: {fbWebhook.data.webhookUrl || '—'}
                   </li>
+                  <li>
+                    Avatar khách Messenger:{' '}
+                    {fbWebhook.data.visitorAvatarAccess === 'ok'
+                      ? 'Meta cho phép lấy ảnh thật (profile_pic)'
+                      : fbWebhook.data.visitorAvatarAccess === 'blocked'
+                        ? 'Meta chặn ảnh — cần App Review «Business Asset User Profile Access»'
+                        : fbWebhook.data.visitorAvatarAccess === 'no_data'
+                          ? 'chưa có hội thoại để kiểm tra'
+                          : 'chưa kiểm tra'}
+                  </li>
                 </ul>
                 <Button
                   size="sm"
@@ -562,48 +648,65 @@ export default function ChatbotCskhPage() {
         </TabsContent>
 
         <TabsContent value="embed" className="space-y-4">
-          <div className="flex gap-2 items-center">
-            <Label>Chatbot:</Label>
-            <Select value={botId ?? ''} onValueChange={setSelectedBotId}>
-              <SelectTrigger className="w-[220px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {bots.data?.map((b) => (
-                  <SelectItem key={b.id} value={b.id}>
-                    {b.botName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {embed.data && (
-            <div className="rounded-lg border p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <Code2 className="h-4 w-4" />
-                <h3 className="font-semibold">Mã nhúng Website</h3>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Dán đoạn mã sau trước thẻ <code>&lt;/body&gt;</code> trên website. Chatbot chỉ hoạt
-                động khi bot ở trạng thái <strong>Đang chạy</strong>.
-              </p>
-              <pre className="rounded bg-muted p-3 text-xs overflow-x-auto whitespace-pre-wrap">
-                {embed.data.embedCode}
-              </pre>
-              <Button size="sm" variant="outline" onClick={() => copyText(embed.data!.embedCode)}>
-                <Copy className="h-4 w-4 mr-2" /> Sao chép mã
-              </Button>
-              <p className="text-xs text-muted-foreground">
-                Sau khi dán mã, ô chat sẽ hiện trên website của bạn.
-              </p>
-            </div>
-          )}
+          <ChatbotEmbedList
+            bots={bots.data}
+            isLoading={bots.isLoading}
+            selectedBotId={botId}
+            embedCode={embed.data?.embedCode}
+            onSelectBot={setSelectedBotId}
+            onDelete={(id) => deleteBot.mutate(id)}
+            onUpdateStatus={(id, status) => updateBot.mutate({ id, status })}
+            statusChangingId={updateBot.isPending ? (updateBot.variables?.id ?? null) : null}
+            onEdit={(bot) => {
+              setSelectedBotId(bot.id);
+              setBotForm(bot);
+            }}
+          />
         </TabsContent>
 
-        <TabsContent value="inbox" className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-2 max-h-[480px] overflow-y-auto">
-            {inbox.data?.map((c) => (
+        <TabsContent value="inbox" className="space-y-4">
+          <ChatbotInboxFilters
+            bots={bots.data || []}
+            botId={selectedBotId}
+            onBotIdChange={(id) => {
+              setSelectedBotId(id);
+              setInboxId(null);
+            }}
+            channel={inboxChannel}
+            onChannelChange={(ch) => {
+              setInboxChannel(ch);
+              setInboxId(null);
+            }}
+            channelId={inboxChannelId}
+            onChannelIdChange={(id) => {
+              setInboxChannelId(id);
+              setInboxId(null);
+            }}
+            fanpages={channelOptions.data?.fanpages}
+            websites={channelOptions.data?.websites}
+            unreadByBot={unreadSummary.data?.unreadByBot}
+          />
+          {!selectedBotId ? (
+            <EmptyState
+              title="Chọn Project / Bot"
+              description="Hộp thư được tách theo từng Project — chọn bot để xem hội thoại Fanpage / Website của Project đó."
+            />
+          ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+          <div
+            ref={inboxScrollRef}
+            onScroll={onInboxScroll}
+            className="space-y-2 max-h-[480px] overflow-y-auto"
+          >
+            {inbox.isLoading && <InboxListSkeleton />}
+            {inbox.isError && <ErrorState onRetry={() => void inbox.refetch()} />}
+            {!inbox.isLoading && !inbox.isError && inboxItems.length === 0 && (
+              <EmptyState
+                title="Chưa có hội thoại"
+                description="Khi khách nhắn qua Messenger hoặc widget, tin sẽ hiện ở đây."
+              />
+            )}
+            {inboxItems.map((c) => (
               <button
                 key={c.id}
                 type="button"
@@ -611,16 +714,17 @@ export default function ChatbotCskhPage() {
                 className={`w-full text-left rounded-lg border p-3 ${inboxId === c.id ? 'border-primary' : ''}`}
               >
                 <div className="flex items-start gap-2">
-                  {c.customer?.avatarUrl || c.visitorAvatarUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={c.customer?.avatarUrl || c.visitorAvatarUrl || ''}
-                      alt=""
-                      className="h-9 w-9 rounded-full object-cover shrink-0"
-                    />
-                  ) : (
-                    <div className="h-9 w-9 rounded-full bg-muted shrink-0" />
-                  )}
+                  <ChatbotVisitorAvatar
+                    name={
+                      c.customer?.name ||
+                      c.visitorName ||
+                      (c.customer?.psid || c.externalUserId
+                        ? `PSID …${(c.customer?.psid || c.externalUserId || '').slice(-4)}`
+                        : 'Khách')
+                    }
+                    src={c.customer?.avatarUrl || c.visitorAvatarUrl}
+                    size={36}
+                  />
                   <div className="min-w-0 flex-1">
                     <p className="font-medium truncate">
                       {c.customer?.name ||
@@ -645,34 +749,40 @@ export default function ChatbotCskhPage() {
                       {c.messages?.[0]?.message}
                     </p>
                   </div>
-                  {c.fanpage?.avatarUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={c.fanpage.avatarUrl}
-                      alt=""
-                      className="h-7 w-7 rounded-full object-cover shrink-0"
-                      title={c.fanpage.pageName || c.fanpage.pageId || 'Fanpage'}
-                    />
-                  ) : null}
+                  <ChatbotVisitorAvatar
+                    name={c.fanpage?.pageName || 'Fanpage'}
+                    src={c.fanpage?.avatarUrl}
+                    size={28}
+                    title={c.fanpage?.pageName || c.fanpage?.pageId || 'Fanpage'}
+                  />
                 </div>
               </button>
             ))}
+            {inbox.isFetchingNextPage && <InboxListSkeleton count={2} />}
           </div>
           <div className="rounded-lg border p-4 min-h-[320px]">
             {!inboxId && (
               <p className="text-muted-foreground text-sm">Chọn hội thoại để xem chi tiết</p>
             )}
+            {inboxId && conversation.isLoading && <ConversationDetailSkeleton />}
+            {inboxId && conversation.isError && (
+              <ErrorState onRetry={() => void conversation.refetch()} />
+            )}
             {inboxId && conversation.data && (
               <div className="mb-3 space-y-2 border-b pb-2">
                 <div className="flex items-center gap-2">
-                  {conversation.data.customer?.avatarUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={conversation.data.customer.avatarUrl}
-                      alt=""
-                      className="h-8 w-8 rounded-full object-cover"
-                    />
-                  ) : null}
+                  <ChatbotVisitorAvatar
+                    name={
+                      conversation.data.customer?.name ||
+                      conversation.data.visitorName ||
+                      'Khách'
+                    }
+                    src={
+                      conversation.data.customer?.avatarUrl ||
+                      conversation.data.visitorAvatarUrl
+                    }
+                    size={32}
+                  />
                   <div className="min-w-0">
                     <p className="text-sm font-medium truncate">
                       {conversation.data.customer?.name || conversation.data.visitorName || 'Khách'}
@@ -720,50 +830,65 @@ export default function ChatbotCskhPage() {
             )}
             {conversation.data?.messages?.map((m) => {
               const inbound = m.direction === 'INBOUND' || m.role === 'user';
+              const failed = m.status === 'FAILED';
               const outbound =
                 m.direction === 'OUTBOUND' || m.role === 'assistant' || m.role === 'system';
+              const label =
+                failed || m.senderType === 'SYSTEM'
+                  ? 'Hệ thống'
+                  : m.senderType === 'BOT' || m.role === 'assistant'
+                    ? 'Bot / Fanpage'
+                    : m.senderType === 'CUSTOMER' || m.role === 'user'
+                      ? 'Khách'
+                      : m.senderType || m.role;
               return (
                 <div
                   key={m.id}
                   className={`mb-2 text-sm ${inbound ? 'text-right' : ''}`}
                 >
                   <p className="mb-0.5 text-[10px] text-muted-foreground">
-                    {m.senderType === 'BOT' || m.role === 'assistant'
-                      ? 'Bot / Fanpage'
-                      : m.senderType === 'CUSTOMER' || m.role === 'user'
-                        ? 'Khách'
-                        : m.senderType || m.role}
+                    {label}
                     {m.direction ? ` · ${m.direction}` : ''}
                   </p>
                   <span
                     className={`inline-block rounded-lg px-3 py-2 ${
-                      inbound
-                        ? 'bg-primary text-primary-foreground'
-                        : outbound
-                          ? 'bg-muted'
-                          : 'bg-muted'
+                      failed
+                        ? 'border border-destructive/40 bg-destructive/10 text-destructive'
+                        : inbound
+                          ? 'bg-primary text-primary-foreground'
+                          : outbound
+                            ? 'bg-muted'
+                            : 'bg-muted'
                     }`}
                   >
                     {m.message}
                   </span>
                   {m.status ? (
-                    <p className="mt-0.5 text-[10px] text-muted-foreground">
-                      {m.status}
+                    <p
+                      className={`mt-0.5 text-[10px] ${
+                        failed ? 'font-medium text-destructive' : 'text-muted-foreground'
+                      }`}
+                    >
+                      {failed ? 'Chưa gửi Messenger' : m.status === 'SENT' ? 'Đã gửi Messenger' : m.status}
                       {m.errorCode === 'MESSENGER_STANDARD_ACCESS'
                         ? ' · Chưa Advanced Access (chỉ Admin/Dev/Tester)'
                         : m.errorCode === 'MISSING_SCOPE'
                           ? ' · Thiếu scope — reconnect OAuth'
                           : m.errorCode === 'TOKEN_EXPIRED'
                             ? ' · Token hết hạn'
-                            : m.errorCode
+                            : m.errorCode && failed
                               ? ` · ${m.errorCode}`
-                              : ''}
+                              : m.errorCode && m.status !== 'SENT'
+                                ? ` · ${m.errorCode}`
+                                : ''}
                     </p>
                   ) : null}
                 </div>
               );
             })}
           </div>
+          </div>
+          )}
         </TabsContent>
 
         <TabsContent value="leads" className="space-y-2">
@@ -888,21 +1013,6 @@ export default function ChatbotCskhPage() {
           )}
         </TabsContent>
       </Tabs>
-
-      <ChatbotEmbedList
-        bots={bots.data}
-        isLoading={bots.isLoading}
-        selectedBotId={botId}
-        embedCode={embed.data?.embedCode}
-        onSelectBot={setSelectedBotId}
-        onDelete={(id) => deleteBot.mutate(id)}
-        onUpdateStatus={(id, status) => updateBot.mutate({ id, status })}
-        statusChangingId={updateBot.isPending ? (updateBot.variables?.id ?? null) : null}
-        onEdit={(bot) => {
-          setSelectedBotId(bot.id);
-          setBotForm(bot);
-        }}
-      />
     </div>
   );
 }

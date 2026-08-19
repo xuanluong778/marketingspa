@@ -58,9 +58,9 @@ export function mapCampaignKindToEligibilityType(
   }
 }
 
-export function isCampaignContentEditable(status: string, startedAt: Date | null): boolean {
-  if (startedAt) return false;
-  return status === 'DRAFT' || status === 'SCHEDULED';
+export function isCampaignContentEditable(status: string, _startedAt: Date | null): boolean {
+  // Cho phép sửa lại chiến dịch đã setup (kể cả đã chạy xong) — trừ khi đang chạy.
+  return status !== 'RUNNING' && status !== 'PLANNING';
 }
 
 export const LOCKED_CONTENT_FIELDS = [

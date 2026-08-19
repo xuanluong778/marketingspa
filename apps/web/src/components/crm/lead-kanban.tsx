@@ -152,6 +152,12 @@ export function LeadKanban({
                               {lead.assignedTo && (
                                 <p className="text-xs mt-1">→ {lead.assignedTo.name}</p>
                               )}
+                              {(lead.score != null || lead.qualification) && (
+                                <p className="text-xs mt-1 text-muted-foreground">
+                                  Điểm {lead.score ?? 0}
+                                  {lead.qualification ? ` · ${lead.qualification}` : ''}
+                                </p>
+                              )}
                             </div>
                           </div>
                           <DropdownMenu>

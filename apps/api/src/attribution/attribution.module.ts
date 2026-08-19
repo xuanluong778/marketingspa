@@ -13,6 +13,6 @@ import { AttributionHooksService } from './attribution-hooks.service';
     OfflineConversionService,
     AttributionHooksService,
   ],
-  exports: [AttributionService, AttributionHooksService, OfflineConversionService],
+  exports: [AttributionService, AttributionHooksService, OfflineConversionService, AttributionDashboardService],
 })
 export class AttributionModule {}

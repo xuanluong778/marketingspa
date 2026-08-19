@@ -1,7 +1,21 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { Archive, Copy, GripVertical, MoreHorizontal, Plus, Search, Trash2 } from 'lucide-react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import {
+  Archive,
+  Copy,
+  GripVertical,
+  LayoutGrid,
+  ListTodo,
+  BarChart3,
+  CalendarDays,
+  MoreHorizontal,
+  Plus,
+  Search,
+  Trash2,
+} from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { LoadingState, ErrorState, EmptyState } from '@/components/shared/page-state';
 import { Button } from '@/components/ui/button';
@@ -51,6 +65,19 @@ import {
 } from '@/components/work-management/work-task-collab';
 
 export default function WorkManagementPage() {
+  return (
+    <Suspense fallback={<LoadingState message="Đang tải Quản lý công việc…" />}>
+      <WorkManagementBoard />
+    </Suspense>
+  );
+}
+
+function WorkManagementBoard() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const taskIdParam = searchParams.get('taskId');
+
   const projectsQ = useWorkProjects();
   const createProject = useCreateWorkProject();
   const createTask = useCreateWorkTask();
@@ -74,8 +101,8 @@ export default function WorkManagementPage() {
 
   const [taskDialog, setTaskDialog] = useState(false);
   const [editTask, setEditTask] = useState<WorkTask | null>(null);
-  const [detailTask, setDetailTask] = useState<WorkTask | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
+  const [detailSnapshot, setDetailSnapshot] = useState<WorkTask | null>(null);
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -97,6 +124,59 @@ export default function WorkManagementPage() {
   useEffect(() => {
     if (!projectId && firstProjectId) setProjectId(firstProjectId);
   }, [firstProjectId, projectId]);
+
+  const setTaskIdInUrl = useCallback(
+    (id: string | null) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (id) params.set('taskId', id);
+      else params.delete('taskId');
+      const qs = params.toString();
+      router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams],
+  );
+
+  const openTaskDetail = useCallback(
+    (task: WorkTask) => {
+      setDetailSnapshot(task);
+      setDetailTaskId(task.id);
+      if (task.projectId) setProjectId(task.projectId);
+      setTaskIdInUrl(task.id);
+    },
+    [setTaskIdInUrl],
+  );
+
+  const openTaskDetailById = useCallback(
+    (id: string, nextProjectId?: string | null) => {
+      setDetailTaskId(id);
+      if (nextProjectId) setProjectId(nextProjectId);
+      const found = (projectQ.data?.tasks ?? []).find((t) => t.id === id);
+      setDetailSnapshot(found ?? null);
+      setTaskIdInUrl(id);
+    },
+    [projectQ.data?.tasks, setTaskIdInUrl],
+  );
+
+  const closeTaskDetail = useCallback(() => {
+    setDetailTaskId(null);
+    setDetailSnapshot(null);
+    setTaskIdInUrl(null);
+  }, [setTaskIdInUrl]);
+
+  // Deep link ?taskId= + browser back/forward
+  useEffect(() => {
+    if (taskIdParam) {
+      setDetailTaskId(taskIdParam);
+      const found = (projectQ.data?.tasks ?? []).find((t) => t.id === taskIdParam);
+      if (found) {
+        setDetailSnapshot(found);
+        if (found.projectId) setProjectId(found.projectId);
+      }
+    } else {
+      setDetailTaskId(null);
+      setDetailSnapshot(null);
+    }
+  }, [taskIdParam, projectQ.data?.tasks]);
 
   const columns = useMemo(() => projectQ.data?.columns ?? [], [projectQ.data?.columns]);
   const tasks = useMemo(() => {
@@ -257,6 +337,29 @@ export default function WorkManagementPage() {
         description="Quản lý dự án và bảng Kanban công việc theo tổ chức"
       />
 
+      <div className="flex flex-wrap gap-2">
+        <Button variant="default" size="sm" asChild>
+          <Link href="/work-management">
+            <LayoutGrid className="h-3.5 w-3.5 mr-1" /> Kanban
+          </Link>
+        </Button>
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/work-management/my">
+            <ListTodo className="h-3.5 w-3.5 mr-1" /> Việc của tôi
+          </Link>
+        </Button>
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/work-management/dashboard">
+            <BarChart3 className="h-3.5 w-3.5 mr-1" /> Dashboard
+          </Link>
+        </Button>
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/work-management/calendar">
+            <CalendarDays className="h-3.5 w-3.5 mr-1" /> Lịch
+          </Link>
+        </Button>
+      </div>
+
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
         <div className="space-y-1 min-w-[200px] flex-1">
           <Label>Dự án</Label>
@@ -274,7 +377,7 @@ export default function WorkManagementPage() {
             </SelectContent>
           </Select>
         </div>
-        <WorkNotificationsBell />
+        <WorkNotificationsBell onOpenTask={openTaskDetailById} />
         <Button
           variant="outline"
           onClick={() => {
@@ -398,10 +501,7 @@ export default function WorkManagementPage() {
                         <GripVertical className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
                         <div
                           className="min-w-0 flex-1 cursor-pointer"
-                          onClick={() => {
-                            setDetailTask(task);
-                            setDetailOpen(true);
-                          }}
+                          onClick={() => openTaskDetail(task)}
                         >
                           <p className="text-sm font-medium leading-snug">{task.title}</p>
                           <div className="mt-1.5 flex flex-wrap gap-1">
@@ -436,12 +536,7 @@ export default function WorkManagementPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => {
-                                setDetailTask(task);
-                                setDetailOpen(true);
-                              }}
-                            >
+                            <DropdownMenuItem onClick={() => openTaskDetail(task)}>
                               Chi tiết
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => openEditTask(task)}>
@@ -684,9 +779,12 @@ export default function WorkManagementPage() {
       </Dialog>
 
       <WorkTaskDetailDialog
-        task={detailTask}
-        open={detailOpen}
-        onOpenChange={setDetailOpen}
+        taskId={detailTaskId}
+        initialTask={detailSnapshot}
+        open={!!detailTaskId}
+        onOpenChange={(v) => {
+          if (!v) closeTaskDetail();
+        }}
         employees={employees}
       />
     </div>

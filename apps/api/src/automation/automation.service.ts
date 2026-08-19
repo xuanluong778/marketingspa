@@ -150,9 +150,36 @@ export class AutomationService {
   listFlows(organizationId: string) {
     return this.prisma.automationFlow.findMany({
       where: { organizationId },
-      include: { messageTemplate: true },
+      include: {
+        messageTemplate: true,
+        funnel: { select: { id: true, selectedSlug: true, prompt: true, createdAt: true } },
+      },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  listFunnels(organizationId: string) {
+    return this.prisma.funnelRecommendation.findMany({
+      where: { organizationId },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      select: {
+        id: true,
+        prompt: true,
+        selectedSlug: true,
+        completeGeneratedAt: true,
+        createdAt: true,
+      },
+    });
+  }
+
+  private async assertFunnel(organizationId: string, funnelId: string) {
+    const row = await this.prisma.funnelRecommendation.findFirst({
+      where: { id: funnelId, organizationId },
+      select: { id: true },
+    });
+    if (!row) throw new BadRequestException('Funnel không tồn tại hoặc không thuộc tổ chức');
+    return row;
   }
 
   async createFlow(
@@ -164,6 +191,9 @@ export class AutomationService {
     if (dto.messageTemplateId) {
       await this.ensureTemplate(organizationId, dto.messageTemplateId);
     }
+    if (dto.funnelId) {
+      await this.assertFunnel(organizationId, dto.funnelId);
+    }
     const isActive = dto.isActive !== undefined ? dto.isActive : canApprove;
     if (isActive && !canApprove) {
       throw new BadRequestException('Cần quyền automation.campaign.approve để kích hoạt flow');
@@ -172,6 +202,7 @@ export class AutomationService {
     const flow = await this.prisma.automationFlow.create({
       data: {
         organizationId,
+        funnelId: dto.funnelId,
         name: dto.name,
         triggerType: dto.triggerType,
         messageTemplateId: dto.messageTemplateId,
@@ -186,7 +217,10 @@ export class AutomationService {
         maxSendsPerDay: dto.maxSendsPerDay,
         cooldownMinutes: dto.cooldownMinutes ?? 0,
       },
-      include: { messageTemplate: true },
+      include: {
+        messageTemplate: true,
+        funnel: { select: { id: true, selectedSlug: true, prompt: true, createdAt: true } },
+      },
     });
     await this.audit.log({
       organizationId,
@@ -213,6 +247,9 @@ export class AutomationService {
     if (dto.messageTemplateId) {
       await this.ensureTemplate(organizationId, dto.messageTemplateId);
     }
+    if (dto.funnelId) {
+      await this.assertFunnel(organizationId, dto.funnelId);
+    }
     if (dto.isActive === true && !canApprove) {
       throw new BadRequestException('Dùng endpoint approve để kích hoạt flow');
     }
@@ -230,7 +267,10 @@ export class AutomationService {
         }),
         ...(actions !== undefined && { actions: actions as Prisma.InputJsonValue }),
       },
-      include: { messageTemplate: true },
+      include: {
+        messageTemplate: true,
+        funnel: { select: { id: true, selectedSlug: true, prompt: true, createdAt: true } },
+      },
     });
     await this.audit.log({
       organizationId,

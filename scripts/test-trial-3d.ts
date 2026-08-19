@@ -60,6 +60,7 @@ async function api(path: string, token?: string, init?: RequestInit) {
 
 async function cleanup(orgId: string) {
   await prisma.trialClaim.deleteMany({ where: { organizationId: orgId } }).catch(() => undefined);
+  await prisma.creditTransaction.deleteMany({ where: { organizationId: orgId } }).catch(() => undefined);
   await prisma.paymentTransaction.deleteMany({ where: { organizationId: orgId } });
   await prisma.paymentOrder.deleteMany({ where: { organizationId: orgId } });
   await prisma.subscription.deleteMany({ where: { organizationId: orgId } });
@@ -130,32 +131,45 @@ async function main() {
         body: JSON.stringify({ deviceFingerprint: device }),
       });
       const sub = await api('/billing/subscription', token);
+      const wallet = await prisma.creditWallet.findUnique({ where: { organizationId: org.id } });
+      const grants = await prisma.creditTransaction.count({
+        where: { organizationId: org.id, idempotencyKey: `trial:${org.id}:credit-grant` },
+      });
       const ok =
         act.status === 200 &&
         act.json?.activated === true &&
         act.json?.idempotent === false &&
         sub.json?.status === 'TRIALING' &&
         !!sub.json?.trial?.trialStartedAt &&
-        !!sub.json?.trial?.trialEndsAt;
+        !!sub.json?.trial?.trialEndsAt &&
+        Number(wallet?.balance) === 1000 &&
+        grants === 1;
       results.push({
         name: '2. User mới kích hoạt Trial đúng 1 lần',
         ok,
-        detail: `act=${act.status} status=${sub.json?.status} ends=${sub.json?.trial?.trialEndsAt}`,
+        detail: `act=${act.status} status=${sub.json?.status} ends=${sub.json?.trial?.trialEndsAt} credit=${wallet?.balance}`,
       });
     }
 
     // 3) Idempotent — bấm lại không gia hạn
     {
       const before = await prisma.subscription.findFirst({ where: { organizationId: org.id } });
+      const balBefore = await prisma.creditWallet.findUnique({ where: { organizationId: org.id } });
       const act2 = await api('/billing/trial/activate', token, {
         method: 'POST',
         body: JSON.stringify({ deviceFingerprint: device }),
       });
       const after = await prisma.subscription.findFirst({ where: { organizationId: org.id } });
+      const balAfter = await prisma.creditWallet.findUnique({ where: { organizationId: org.id } });
+      const grants = await prisma.creditTransaction.count({
+        where: { organizationId: org.id, idempotencyKey: `trial:${org.id}:credit-grant` },
+      });
       const ok =
         act2.status === 200 &&
         act2.json?.idempotent === true &&
-        before?.trialEndsAt?.getTime() === after?.trialEndsAt?.getTime();
+        before?.trialEndsAt?.getTime() === after?.trialEndsAt?.getTime() &&
+        Number(balBefore?.balance) === Number(balAfter?.balance) &&
+        grants === 1;
       results.push({
         name: '3. Bấm lại / đổi session không gia hạn Trial',
         ok,
@@ -214,10 +228,12 @@ async function main() {
       });
       const content = await api('/content-marketing/status', token);
       const sub = await api('/billing/subscription', token);
+      const wallet = await prisma.creditWallet.findUnique({ where: { organizationId: org.id } });
       const ok =
         content.status === 403 &&
         content.json?.code === 'TRIAL_EXPIRED' &&
-        sub.json?.status === 'TRIAL_EXPIRED';
+        sub.json?.status === 'TRIAL_EXPIRED' &&
+        Number(wallet?.balance) === 1000;
       results.push({
         name: '7. Hết 3 ngày tự khóa (TRIAL_EXPIRED)',
         ok,

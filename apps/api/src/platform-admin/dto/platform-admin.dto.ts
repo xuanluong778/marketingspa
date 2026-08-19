@@ -1,4 +1,4 @@
-import { IsArray, IsBoolean, IsIn, IsNumber, IsOptional, IsString, Min, MinLength } from 'class-validator';
+import { IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, Max, Min, MinLength, ValidateIf } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class AdminAuditQueryDto {
@@ -50,18 +50,34 @@ export class AdminExtendSubscriptionDto {
 }
 
 export class AdminGiftTimeDto {
+  /** Bắt buộc khi tặng thời hạn. Có thể 0/omit nếu chỉ tặng AI Credit. */
+  @ValidateIf(
+    (o: AdminGiftTimeDto) => !o.permanent && !(Number(o.creditAmount) > 0 && !(Number(o.amount) >= 1)),
+  )
   @Type(() => Number)
-  @IsNumber()
+  @IsInt()
   @Min(1)
-  amount!: number;
+  @Max(3650)
+  amount?: number;
   @IsString()
   @MinLength(1)
   idempotencyKey!: string;
   @IsOptional()
   @IsString()
   reason?: string;
+  @ValidateIf((o: AdminGiftTimeDto) => o.permanent || Number(o.amount) >= 1 || !(Number(o.creditAmount) > 0))
   @IsIn(['days', 'months', 'years'])
-  unit!: 'days' | 'months' | 'years';
+  unit?: 'days' | 'months' | 'years';
+  @IsOptional()
+  @IsBoolean()
+  permanent?: boolean;
+  /** Số AI Credit tặng kèm (0 = chỉ tặng thời hạn). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(10_000_000)
+  creditAmount?: number;
 }
 
 export class AdminJobsQueryDto {
@@ -140,5 +156,18 @@ export class AdminUsageQueryDto {
   @IsOptional()
   @IsString()
   q?: string;
+}
+
+export class AdminCreditAdjustDto {
+  /** Dương = cộng, âm = trừ. Không được = 0. */
+  @Type(() => Number)
+  @IsNumber()
+  delta!: number;
+  @IsString()
+  @MinLength(3)
+  reason!: string;
+  @IsString()
+  @MinLength(8)
+  idempotencyKey!: string;
 }
 

@@ -10,6 +10,7 @@ import {
 import type Redis from 'ioredis';
 import {
   isPermanentMessagingError,
+  MESSAGING_NAME_FALLBACKS,
   MESSAGING_RESCHEDULE_REASON_CODES,
   renderTemplateWithFallbacks,
   sendMessengerHttp,
@@ -188,20 +189,54 @@ export async function processMessagingSend(job: Job<MessagingSendJobData>, redis
     throw new Error(reason);
   }
 
-  let renderedContent = recipient.renderedContent;
-  if (!renderedContent && campaign.messageTemplate) {
+  // Luôn render lại theo từng recipient lúc dispatch — không tái dùng tên chung
+  const campaignVars = (campaign.variables ?? {}) as Record<string, string>;
+  const bodySource =
+    campaign.messageTemplate?.body ||
+    campaignVars.body?.trim() ||
+    campaignVars.message?.trim() ||
+    campaignVars.content?.trim() ||
+    '';
+  let renderedContent: string | null = null;
+  if (bodySource) {
     const context = await buildRecipientRenderContext(
       organizationId,
       recipient.identity,
-      (campaign.variables ?? {}) as Record<string, string>,
+      campaignVars,
     );
-    const fallbacks = (campaign.messageTemplate.variableFallbacks ?? {}) as Record<string, string>;
-    const { rendered } = renderTemplateWithFallbacks(
-      campaign.messageTemplate.body,
-      context,
-      fallbacks,
-    );
+    const templateFallbacks = (campaign.messageTemplate?.variableFallbacks ?? {}) as Record<
+      string,
+      string
+    >;
+    const { rendered } = renderTemplateWithFallbacks(bodySource, context, {
+      ...MESSAGING_NAME_FALLBACKS,
+      ...templateFallbacks,
+    });
     renderedContent = rendered;
+  } else if (recipient.renderedContent?.trim()) {
+    // Legacy: chỉ dùng nội dung đã plan nếu không còn template/body
+    renderedContent = recipient.renderedContent;
+  }
+
+  const mediaUrl = (
+    campaignVars.mediaUrl ||
+    campaign.messageTemplate?.mediaUrl ||
+    ''
+  ).trim();
+  const mediaTypeRaw = (campaignVars.mediaType || '').toLowerCase();
+  const mediaType =
+    mediaTypeRaw === 'video' || mediaTypeRaw === 'audio' || mediaTypeRaw === 'file'
+      ? mediaTypeRaw
+      : mediaUrl
+        ? 'image'
+        : undefined;
+
+  if (!renderedContent?.trim() && !mediaUrl) {
+    await markRecipientFailed(recipientId, 'EMPTY_CONTENT', 'Chiến dịch thiếu nội dung tin nhắn');
+    await refreshCampaignAggregates(campaignId);
+    await emitRecipientRealtime(redis, organizationId, campaignId, recipientId, 'FAILED');
+    await maybeCompleteCampaign(campaignId);
+    throw new UnrecoverableError('empty_content');
   }
 
   const credentials = parseConnectionCredentials(connection.encryptedCredentials);
@@ -214,10 +249,15 @@ export async function processMessagingSend(job: Job<MessagingSendJobData>, redis
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
+  const liveOaIds = (process.env.MESSAGING_LIVE_OA_IDS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
   const liveSend =
     liveAll ||
     (connection.channel === MessageChannel.MESSENGER &&
-      livePageIds.includes(connection.accountRef));
+      livePageIds.includes(connection.accountRef)) ||
+    (connection.channel === MessageChannel.ZALO && liveOaIds.includes(connection.accountRef));
   if (!liveSend) {
     const now = new Date();
     const dryRunId = `dryrun:${recipient.idempotencyKey}`;
@@ -257,8 +297,11 @@ export async function processMessagingSend(job: Job<MessagingSendJobData>, redis
     externalUserId,
     phone: recipient.identity.phoneNormalized,
     text: renderedContent ?? '',
+    pageId: connection.accountRef,
+    mediaUrl: mediaUrl || undefined,
+    mediaType: mediaType as 'image' | 'video' | 'audio' | 'file' | undefined,
     templateId: campaign.messageTemplate?.providerTemplateId ?? campaign.messageTemplate?.id,
-    templateVariables: (campaign.variables ?? {}) as Record<string, string>,
+    templateVariables: campaignVars,
   });
 
   if (!sendResult.success) {
@@ -350,6 +393,9 @@ async function executeProviderSend(params: {
   externalUserId: string;
   phone: string | null;
   text: string;
+  pageId?: string;
+  mediaUrl?: string;
+  mediaType?: 'image' | 'video' | 'audio' | 'file';
   templateId?: string;
   templateVariables: Record<string, string>;
 }) {
@@ -359,14 +405,22 @@ async function executeProviderSend(params: {
       pageAccessToken: token ?? '',
       recipientId: params.externalUserId,
       text: params.text,
+      pageId: params.pageId,
+      attachment:
+        params.mediaUrl && params.mediaType
+          ? { type: params.mediaType, url: params.mediaUrl }
+          : undefined,
     });
   }
 
   if (params.providerKind === MessagingProviderKind.ZBS_TEMPLATE) {
-    const phone = params.phone ?? params.externalUserId;
+    const phone = params.phone?.trim();
+    const userId = params.externalUserId?.trim();
+    const looksLikePhone = phone && /^\+?\d{8,15}$/.test(phone.replace(/\s/g, ''));
     return sendZbsTemplateHttp({
       accessToken: params.credentials.accessToken ?? '',
-      phone,
+      phone: looksLikePhone ? phone : undefined,
+      userId: looksLikePhone ? undefined : userId || phone,
       templateId: params.templateId ?? params.credentials.templateId ?? '',
       templateData: params.templateVariables,
     });

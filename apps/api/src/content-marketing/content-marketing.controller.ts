@@ -1,21 +1,25 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
   Post,
   Put,
   Query,
+  UploadedFile,
   UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { ContentMarketingService } from './content-marketing.service';
 import { ContentIndustryService } from './content-industry.service';
 import { OpinionVoiceProfileService } from './opinion-voice-profile.service';
 import { TeleprompterSourceService } from './teleprompter-source.service';
+import { TeleprompterRecordingService } from './teleprompter-recording.service';
 import { JwtAuthGuard } from '../common/guards/auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { PlatformAdminGuard } from '../common/guards/platform-admin.guard';
@@ -23,15 +27,19 @@ import {
   AnalyzeOpinionStoryDto,
   AnalyzeVideoDto,
   CheckPolicyDto,
+  CompleteTeleprompterRecordingDto,
   GenerateAdvancedArticleDto,
   GenerateAdvancedTitlesDto,
   GenerateContentDto,
+  InitTeleprompterRecordingDto,
+  ListTeleprompterRecordingsQueryDto,
   OptimizeAdvancedCtaDto,
   OpinionAnalyzeDto,
   OpinionGenerateDto,
   OpinionRewriteDto,
   OpinionScoreNaturalnessDto,
   OpinionSuggestFieldDto,
+  RenameTeleprompterRecordingDto,
   UpsertOpinionVoiceProfileDto,
   UpsertTeleprompterSourceDto,
   TeleprompterScriptRewriteDto,
@@ -61,6 +69,7 @@ import {
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
 import { AdUrlAnalyzeService } from './ad-url-analyze.service';
+import { TELEPROMPTER_RECORDING_LIMITS } from './teleprompter-recording-files';
 
 @Controller('content-marketing')
 @UseGuards(JwtAuthGuard, TenantGuard)
@@ -70,6 +79,7 @@ export class ContentMarketingController {
     private readonly industries: ContentIndustryService,
     private readonly voiceProfiles: OpinionVoiceProfileService,
     private readonly teleprompterSources: TeleprompterSourceService,
+    private readonly teleprompterRecordings: TeleprompterRecordingService,
     private readonly adUrlAnalyze: AdUrlAnalyzeService,
   ) {}
 
@@ -84,8 +94,8 @@ export class ContentMarketingController {
   }
 
   @Post('industry-suggestions')
-  industrySuggestions(@Body() dto: IndustrySuggestionsDto) {
-    return this.service.industrySuggestions(dto);
+  industrySuggestions(@CurrentUser() user: AuthUser, @Body() dto: IndustrySuggestionsDto) {
+    return this.service.industrySuggestions(dto, user.organizationId);
   }
 
   @Get('industry-preference')
@@ -136,28 +146,31 @@ export class ContentMarketingController {
   }
 
   @Post('advanced/optimize-cta')
-  optimizeAdvancedCta(@Body() dto: OptimizeAdvancedCtaDto) {
-    return this.service.optimizeAdvancedCta(dto);
+  optimizeAdvancedCta(@CurrentUser() user: AuthUser, @Body() dto: OptimizeAdvancedCtaDto) {
+    return this.service.optimizeAdvancedCta(dto, user.organizationId);
   }
 
   @Post('advanced/titles')
-  generateAdvancedTitles(@Body() dto: GenerateAdvancedTitlesDto) {
-    return this.service.generateAdvancedTitles(dto);
+  generateAdvancedTitles(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: GenerateAdvancedTitlesDto,
+  ) {
+    return this.service.generateAdvancedTitles(dto, user.organizationId);
   }
 
   @Post('advanced/suggest-field')
-  suggestAdvancedField(@Body() dto: SuggestAdvancedFieldDto) {
-    return this.service.suggestAdvancedField(dto);
+  suggestAdvancedField(@CurrentUser() user: AuthUser, @Body() dto: SuggestAdvancedFieldDto) {
+    return this.service.suggestAdvancedField(dto, user.organizationId);
   }
 
   @Post('generate')
-  generate(@Body() dto: GenerateContentDto) {
-    return this.service.generate(dto);
+  generate(@CurrentUser() user: AuthUser, @Body() dto: GenerateContentDto) {
+    return this.service.generate(dto, user.organizationId);
   }
 
   @Post('analyze-video')
-  analyzeVideo(@Body() dto: AnalyzeVideoDto) {
-    return this.service.analyzeVideo(dto);
+  analyzeVideo(@CurrentUser() user: AuthUser, @Body() dto: AnalyzeVideoDto) {
+    return this.service.analyzeVideo(dto, user.organizationId);
   }
 
   @Post('check-policy')
@@ -171,18 +184,18 @@ export class ContentMarketingController {
   }
 
   @Post('rewrite')
-  rewrite(@Body() dto: RewriteContentDto) {
-    return this.service.rewrite(dto);
+  rewrite(@CurrentUser() user: AuthUser, @Body() dto: RewriteContentDto) {
+    return this.service.rewrite(dto, user.organizationId);
   }
 
   @Post('suggest-insights')
-  suggestInsights(@Body() dto: SuggestAdInsightsDto) {
-    return this.service.suggestInsights(dto);
+  suggestInsights(@CurrentUser() user: AuthUser, @Body() dto: SuggestAdInsightsDto) {
+    return this.service.suggestInsights(dto, user.organizationId);
   }
 
   @Post('suggest-cta')
-  suggestCta(@Body() dto: SuggestAdCtaDto) {
-    return this.service.suggestCta(dto);
+  suggestCta(@CurrentUser() user: AuthUser, @Body() dto: SuggestAdCtaDto) {
+    return this.service.suggestCta(dto, user.organizationId);
   }
 
   @Post('ad-url-analyze')
@@ -201,46 +214,49 @@ export class ContentMarketingController {
   }
 
   @Post('suggest-personal-ideas')
-  suggestPersonalIdeas(@Body() dto: SuggestPersonalIdeasDto) {
-    return this.service.suggestPersonalIdeas(dto);
+  suggestPersonalIdeas(@CurrentUser() user: AuthUser, @Body() dto: SuggestPersonalIdeasDto) {
+    return this.service.suggestPersonalIdeas(dto, user.organizationId);
   }
 
   @Post('suggest-personal-titles')
-  suggestPersonalTitles(@Body() dto: SuggestPersonalTitlesDto) {
-    return this.service.suggestPersonalTitles(dto);
+  suggestPersonalTitles(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: SuggestPersonalTitlesDto,
+  ) {
+    return this.service.suggestPersonalTitles(dto, user.organizationId);
   }
 
   @Post('analyze-opinion-story')
-  analyzeOpinionStory(@Body() dto: AnalyzeOpinionStoryDto) {
-    return this.service.analyzeOpinionStory(dto);
+  analyzeOpinionStory(@CurrentUser() user: AuthUser, @Body() dto: AnalyzeOpinionStoryDto) {
+    return this.service.analyzeOpinionStory(dto, user.organizationId);
   }
 
   @Post('opinion/analyze')
-  analyzeOpinion(
-    @CurrentUser() user: AuthUser,
-    @Body() dto: OpinionAnalyzeDto,
-  ) {
+  analyzeOpinion(@CurrentUser() user: AuthUser, @Body() dto: OpinionAnalyzeDto) {
     return this.service.analyzeOpinion(dto, user.id, user.organizationId);
   }
 
   @Post('opinion/generate')
-  generateOpinion(@Body() dto: OpinionGenerateDto) {
-    return this.service.generateOpinion(dto);
+  generateOpinion(@CurrentUser() user: AuthUser, @Body() dto: OpinionGenerateDto) {
+    return this.service.generateOpinion(dto, user.organizationId);
   }
 
   @Post('opinion/rewrite')
-  rewriteOpinion(@Body() dto: OpinionRewriteDto) {
-    return this.service.rewriteOpinion(dto);
+  rewriteOpinion(@CurrentUser() user: AuthUser, @Body() dto: OpinionRewriteDto) {
+    return this.service.rewriteOpinion(dto, user.organizationId);
   }
 
   @Post('opinion/score-naturalness')
-  scoreOpinionNaturalness(@Body() dto: OpinionScoreNaturalnessDto) {
-    return this.service.scoreOpinionNaturalness(dto);
+  scoreOpinionNaturalness(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: OpinionScoreNaturalnessDto,
+  ) {
+    return this.service.scoreOpinionNaturalness(dto, user.organizationId);
   }
 
   @Post('opinion/suggest-field')
-  suggestOpinionField(@Body() dto: OpinionSuggestFieldDto) {
-    return this.service.suggestOpinionField(dto);
+  suggestOpinionField(@CurrentUser() user: AuthUser, @Body() dto: OpinionSuggestFieldDto) {
+    return this.service.suggestOpinionField(dto, user.organizationId);
   }
 
   @Get('opinion/voice-profile')
@@ -257,8 +273,11 @@ export class ContentMarketingController {
   }
 
   @Post('teleprompter/rewrite')
-  rewriteTeleprompterScript(@Body() dto: TeleprompterScriptRewriteDto) {
-    return this.service.rewriteTeleprompterScript(dto);
+  rewriteTeleprompterScript(
+    @CurrentUser() user: AuthUser,
+    @Body() dto: TeleprompterScriptRewriteDto,
+  ) {
+    return this.service.rewriteTeleprompterScript(dto, user.organizationId);
   }
 
   @Post('teleprompter-source')
@@ -274,27 +293,116 @@ export class ContentMarketingController {
     return this.teleprompterSources.getById(user, id);
   }
 
-  @Post('facebook-policy/check')
-  checkFacebookPolicy(
+  // --- Teleprompter recordings (multipart upload; binary not in Postgres) ---
+
+  @Post('teleprompter-recordings/upload/init')
+  initTeleprompterRecording(
     @CurrentUser() user: AuthUser,
-    @Body() dto: FacebookPolicyCheckDto,
+    @Body() dto: InitTeleprompterRecordingDto,
   ) {
+    return this.teleprompterRecordings.initUpload(user, {
+      ...dto,
+      size: Number(dto.size),
+      duration: dto.duration != null ? Number(dto.duration) : undefined,
+      partSize: dto.partSize != null ? Number(dto.partSize) : undefined,
+    });
+  }
+
+  @Post('teleprompter-recordings/:id/parts/:partNumber')
+  @UseInterceptors(
+    FileInterceptor('chunk', {
+      storage: memoryStorage(),
+      limits: { fileSize: TELEPROMPTER_RECORDING_LIMITS.maxPartSize },
+    }),
+  )
+  uploadTeleprompterPart(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Param('partNumber') partNumber: string,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    return this.teleprompterRecordings.uploadPart(
+      user,
+      id,
+      Number(partNumber),
+      file ? { buffer: file.buffer, size: file.size, mimetype: file.mimetype } : undefined,
+    );
+  }
+
+  @Post('teleprompter-recordings/:id/complete')
+  completeTeleprompterRecording(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: CompleteTeleprompterRecordingDto,
+  ) {
+    return this.teleprompterRecordings.completeUpload(user, id, dto || {});
+  }
+
+  @Post('teleprompter-recordings/:id/cancel')
+  cancelTeleprompterRecording(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.teleprompterRecordings.cancelUpload(user, id);
+  }
+
+  @Get('teleprompter-recordings')
+  listTeleprompterRecordings(
+    @CurrentUser() user: AuthUser,
+    @Query() query: ListTeleprompterRecordingsQueryDto,
+  ) {
+    return this.teleprompterRecordings.list(user, {
+      cursor: query.cursor,
+      status: query.status,
+      limit: query.limit ? Number(query.limit) : undefined,
+    });
+  }
+
+  @Get('teleprompter-recordings/:id')
+  getTeleprompterRecording(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.teleprompterRecordings.detail(user, id);
+  }
+
+  @Patch('teleprompter-recordings/:id')
+  renameTeleprompterRecording(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Body() dto: RenameTeleprompterRecordingDto,
+  ) {
+    return this.teleprompterRecordings.rename(user, id, dto.title);
+  }
+
+  @Delete('teleprompter-recordings/:id')
+  deleteTeleprompterRecording(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.teleprompterRecordings.softDelete(user, id);
+  }
+
+  @Post('teleprompter-recordings/:id/download-url')
+  teleprompterRecordingDownloadUrl(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.teleprompterRecordings.createDownloadUrl(user, id);
+  }
+
+  @Get('teleprompter-recordings/:id/download')
+  downloadTeleprompterRecording(
+    @CurrentUser() user: AuthUser,
+    @Param('id') id: string,
+    @Query('token') token?: string,
+  ) {
+    if (token?.trim()) {
+      return this.teleprompterRecordings.streamDownloadByToken(id, token.trim());
+    }
+    return this.teleprompterRecordings.streamOwned(user, id);
+  }
+
+  @Post('facebook-policy/check')
+  checkFacebookPolicy(@CurrentUser() user: AuthUser, @Body() dto: FacebookPolicyCheckDto) {
     return this.service.checkFacebookPolicy(dto, user.organizationId);
   }
 
   @Post('facebook-policy/rewrite')
-  rewriteFacebookPolicy(
-    @CurrentUser() user: AuthUser,
-    @Body() dto: FacebookPolicyRewriteDto,
-  ) {
+  rewriteFacebookPolicy(@CurrentUser() user: AuthUser, @Body() dto: FacebookPolicyRewriteDto) {
     return this.service.rewriteFacebookPolicy(dto, user.organizationId);
   }
 
   @Post('facebook-policy/import-url')
-  importFacebookPolicyUrl(
-    @CurrentUser() user: AuthUser,
-    @Body() dto: FacebookPolicyImportUrlDto,
-  ) {
+  importFacebookPolicyUrl(@CurrentUser() user: AuthUser, @Body() dto: FacebookPolicyImportUrlDto) {
     return this.service.importFacebookPolicyUrl(dto, user.id, user.organizationId);
   }
 
@@ -309,6 +417,7 @@ export class ContentMarketingController {
     ),
   )
   analyzeFacebookPolicyMedia(
+    @CurrentUser() user: AuthUser,
     @Body() dto: FacebookPolicyAnalyzeMediaDto,
     @UploadedFiles()
     files?: {
@@ -320,6 +429,7 @@ export class ContentMarketingController {
       dto,
       files?.file?.[0],
       files?.thumbnail?.[0],
+      user.organizationId,
     );
   }
 }

@@ -19,6 +19,9 @@ async function cleanupEmail(email: string) {
     await prisma.authSession.deleteMany({ where: { userId: user.id } });
     await prisma.authToken.deleteMany({ where: { userId: user.id } });
     const orgId = user.organizationId;
+    await prisma.trialClaim.deleteMany({ where: { organizationId: orgId } }).catch(() => undefined);
+    await prisma.creditTransaction.deleteMany({ where: { organizationId: orgId } }).catch(() => undefined);
+    await prisma.subscription.deleteMany({ where: { organizationId: orgId } }).catch(() => undefined);
     await prisma.user.delete({ where: { id: user.id } });
     await prisma.creditWallet.deleteMany({ where: { organizationId: orgId } });
     await prisma.rolePermission.deleteMany({ where: { role: { organizationId: orgId } } });

@@ -25,7 +25,9 @@ import { slugify } from '../common/utils/slug.util';
 import { AuthMailService } from './auth-mail.service';
 import { GoogleTokenVerifier } from './google-token.verifier';
 import { AffiliateService } from '../affiliate/affiliate.service';
+import { BillingService } from '../billing/billing.service';
 import { normalizeEmailForUniqueness } from '../common/utils/email-normalize.util';
+import { isAssistantOrgAllowed, loadAssistantCanaryConfig } from '@marketingspa/shared';
 
 const BCRYPT_ROUNDS = 12;
 const MAX_LOGIN_FAILURES = 5;
@@ -74,6 +76,7 @@ export class AuthService {
     private readonly mail: AuthMailService,
     private readonly googleVerifier: GoogleTokenVerifier,
     private readonly affiliate: AffiliateService,
+    private readonly billing: BillingService,
   ) {}
 
   /** Chặn Gmail dot-trick / +alias: mỗi email chuẩn hóa chỉ 1 tài khoản */
@@ -113,6 +116,8 @@ export class AuthService {
       organizationName: dto.organizationName.trim(),
       organizationSlug: slug,
     });
+
+    await this.provisionSignupTrial(result, meta?.ip);
 
     const tokens = await this.issueTokens(result, meta);
     await this.audit.log({
@@ -371,6 +376,8 @@ export class AuthService {
       throw e;
     }
 
+    await this.provisionSignupTrial(user, meta?.ip);
+
     const tokens = await this.issueTokens(user, meta);
     await this.audit.log({
       organizationId: user.organizationId,
@@ -471,6 +478,37 @@ export class AuthService {
       await tx.creditWallet.create({ data: { organizationId: org.id, balance: 0 } });
       return user;
     });
+  }
+
+  /** Trial 3 ngày + Credit 1 lần / org — không throw để đăng ký vẫn thành công. */
+  private async provisionSignupTrial(
+    user: {
+      id: string;
+      email: string;
+      name?: string | null;
+      organizationId: string;
+      role?: { code: string } | null;
+    },
+    ip?: string,
+  ) {
+    try {
+      await this.billing.activateTrial(
+        {
+          id: user.id,
+          email: user.email,
+          name: user.name ?? '',
+          role: user.role?.code ?? SYSTEM_ROLES.OWNER,
+          organizationId: user.organizationId,
+          permissions: [],
+        },
+        {},
+        { ip },
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Signup trial skipped user=${user.email} ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   async login(dto: LoginDto, meta?: { ip?: string; userAgent?: string }) {
@@ -723,6 +761,8 @@ export class AuthService {
     await this.prisma.loginAttempt.create({
       data: { email: identity.email, ipAddress: meta?.ip, success: true },
     });
+
+    await this.provisionSignupTrial(user, meta?.ip);
 
     const tokens = await this.issueTokens(user, meta);
     await this.audit.log({
@@ -1189,6 +1229,7 @@ export class AuthService {
     organization: { id: string; name: string; slug: string };
     employee?: { id: string; name: string } | null;
   }) {
+    const canary = loadAssistantCanaryConfig();
     return {
       id: user.id,
       email: user.email,
@@ -1207,6 +1248,11 @@ export class AuthService {
         slug: user.organization.slug,
       },
       employee: user.employee ?? null,
+      features: {
+        /** Org-level Trợ lý AI rollout (canary allowlist). OWNER cannot bypass. */
+        assistantEnabled: isAssistantOrgAllowed(user.organizationId),
+        assistantCanaryMode: canary.canaryMode,
+      },
     };
   }
 }

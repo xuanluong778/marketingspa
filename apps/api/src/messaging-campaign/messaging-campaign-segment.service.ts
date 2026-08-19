@@ -1,5 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { MessageChannel, MessagingConsentStatus, Prisma } from '@marketingspa/database';
+import {
+  MessageChannel,
+  MessagingConsentStatus,
+  Prisma,
+  resolveIntegrationScopeKeys,
+} from '@marketingspa/database';
 import { PrismaService } from '../prisma/prisma.service';
 import type {
   MessagingSegmentConfig,
@@ -121,10 +126,15 @@ export class MessagingCampaignSegmentService {
             });
           }
 
+          const scopeKeys = resolveIntegrationScopeKeys({
+            channel: 'MESSENGER',
+            channelAccountRef: pageId,
+            integrationScopeKey: scopeKey,
+          });
           const existing = await this.prisma.messagingContactIdentity.findFirst({
             where: {
               organizationId,
-              integrationScopeKey: scopeKey,
+              integrationScopeKey: { in: scopeKeys },
               externalUserId: conv.externalUserId,
             },
           });
@@ -154,6 +164,7 @@ export class MessagingCampaignSegmentService {
             await this.prisma.messagingContactIdentity.update({
               where: { id: existing.id },
               data: {
+                integrationScopeKey: scopeKey,
                 chatbotConversationId: existing.chatbotConversationId ?? conv.id,
                 ...(shouldRefreshInbound ? { lastInboundAt: inboundAt } : {}),
                 ...(canMarkOptIn && existing.consentStatus !== MessagingConsentStatus.OPTED_IN
@@ -189,18 +200,30 @@ export class MessagingCampaignSegmentService {
       where.followStatus = { in: segmentConfig.followStatuses };
     }
 
-    let scopeKey = segmentConfig.integrationScopeKey;
-    if (!scopeKey && channelConnectionId) {
-      const conn = await this.prisma.messagingChannelConnection.findFirst({
-        where: { id: channelConnectionId, organizationId },
-      });
-      if (conn) {
-        scopeKey = `${channel.toLowerCase()}:${conn.accountRef}`;
+    // identityIds đã chọn tay → không lọc scope (tránh lệch messenger vs messenger_page).
+    if (!segmentConfig.identityIds?.length) {
+      let scopeKey = segmentConfig.integrationScopeKey;
+      let accountRef: string | null = null;
+      if (!scopeKey && channelConnectionId) {
+        const conn = await this.prisma.messagingChannelConnection.findFirst({
+          where: { id: channelConnectionId, organizationId },
+        });
+        if (conn) {
+          accountRef = conn.accountRef;
+          scopeKey = `${channel.toLowerCase()}:${conn.accountRef}`;
+        }
+      } else if (scopeKey) {
+        accountRef = scopeKey.split(':').slice(1).join(':') || null;
       }
-    }
 
-    if (scopeKey) {
-      where.integrationScopeKey = scopeKey;
+      if (scopeKey) {
+        const scopeKeys = resolveIntegrationScopeKeys({
+          channel,
+          channelAccountRef: accountRef,
+          integrationScopeKey: scopeKey,
+        });
+        where.integrationScopeKey = scopeKeys.length > 1 ? { in: scopeKeys } : scopeKey;
+      }
     }
 
     if (segmentConfig.requireOptIn) {

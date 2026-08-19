@@ -17,6 +17,6 @@ import { SubscriptionEntitlementInterceptor } from './subscription-entitlement.i
       useClass: SubscriptionEntitlementInterceptor,
     },
   ],
-  exports: [BillingService],
+  exports: [BillingService, BillingMailService],
 })
 export class BillingModule {}

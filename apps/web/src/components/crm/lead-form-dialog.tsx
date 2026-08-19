@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -53,6 +53,20 @@ export function LeadFormDialog({
     assignedToId: initial?.assignedTo?.id ?? '',
     estimatedValue: initial?.estimatedValue ?? undefined,
   }));
+
+  useEffect(() => {
+    if (!open) return;
+    setForm({
+      name: initial?.name ?? '',
+      phone: initial?.phone ?? '',
+      email: initial?.email ?? '',
+      note: initial?.note ?? '',
+      leadSourceId: initial?.leadSource?.id ?? '',
+      branchId: initial?.branch?.id ?? '',
+      assignedToId: initial?.assignedTo?.id ?? '',
+      estimatedValue: initial?.estimatedValue ?? undefined,
+    });
+  }, [open, initial]);
 
   function update(field: keyof CreateLeadInput, value: string | number | undefined) {
     setForm((f) => ({ ...f, [field]: value }));

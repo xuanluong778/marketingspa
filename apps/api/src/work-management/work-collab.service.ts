@@ -518,6 +518,7 @@ export class WorkCollabService {
         data: {
           columnId: done.id,
           progress: 100,
+          completedAt: new Date(),
           lastReviewedById: user.employeeId || null,
           lastReviewedAt: new Date(),
           lastReviewNote: dto.note?.trim() || null,

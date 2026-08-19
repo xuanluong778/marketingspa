@@ -1105,49 +1105,109 @@ export function PersonalPostStudio({
 
   const handleScore = useCallback(async () => {
     if (!content.trim()) return;
-    const result = await scorePersonal.mutateAsync({ content });
-    setScoreResult(result);
+    try {
+      const result = await scorePersonal.mutateAsync({ content });
+      setScoreResult(result);
+      requestAnimationFrame(() => {
+        resultSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      });
+    } catch {
+      /* error hiển thị qua formatMutationError(scorePersonal.error) */
+    }
   }, [content, scorePersonal]);
+
+  /** Áp kết quả rewrite: 1 bản → thay nội dung chính; hook/mở bài/A-B → panel đúng chỗ. */
+  const applyRewriteVariants = useCallback((mode: PersonalRewriteMode, raw: string[]) => {
+    const list = raw.map((s) => String(s ?? '').trim()).filter(Boolean);
+    if (list.length === 0) return;
+
+    if (mode === 'hooks_5') {
+      setHooks(list);
+      setOpeners([]);
+      setVariants([]);
+      return;
+    }
+    if (mode === 'openers_5') {
+      setOpeners(list);
+      setHooks([]);
+      setVariants([]);
+      return;
+    }
+    if (mode === 'ab_3') {
+      setVariants(list);
+      setHooks([]);
+      setOpeners([]);
+      // Giữ bản chính = A (variant 0) để user thấy đổi ngay, các bản B/C xem/áp phía dưới
+      setContent(list[0]!);
+      return;
+    }
+    // funnier | deeper | shorter | longer | more_emotional | more_motivational
+    setContent(list[0]!);
+    setVariants(list.length > 1 ? list : []);
+    setHooks([]);
+    setOpeners([]);
+  }, []);
 
   const handleRewrite = useCallback(
     async (mode: PersonalRewriteMode) => {
       if (!content.trim()) return;
-      const result = await rewritePersonal.mutateAsync({
-        content,
-        mode,
-        personalTone: form.personalTone,
-      });
-      setVariants(result.variants ?? []);
+      try {
+        const result = await rewritePersonal.mutateAsync({
+          content,
+          mode,
+          personalTone: form.personalTone,
+        });
+        applyRewriteVariants(mode, result.variants ?? []);
+        requestAnimationFrame(() => {
+          resultSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        });
+      } catch {
+        /* error hiển thị qua formatMutationError(rewritePersonal.error) */
+      }
     },
-    [content, form.personalTone, rewritePersonal],
+    [content, form.personalTone, rewritePersonal, applyRewriteVariants],
   );
 
   const handleOpinionRewrite = useCallback(
     async (mode: (typeof OPINION_REWRITE_BUTTONS)[number]['mode']) => {
       if (!content.trim() && !videoScript.trim()) return;
-      const result = await rewriteOpinion.mutateAsync({
-        ...buildOpinionPayload(),
-        rewriteMode: mode,
-        facebookPost: content || undefined,
-        videoScript: videoScript || undefined,
-        videoHook: videoHook || undefined,
-      });
-      setContent(result.facebookPost);
-      setVideoScript(result.videoScript);
-      setVideoHook(result.videoHook);
+      try {
+        const result = await rewriteOpinion.mutateAsync({
+          ...buildOpinionPayload(),
+          rewriteMode: mode,
+          facebookPost: content || undefined,
+          videoScript: videoScript || undefined,
+          videoHook: videoHook || undefined,
+        });
+        setContent(result.facebookPost);
+        setVideoScript(result.videoScript);
+        setVideoHook(result.videoHook);
+        requestAnimationFrame(() => {
+          resultSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        });
+      } catch {
+        /* error hiển thị qua formatMutationError */
+      }
     },
     [content, videoScript, videoHook, rewriteOpinion, buildOpinionPayload],
   );
 
   const handleHooksOnly = useCallback(async () => {
     if (!content.trim()) return;
-    const result = await rewritePersonal.mutateAsync({
-      content,
-      mode: 'hooks_5',
-      personalTone: form.personalTone,
-    });
-    setHooks(result.variants ?? []);
-  }, [content, form.personalTone, rewritePersonal]);
+    try {
+      const result = await rewritePersonal.mutateAsync({
+        content,
+        mode: 'hooks_5',
+        personalTone: form.personalTone,
+      });
+      applyRewriteVariants('hooks_5', result.variants ?? []);
+      requestAnimationFrame(() => {
+        resultSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      });
+    } catch {
+      /* error hiển thị qua formatMutationError */
+    }
+  }, [content, form.personalTone, rewritePersonal, applyRewriteVariants]);
 
   const handleSave = useCallback(() => {
     const topic = (form.selectedTitle || form.postTopic || form.selectedSubtopic).trim();
@@ -1440,26 +1500,27 @@ export function PersonalPostStudio({
           {hasResult && !isGeneratingResult && (
             <>
               <div className="content-result-box rounded-xl border border-slate-200 bg-white text-slate-900 shadow-sm">
-                <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-                  <h3 className="font-semibold text-slate-900">Bài viết hoàn chỉnh</h3>
-                  <div className="flex flex-wrap items-center gap-1 text-slate-800">
+                <div className="overflow-x-auto border-b border-slate-200 px-4 py-3">
+                  <div className="flex flex-nowrap items-center gap-2">
                     <Button
-                      variant="ghost"
+                      type="button"
                       size="sm"
-                      className="text-slate-800 hover:text-slate-900"
+                      variant="secondary"
+                      className="h-8 shrink-0 inline-flex items-center justify-center gap-1.5 rounded-md border border-[#0A3D30] bg-[#0A3D30] px-2.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-[#0c4a3a] hover:text-[#F97316] [&_svg]:shrink-0 [&_svg]:text-white hover:[&_svg]:text-[#F97316]"
                       onClick={() => setContentPreviewOpen(true)}
                       disabled={!content.trim()}
                     >
-                      <Maximize2 className="mr-1 h-4 w-4" />
+                      <Maximize2 className="h-4 w-4 shrink-0" />
                       Xem lớn
                     </Button>
                     <Button
-                      variant="ghost"
+                      type="button"
                       size="sm"
-                      className="text-slate-800 hover:text-slate-900"
+                      variant="secondary"
+                      className="h-8 shrink-0 inline-flex items-center justify-center gap-1.5 rounded-md border border-[#0A3D30] bg-[#0A3D30] px-2.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-[#0c4a3a] hover:text-[#F97316] [&_svg]:shrink-0 [&_svg]:text-white hover:[&_svg]:text-[#F97316]"
                       onClick={() => void handleCopy()}
                     >
-                      <Copy className="mr-1 h-4 w-4" />
+                      <Copy className="h-4 w-4 shrink-0" />
                       {copyMsg || 'Copy'}
                     </Button>
                     <SendToAutoPostButton
@@ -1467,7 +1528,8 @@ export function PersonalPostStudio({
                       title={resultTitle}
                       content={content}
                       contentScore={scoreResult?.total}
-                      variant="ghost"
+                      variant="secondary"
+                      className="h-8 shrink-0 inline-flex items-center justify-center gap-1.5 rounded-md border border-[#0A3D30] bg-[#0A3D30] px-2.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-[#0c4a3a] hover:text-[#F97316] [&_svg]:shrink-0 [&_svg]:text-white hover:[&_svg]:text-[#F97316]"
                     />
                     <MakeVideoButton
                       title={resultTitle}
@@ -1480,8 +1542,8 @@ export function PersonalPostStudio({
                       sourceRoute={sourceRoute}
                       originalScript={videoScript || content}
                       editedScript={videoScript || content}
-                      variant="ghost"
-                      className="h-8 border border-[#0A3D30] bg-[#0A3D30] px-2.5 text-xs text-white hover:!bg-[#0A3D30] hover:text-[#F97316] [&_svg]:text-white hover:[&_svg]:text-[#F97316]"
+                      variant="secondary"
+                      className="h-8 shrink-0 inline-flex items-center justify-center gap-1.5 rounded-md border border-[#0A3D30] bg-[#0A3D30] px-2.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-[#0c4a3a] hover:text-[#F97316] [&_svg]:shrink-0 [&_svg]:text-white hover:[&_svg]:text-[#F97316]"
                     />
                     <CheckContentAdsButton
                       title={resultTitle}
@@ -1489,10 +1551,10 @@ export function PersonalPostStudio({
                       mode="facebook_post"
                       snapshot={policySnapshot}
                       onSnapshotChange={(snap) => setPolicySnapshot(snap)}
-                      variant="ghost"
+                      variant="secondary"
                       showBadge={false}
                       label="Check Ads"
-                      className="h-8 border border-[#0A3D30] bg-[#0A3D30] px-2.5 text-xs text-white hover:!bg-[#0A3D30] hover:text-[#F97316] [&_svg]:text-white hover:[&_svg]:text-[#F97316]"
+                      className="h-8 shrink-0 inline-flex items-center justify-center gap-1.5 rounded-md border border-[#0A3D30] bg-[#0A3D30] px-2.5 text-xs font-medium text-white shadow-sm transition-colors hover:bg-[#0c4a3a] hover:text-[#F97316] [&_svg]:shrink-0 [&_svg]:text-white hover:[&_svg]:text-[#F97316]"
                     />
                   </div>
                 </div>
@@ -1504,32 +1566,45 @@ export function PersonalPostStudio({
                 <div className="flex flex-wrap gap-2 border-t p-3">
                   {!isOpinion ? (
                     <>
+                      {(
+                        rewritePersonal.isPending || scorePersonal.isPending
+                      ) && (
+                        <p className="w-full text-xs font-medium text-amber-800">
+                          {rewritePersonal.isPending
+                            ? 'Đang viết lại / tạo hook…'
+                            : 'Đang chấm điểm…'}
+                        </p>
+                      )}
                       <Button
+                        type="button"
                         size="sm"
-                        variant="outline"
-                        className="border-[#0A3D30] bg-[#0A3D30] text-white hover:border-[#0A3D30] hover:bg-[#0A3D30] hover:text-[#F97316] [&_svg]:text-white hover:[&_svg]:text-[#F97316]"
+                        variant="secondary"
+                        className="border-[#0A3D30] bg-[#0A3D30] text-white hover:border-[#0A3D30] hover:bg-[#0c4a3a] hover:text-[#F97316] [&_svg]:text-white hover:[&_svg]:text-[#F97316]"
                         onClick={() => void handleScore()}
-                        disabled={isBusy}
+                        disabled={isBusy || !content.trim()}
                       >
                         <Star className="mr-1 h-3.5 w-3.5" />
-                        Chấm điểm
+                        {scorePersonal.isPending ? 'Đang chấm…' : 'Chấm điểm'}
                       </Button>
                       <Button
+                        type="button"
                         size="sm"
-                        variant="outline"
+                        variant="secondary"
+                        className="border-[#0A3D30] bg-[#0A3D30] text-white hover:border-[#0A3D30] hover:bg-[#0c4a3a] hover:text-[#F97316] [&_svg]:text-white hover:[&_svg]:text-[#F97316]"
                         onClick={() => void handleHooksOnly()}
-                        disabled={isBusy}
+                        disabled={isBusy || !content.trim()}
                       >
                         <Wand2 className="mr-1 h-3.5 w-3.5" />
-                        Tạo hook
+                        {rewritePersonal.isPending ? 'Đang tạo…' : 'Tạo hook'}
                       </Button>
                       {PERSONAL_REWRITE_BUTTONS.map(({ mode, label }) => (
                         <Button
                           key={mode}
+                          type="button"
                           size="sm"
                           variant="secondary"
-                          className="border-[#0A3D30] bg-[#0A3D30] text-white hover:border-[#0A3D30] hover:bg-[#0A3D30] hover:text-[#F97316]"
-                          disabled={isBusy}
+                          className="border-[#0A3D30] bg-[#0A3D30] text-white hover:border-[#0A3D30] hover:bg-[#0c4a3a] hover:text-[#F97316]"
+                          disabled={isBusy || !content.trim()}
                           onClick={() => void handleRewrite(mode)}
                         >
                           {label}
@@ -1540,10 +1615,11 @@ export function PersonalPostStudio({
                     OPINION_REWRITE_BUTTONS.map(({ mode, label }) => (
                       <Button
                         key={mode}
+                        type="button"
                         size="sm"
                         variant="secondary"
-                        className="border-[#0A3D30] bg-[#0A3D30] text-white hover:border-[#0A3D30] hover:bg-[#0A3D30] hover:text-[#F97316]"
-                        disabled={isBusy}
+                        className="border-[#0A3D30] bg-[#0A3D30] text-white hover:border-[#0A3D30] hover:bg-[#0c4a3a] hover:text-[#F97316]"
+                        disabled={isBusy || (!content.trim() && !videoScript.trim())}
                         onClick={() => void handleOpinionRewrite(mode)}
                       >
                         {label}
@@ -1552,6 +1628,16 @@ export function PersonalPostStudio({
                   )}
                 </div>
               </div>
+
+              {(formatMutationError(scorePersonal.error) ||
+                formatMutationError(rewritePersonal.error) ||
+                formatMutationError(rewriteOpinion.error)) && (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+                  {formatMutationError(scorePersonal.error) ||
+                    formatMutationError(rewritePersonal.error) ||
+                    formatMutationError(rewriteOpinion.error)}
+                </div>
+              )}
 
               {isOpinion && videoScript.trim() ? (
                 <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -1609,9 +1695,24 @@ export function PersonalPostStudio({
               {variants.length > 0 && (
                 <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
                   <p className="font-semibold">Phiên bản viết lại</p>
+                  <p className="text-xs text-slate-500">
+                    Bấm «Dùng bản này» để thay nội dung ô bài viết phía trên.
+                  </p>
                   {variants.map((v, i) => (
-                    <div key={i} className="whitespace-pre-wrap rounded-lg bg-slate-50 p-3 text-sm">
-                      {v}
+                    <div
+                      key={i}
+                      className="space-y-2 rounded-lg border border-slate-100 bg-slate-50 p-3 text-sm"
+                    >
+                      <div className="whitespace-pre-wrap text-slate-800">{v}</div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        className="h-8 border border-[#0A3D30] bg-[#0A3D30] text-xs text-white hover:bg-[#0c4a3a] hover:text-[#F97316]"
+                        onClick={() => setContent(v)}
+                      >
+                        Dùng bản này
+                      </Button>
                     </div>
                   ))}
                 </div>
@@ -1649,9 +1750,23 @@ export function PersonalPostStudio({
                   {hooks.length > 0 && (
                     <div className="rounded-xl border border-white/25 bg-[#0A3D30] p-3 text-sm text-white">
                       <p className="mb-1 font-semibold text-white">5 hook gợi ý</p>
-                      <ul className="list-disc space-y-1 pl-4 text-white">
+                      <p className="mb-2 text-[11px] text-white/80">
+                        Bấm một hook để chèn vào đầu bài viết.
+                      </p>
+                      <ul className="list-none space-y-1.5">
                         {hooks.map((h, i) => (
-                          <li key={i}>{h}</li>
+                          <li key={i}>
+                            <button
+                              type="button"
+                              className="w-full rounded-md border border-white/20 bg-white/10 px-2 py-1.5 text-left text-white transition-colors hover:bg-white/20"
+                              onClick={() => {
+                                const body = content.trim();
+                                setContent(body ? `${h.trim()}\n\n${body}` : h.trim());
+                              }}
+                            >
+                              {h}
+                            </button>
+                          </li>
                         ))}
                       </ul>
                     </div>
@@ -1659,9 +1774,23 @@ export function PersonalPostStudio({
                   {openers.length > 0 && (
                     <div className="rounded-xl border border-white/25 bg-[#0A3D30] p-3 text-sm text-white">
                       <p className="mb-1 font-semibold text-white">5 góc mở bài</p>
-                      <ul className="list-disc space-y-1 pl-4 text-white">
+                      <p className="mb-2 text-[11px] text-white/80">
+                        Bấm một góc để chèn vào đầu bài viết.
+                      </p>
+                      <ul className="list-none space-y-1.5">
                         {openers.map((o, i) => (
-                          <li key={i}>{o}</li>
+                          <li key={i}>
+                            <button
+                              type="button"
+                              className="w-full rounded-md border border-white/20 bg-white/10 px-2 py-1.5 text-left text-white transition-colors hover:bg-white/20"
+                              onClick={() => {
+                                const body = content.trim();
+                                setContent(body ? `${o.trim()}\n\n${body}` : o.trim());
+                              }}
+                            >
+                              {o}
+                            </button>
+                          </li>
                         ))}
                       </ul>
                     </div>

@@ -4,13 +4,16 @@ import {
   Get,
   Headers,
   HttpCode,
+  NotFoundException,
   Options,
   Post,
   Query,
   Res,
+  UnauthorizedException,
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { ChatbotCskhPublicService } from './chatbot-cskh-public.service';
+import { ChatbotFacebookWebhookService } from './chatbot-facebook-webhook.service';
 import { PublicLeadDto, PublicMessageDto } from './dto/chatbot-cskh.dto';
 
 const CORS_HEADERS = {
@@ -21,15 +24,56 @@ const CORS_HEADERS = {
 
 @Controller('chatbot-cskh/public')
 export class ChatbotCskhPublicController {
-  constructor(private readonly publicService: ChatbotCskhPublicService) {}
+  constructor(
+    private readonly publicService: ChatbotCskhPublicService,
+    private readonly facebookWebhook: ChatbotFacebookWebhookService,
+  ) {}
 
   @Options('config')
   @Options('message')
   @Options('lead')
+  @Options('visitor-avatar')
   @HttpCode(204)
   preflight(@Res() res: Response) {
     Object.entries(CORS_HEADERS).forEach(([k, v]) => res.setHeader(k, v));
     res.send();
+  }
+
+  /**
+   * Avatar Messenger cho <img> (không JWT). HMAC(s) + UUID hội thoại.
+   * Graph CDN hết hạn → proxy server-side + cache 7 ngày.
+   */
+  @Get('visitor-avatar')
+  async visitorAvatar(
+    @Query('c') conversationId: string,
+    @Query('s') sig: string,
+    @Res() res: Response,
+  ) {
+    Object.entries(CORS_HEADERS).forEach(([k, v]) => res.setHeader(k, v));
+    try {
+      const { buffer, contentType } = await this.facebookWebhook.serveVisitorAvatar(
+        conversationId,
+        sig,
+      );
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      // SVG fallback cũng cache ngắn hơn ở client khi content-type svg
+      if (contentType.includes('svg')) {
+        res.setHeader('Cache-Control', 'public, max-age=3600');
+      }
+      res.status(200).send(buffer);
+    } catch (err) {
+      if (err instanceof UnauthorizedException) {
+        res.status(401).json({ message: 'Invalid avatar signature' });
+        return;
+      }
+      if (err instanceof NotFoundException) {
+        res.status(404).json({ message: 'Avatar unavailable' });
+        return;
+      }
+      res.status(404).json({ message: 'Avatar unavailable' });
+    }
   }
 
   @Get('config')

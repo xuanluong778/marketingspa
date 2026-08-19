@@ -29,6 +29,8 @@ import type {
   WorkTaskQueryDto,
 } from './dto/work-management.dto';
 import { WorkCollabService } from './work-collab.service';
+import { WorkInsightsService } from './work-insights.service';
+import { occurrenceKey } from './work-metrics';
 
 const taskInclude = {
   column: true,
@@ -50,6 +52,7 @@ export class WorkManagementService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly collab: WorkCollabService,
+    private readonly insights: WorkInsightsService,
   ) {}
 
   // ── Projects ─────────────────────────────────────────────────────────────
@@ -244,6 +247,12 @@ export class WorkManagementService {
         labels: dto.labels ?? [],
         progress: dto.progress ?? 0,
         sortOrder,
+        estimatedMinutes: dto.estimatedMinutes ?? null,
+        recurrenceRule: dto.recurrenceRule || null,
+        recurrenceInterval: dto.recurrenceInterval ?? 1,
+        recurrenceUntil: dto.recurrenceUntil ? new Date(dto.recurrenceUntil) : null,
+        isRecurrenceTemplate: Boolean(dto.recurrenceRule && dto.recurrenceRule !== 'NONE'),
+        recurrenceSeriesId: undefined,
         assignees: {
           create: assigneeIds.map((employeeId) => ({ employeeId })),
         },
@@ -260,6 +269,17 @@ export class WorkManagementService {
       },
       include: taskInclude,
     });
+
+    // Template series id = self
+    if (task.isRecurrenceTemplate) {
+      await this.prisma.workTask.update({
+        where: { id: task.id },
+        data: {
+          recurrenceSeriesId: task.id,
+          recurrenceOccurrenceKey: occurrenceKey(task.id, 'template'),
+        },
+      });
+    }
 
     if (assigneeIds.length) {
       await this.collab.notify(organizationId, assigneeIds, {
@@ -281,7 +301,16 @@ export class WorkManagementService {
       user.employeeId,
     );
 
-    return this.serializeTask(task);
+    await this.insights.audit(organizationId, user.employeeId, {
+      action: 'CREATE_TASK',
+      entityType: 'WorkTask',
+      entityId: task.id,
+      taskId: task.id,
+      projectId: task.projectId,
+      summary: `Tạo công việc: ${task.title}`,
+    });
+
+    return this.getTask(organizationId, user, task.id);
   }
 
   async updateTask(organizationId: string, user: AuthUser, taskId: string, dto: UpdateWorkTaskDto) {
@@ -368,9 +397,31 @@ export class WorkManagementService {
         ...(dto.priority !== undefined ? { priority: this.normalizePriority(dto.priority) } : {}),
         ...(dto.labels !== undefined ? { labels: dto.labels } : {}),
         ...(dto.progress !== undefined ? { progress: dto.progress } : {}),
+        ...(dto.estimatedMinutes !== undefined ? { estimatedMinutes: dto.estimatedMinutes } : {}),
+        ...(dto.recurrenceRule !== undefined
+          ? {
+              recurrenceRule: dto.recurrenceRule || null,
+              isRecurrenceTemplate: Boolean(dto.recurrenceRule && dto.recurrenceRule !== 'NONE'),
+            }
+          : {}),
+        ...(dto.recurrenceInterval !== undefined
+          ? { recurrenceInterval: dto.recurrenceInterval }
+          : {}),
+        ...(dto.recurrenceUntil !== undefined
+          ? { recurrenceUntil: dto.recurrenceUntil ? new Date(dto.recurrenceUntil) : null }
+          : {}),
         ...(dto.isArchived !== undefined ? { isArchived: dto.isArchived } : {}),
       },
       include: taskInclude,
+    });
+
+    await this.insights.audit(organizationId, user.employeeId, {
+      action: 'UPDATE_TASK',
+      entityType: 'WorkTask',
+      entityId: taskId,
+      taskId,
+      projectId: existing.projectId,
+      summary: `Cập nhật: ${task.title}`,
     });
 
     return this.serializeTask(task);
@@ -425,7 +476,13 @@ export class WorkManagementService {
     await this.prisma.$transaction([
       this.prisma.workTask.update({
         where: { id: taskId },
-        data: { columnId: dto.columnId, sortOrder: insertAt },
+        data: {
+          columnId: dto.columnId,
+          sortOrder: insertAt,
+          ...(column.key === WORK_COLUMN_KEYS.DONE
+            ? { completedAt: new Date(), progress: 100 }
+            : { completedAt: null }),
+        },
       }),
       ...ordered.map((id, index) =>
         this.prisma.workTask.update({
@@ -443,6 +500,14 @@ export class WorkManagementService {
         { id: column.id, key: column.key },
         user.employeeId,
       );
+      await this.insights.audit(organizationId, user.employeeId, {
+        action: 'MOVE_TASK',
+        entityType: 'WorkTask',
+        entityId: taskId,
+        taskId,
+        projectId: task.projectId,
+        summary: `${fromCol.key} → ${column.key}`,
+      });
     }
 
     return this.getTask(organizationId, user, taskId);
@@ -527,6 +592,11 @@ export class WorkManagementService {
       labels: task.labels,
       progress: task.progress,
       sortOrder: task.sortOrder,
+      estimatedMinutes: task.estimatedMinutes,
+      completedAt: task.completedAt,
+      recurrenceRule: task.recurrenceRule,
+      recurrenceInterval: task.recurrenceInterval,
+      isRecurrenceTemplate: task.isRecurrenceTemplate,
       isArchived: task.isArchived,
       copiedFromId: task.copiedFromId,
       revisionCount: task.revisionCount,

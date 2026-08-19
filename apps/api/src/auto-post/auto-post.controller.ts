@@ -190,7 +190,7 @@ export class AutoPostController {
 
   /**
    * Xem thông tin Fanpage (pages_read_engagement) — metadata + bài gần đây.
-   * Query `refresh=true` bỏ cache ngắn (3–5 phút).
+   * Query `refresh=true` bỏ cache ngắn (3–5 phút) và không fallback stale.
    */
   @Get('facebook/pages/:fanpageId/details')
   @UseGuards(...FanpageGuards)
@@ -205,6 +205,18 @@ export class AutoPostController {
     return this.pageDetails.getPageDetails(user.id, user.organizationId, fanpageId, {
       refresh: forceRefresh,
     });
+  }
+
+  /**
+   * Đồng bộ live từ Facebook Graph (Page Access Token).
+   * Không đọc cache / không fallback dữ liệu cũ — dùng cho App Review pages_read_engagement.
+   */
+  @Post('facebook/pages/:fanpageId/sync')
+  @HttpCode(200)
+  @UseGuards(...FanpageGuards)
+  @RequirePermissions('automation.view')
+  facebookPageSync(@CurrentUser() user: AuthUser, @Param('fanpageId') fanpageId: string) {
+    return this.pageDetails.syncPageDetails(user.id, user.organizationId, fanpageId);
   }
 
   @Delete('facebook/pages/:fanpageId')

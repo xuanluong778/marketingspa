@@ -18,6 +18,8 @@ export const QUEUE_NAMES = {
   AFFILIATE_HOLD: 'affiliate-hold-queue',
   VIDEO_TRANSCRIPTION: 'video-transcription-queue',
   AD_URL_ANALYZE: 'ad-url-analyze-queue',
+  EMAIL_CAMPAIGN_PLAN: 'email-campaign-plan-queue',
+  EMAIL_CAMPAIGN_SEND: 'email-campaign-send-queue',
 } as const;
 
 /** Redis pub/sub channel — worker publishes, API forwards to Socket.IO */
@@ -29,6 +31,10 @@ export const WS_EVENTS = {
   LEAD_NEW: 'lead:new',
   LEAD_STALE_ALERT: 'lead:stale-alert',
   LEAD_STATUS_CHANGED: 'lead:status-changed',
+  LEAD_SCORE_CHANGED: 'lead:score-changed',
+  LEAD_QUALIFIED: 'lead:qualified',
+  LEAD_SLA_BREACHED: 'lead:sla-breached',
+  LEAD_REASSIGNED: 'lead:reassigned',
   APPOINTMENT_NEW: 'appointment:new',
   APPOINTMENT_REMINDER: 'appointment:reminder',
   DAILY_REPORT: 'daily-report:ready',
