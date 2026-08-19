@@ -1,9 +1,7 @@
 const { readFileSync, existsSync } = require('fs');
 const { resolve } = require('path');
 
-const NODE_HOME =
-  '/var/www/marketingaut_usr/data/.nvm/versions/node/v22.22.3';
-const NODE_BIN = `${NODE_HOME}/bin`;
+const NODE_BIN = process.env.NODE_BIN_PATH || '/usr/bin';
 
 /** Load selected keys from monorepo .env so PM2 restarts keep canary allowlist. */
 function readRootEnvKeys(keys) {
@@ -34,71 +32,44 @@ const rootEnv = readRootEnvKeys([
 module.exports = {
   apps: [
     {
-      name: 'api',
-      script: `${NODE_BIN}/npm`,
-      args: 'run start:prod',
+      name: 'dev-mkspa-api',
+      script: 'node',
+      args: 'dist/main',
       cwd: './apps/api',
-      interpreter: `${NODE_BIN}/node`,
       env: {
         NODE_ENV: 'production',
-        PORT: 4000,
-        PATH: `${NODE_BIN}:/usr/local/bin:/usr/bin:/bin`,
-        // Clear polluted META_FACEBOOK_OAUTH_REDIRECT_URI inherited from PM2 daemon.
-        // Auto Post uses META_AUTO_POST_REDIRECT_URI from .env instead.
+        PORT: 4010,
         META_FACEBOOK_OAUTH_REDIRECT_URI: '',
-        ...(rootEnv.AUTO_POST_OAUTH_CANARY
-          ? { AUTO_POST_OAUTH_CANARY: rootEnv.AUTO_POST_OAUTH_CANARY }
-          : {}),
-        ...(rootEnv.AUTO_POST_OAUTH_CANARY_ORG_IDS
-          ? { AUTO_POST_OAUTH_CANARY_ORG_IDS: rootEnv.AUTO_POST_OAUTH_CANARY_ORG_IDS }
-          : {}),
-        ...(rootEnv.OAUTH_CONNECTION
-          ? { OAUTH_CONNECTION: rootEnv.OAUTH_CONNECTION }
-          : {}),
-        ...(rootEnv.ASSISTANT_ENABLED != null && rootEnv.ASSISTANT_ENABLED !== ''
-          ? { ASSISTANT_ENABLED: rootEnv.ASSISTANT_ENABLED }
-          : {}),
-        ...(rootEnv.ASSISTANT_CANARY != null && rootEnv.ASSISTANT_CANARY !== ''
-          ? { ASSISTANT_CANARY: rootEnv.ASSISTANT_CANARY }
-          : {}),
-        ...(rootEnv.ASSISTANT_CANARY_ORG_IDS
-          ? { ASSISTANT_CANARY_ORG_IDS: rootEnv.ASSISTANT_CANARY_ORG_IDS }
-          : {}),
+        ...rootEnv,
       },
-      out_file: '../logs/api.out.log',
-      error_file: '../logs/api.err.log',
+      out_file: '../logs/dev-api.out.log',
+      error_file: '../logs/dev-api.err.log',
       merge_logs: true,
       time: true,
     },
     {
-      name: 'worker',
-      script: `${NODE_BIN}/npm`,
-      args: 'run start',
+      name: 'dev-mkspa-worker',
+      script: 'node',
+      args: 'dist/index.js',
       cwd: './apps/worker',
-      interpreter: `${NODE_BIN}/node`,
       env: {
         NODE_ENV: 'production',
-        PATH: `${NODE_BIN}:/usr/local/bin:/usr/bin:/bin`,
-        YT_DLP_NODE_PATH: `${NODE_BIN}/node`,
-        YT_DLP_REMOTE_COMPONENTS: 'ejs:github',
       },
-      out_file: '../logs/worker.out.log',
-      error_file: '../logs/worker.err.log',
+      out_file: '../logs/dev-worker.out.log',
+      error_file: '../logs/dev-worker.err.log',
       merge_logs: true,
       time: true,
     },
     {
-      name: 'web',
-      script: `${NODE_BIN}/npx`,
-      args: 'next start -p 3002',
+      name: 'dev-mkspa-web',
+      script: 'npx',
+      args: 'next start -p 3020',
       cwd: './apps/web',
-      interpreter: `${NODE_BIN}/node`,
       env: {
         NODE_ENV: 'production',
-        PATH: `${NODE_BIN}:/usr/local/bin:/usr/bin:/bin`,
       },
-      out_file: '../logs/web.out.log',
-      error_file: '../logs/web.err.log',
+      out_file: '../logs/dev-web.out.log',
+      error_file: '../logs/dev-web.err.log',
       merge_logs: true,
       time: true,
     },

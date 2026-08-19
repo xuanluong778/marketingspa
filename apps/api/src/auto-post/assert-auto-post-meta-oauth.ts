@@ -26,10 +26,12 @@ function isMarketingAutoazProduction(getEnv: (key: string) => string | undefined
   const appUrl = (getEnv('APP_URL') ?? getEnv('NEXT_PUBLIC_APP_URL') ?? '').toLowerCase();
   const apiUrl = (getEnv('API_URL') ?? getEnv('NEXT_PUBLIC_API_URL') ?? '').toLowerCase();
   const nodeEnv = (getEnv('NODE_ENV') ?? '').toLowerCase();
+  if (appUrl.includes('dev.marketingautoaz.com') || apiUrl.includes('dev.marketingautoaz.com')) {
+    return false;
+  }
   if (appUrl.includes('marketingautoaz.com') || apiUrl.includes('marketingautoaz.com')) {
     return true;
   }
-  // Production API trên host này luôn enforce khi NODE_ENV=production
   return nodeEnv === 'production';
 }
 
@@ -86,9 +88,13 @@ export function assertAutoPostMetaOAuthConfig(
     MARKETINGAUTOAZ_META_LOGIN_CONFIG_ID;
 
   if (!isMarketingAutoazProduction(getEnv)) {
-    if (!appId) throw new Error('META_APP_ID / FACEBOOK_APP_ID chưa cấu hình');
+    if (!appId) {
+      console.warn('[assertAutoPostMetaOAuthConfig] META_APP_ID chưa cấu hình — Auto Post OAuth bị tắt (dev mode).');
+      return { appId: '', loginConfigId: '', redirectUri };
+    }
     if (!loginConfigId) {
-      throw new Error('META_LOGIN_CONFIG_ID bắt buộc cho Facebook Login for Business');
+      console.warn('[assertAutoPostMetaOAuthConfig] META_LOGIN_CONFIG_ID chưa cấu hình — Auto Post OAuth bị tắt (dev mode).');
+      return { appId, loginConfigId: '', redirectUri };
     }
     return { appId, loginConfigId, redirectUri };
   }
