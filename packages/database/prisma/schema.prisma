@@ -4426,6 +4426,7 @@ model MarketingAutopilotOutcomeTrack {
   @@index([draftRunId])
   @@index([draftId])
   @@index([missionId])
+  @@index([recommendationId])
   @@map("marketing_autopilot_outcome_tracks")
 }
 
