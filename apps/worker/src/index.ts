@@ -30,6 +30,8 @@ import { processMessagingCampaignPlan } from './processors/messaging-campaign-pl
 import { processMessagingCampaignDispatch } from './processors/messaging-campaign-dispatch';
 import { processMessagingSend } from './processors/messaging-send';
 import { processOfflineConversion } from './processors/offline-conversion';
+import { processMarketingAutopilotOutcomeScan } from './processors/marketing-autopilot-outcome-scan';
+import { processMarketingAutopilotMission } from './processors/marketing-autopilot-mission';
 
 initSentry();
 
@@ -174,6 +176,16 @@ async function start() {
       ...opts,
       concurrency: 1,
     }),
+    new Worker(
+      QUEUE_NAMES.MARKETING_AUTOPILOT_OUTCOME_EVAL,
+      (job) => processMarketingAutopilotOutcomeScan(job),
+      { ...opts, concurrency: 1 },
+    ),
+    new Worker(
+      QUEUE_NAMES.MARKETING_AUTOPILOT_MISSION,
+      (job) => processMarketingAutopilotMission(job),
+      { ...opts, concurrency: 2 },
+    ),
   );
 
   for (const w of workers) {

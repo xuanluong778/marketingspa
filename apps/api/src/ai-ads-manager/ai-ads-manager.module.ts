@@ -10,5 +10,6 @@ import { AdsActionsModule } from '../ads-actions/ads-actions.module';
   imports: [AdPerformanceModule, OpenAiModule, AdsMcpModule, AdsActionsModule],
   controllers: [AiAdsManagerController],
   providers: [AiAdsManagerService],
+  exports: [AiAdsManagerService],
 })
 export class AiAdsManagerModule {}

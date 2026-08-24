@@ -22,6 +22,7 @@ import {
   User,
   BookOpen,
   KeyRound,
+  Sparkles,
   type LucideIcon,
 } from 'lucide-react';
 import { CONTENT_AUTO_POST_BASE } from '@/lib/content-auto-post-routes';
@@ -56,6 +57,7 @@ export const mainNav: NavItem[] = [
   { title: 'Phễu Marketing', href: '/funnel', icon: Filter },
   { title: 'Lịch hẹn', href: '/appointments', icon: CalendarDays },
   { title: 'Ads', href: '/ads', icon: Megaphone },
+  { title: 'Marketing Autopilot', href: '/marketing-autopilot', icon: Sparkles },
   { title: 'Tin nhắn tự động', href: '/automation?tab=flows', icon: Bot },
   { title: 'Nhắn tin hàng loạt', href: '/automation?tab=campaigns', icon: Megaphone },
   { title: 'Quản Lý Nhân Sự', href: '/hrm/employees', icon: UserCog },
@@ -70,6 +72,7 @@ export const mainNav: NavItem[] = [
 
 export const sidebarNavGroups: NavGroup[] = [
   { title: 'Tổng quan', href: '/overview', icon: LayoutDashboard },
+  { title: 'Marketing Autopilot', href: '/marketing-autopilot', icon: Sparkles },
   {
     title: 'CRM & Khách hàng',
     icon: Users,
@@ -177,6 +180,9 @@ export function parseSettingsTab(raw: string | null | undefined): SettingsTab {
 }
 
 export function getPageTitle(pathname: string): string {
+  if (pathname === '/marketing-autopilot' || pathname.startsWith('/marketing-autopilot/')) {
+    return 'Marketing Autopilot';
+  }
   if (pathname === '/teleprompter' || pathname.startsWith('/teleprompter/')) {
     return 'Kịch bản quay video';
   }

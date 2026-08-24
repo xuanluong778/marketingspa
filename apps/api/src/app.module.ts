@@ -40,6 +40,7 @@ import { BillingModule } from './billing/billing.module';
 import { PlatformAdminModule } from './platform-admin/platform-admin.module';
 import { AffiliateModule } from './affiliate/affiliate.module';
 import { VideoTranscriptionModule } from './video-transcription/video-transcription.module';
+import { MarketingAutopilotModule } from './marketing-autopilot/marketing-autopilot.module';
 
 @Module({
   imports: [
@@ -86,6 +87,7 @@ import { VideoTranscriptionModule } from './video-transcription/video-transcript
     PlatformAdminModule,
     AffiliateModule,
     VideoTranscriptionModule,
+    MarketingAutopilotModule,
   ],
 })
 export class AppModule {}

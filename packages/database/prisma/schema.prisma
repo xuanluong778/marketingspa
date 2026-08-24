@@ -637,6 +637,26 @@ model Organization {
   workTaskStatusHistories     WorkTaskStatusHistory[]
   workTaskReviewEvents        WorkTaskReviewEvent[]
   workNotifications           WorkNotification[]
+  marketingAutopilotProjects  MarketingAutopilotProject[]
+  marketingAutopilotAnalyses  MarketingAutopilotAnalysis[]
+  marketingAutopilotDraftRuns MarketingAutopilotDraftRun[]
+  marketingAutopilotDrafts    MarketingAutopilotDraft[]
+  marketingMissions           MarketingMission[]
+  marketingMissionAssets      MarketingMissionAsset[]
+  marketingMissionApprovals   MarketingMissionApproval[]
+  marketingAutopilotGuardrail MarketingAutopilotGuardrail?
+  marketingAutopilotExecutionLogs MarketingAutopilotExecutionLog[]
+  marketingAutopilotOutcomeLoops MarketingAutopilotOutcomeLoop[]
+  marketingAutopilotOptimizationProposals MarketingAutopilotOptimizationProposal[]
+  marketingAutopilotStopLossEvents MarketingAutopilotStopLossEvent[]
+  marketingAutopilotOutcomeMutationLocks MarketingAutopilotOutcomeMutationLock[]
+  marketingContextSnapshots   MarketingContextSnapshot[]
+  marketingAutopilotOutcomeTracks MarketingAutopilotOutcomeTrack[]
+  marketingAutopilotOutcomeEvaluations MarketingAutopilotOutcomeEvaluation[]
+  marketingAutopilotBusinessLearnings MarketingAutopilotBusinessLearning[]
+  marketingAutopilotFunnelSpecs MarketingAutopilotFunnelSpec[]
+  marketingAutopilotEmailDrafts MarketingAutopilotEmailDraft[]
+  marketingAutopilotScoringConfigs MarketingAutopilotScoringConfig[]
 
   @@index([referredByAffiliateId])
   @@index([referredByCode])
@@ -794,6 +814,18 @@ model User {
   leadSavedViews             LeadSavedView[]
   paymentOrders              PaymentOrder[]
   affiliateProfile           AffiliateProfile?
+  marketingAutopilotProjects MarketingAutopilotProject[]
+  archivedMarketingAutopilotProjects MarketingAutopilotProject[] @relation("MarketingAutopilotProjectArchivedBy")
+  marketingAutopilotAnalyses MarketingAutopilotAnalysis[]
+  marketingAutopilotDraftRuns MarketingAutopilotDraftRun[]
+  marketingAutopilotDrafts    MarketingAutopilotDraft[]
+  marketingMissions           MarketingMission[]
+  marketingMissionApprovals   MarketingMissionApproval[]
+  marketingAutopilotOptimizationProposals MarketingAutopilotOptimizationProposal[]
+  marketingContextSnapshots   MarketingContextSnapshot[]
+  marketingAutopilotOutcomeTracks MarketingAutopilotOutcomeTrack[]
+  marketingAutopilotFunnelSpecs MarketingAutopilotFunnelSpec[]
+  marketingAutopilotEmailDrafts MarketingAutopilotEmailDraft[]
 
   @@index([organizationId])
   @@index([roleId])
@@ -4313,3 +4345,603 @@ model WorkNotification {
   @@map("work_notifications")
 }
 
+model MarketingAutopilotProject {
+  id               String   @id @default(uuid())
+  organizationId   String   @map("organization_id")
+  createdById      String   @map("created_by_id")
+  name             String
+  status           String   @default("ANALYZED")
+  productName      String   @map("product_name")
+  productPrice     Decimal  @db.Decimal(15, 2) @map("product_price")
+  customerProfile  String   @map("customer_profile")
+  targetArea       String   @map("target_area")
+  monthlyBudget    Decimal  @db.Decimal(15, 2) @map("monthly_budget")
+  primaryGoal      String   @map("primary_goal")
+  inputSnapshot    Json     @default("{}") @map("input_snapshot")
+  analysisSummary  String   @default("") @map("analysis_summary")
+  analysisJson     Json     @default("{}") @map("analysis_json")
+  deletedAt        DateTime? @map("deleted_at")
+  archivedAt       DateTime? @map("archived_at")
+  archivedById     String?  @map("archived_by_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  archivedBy   User?        @relation("MarketingAutopilotProjectArchivedBy", fields: [archivedById], references: [id], onDelete: SetNull)
+  analyses     MarketingAutopilotAnalysis[]
+  drafts       MarketingAutopilotDraft[]
+  draftRuns   MarketingAutopilotDraftRun[]
+  missions     MarketingMission[]
+  outcomeTracks MarketingAutopilotOutcomeTrack[]
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, status])
+  @@index([organizationId, deletedAt])
+  @@index([createdById])
+  @@map("marketing_autopilot_projects")
+}
+
+model MarketingAutopilotAnalysis {
+  id               String   @id @default(uuid())
+  projectId        String   @map("project_id")
+  organizationId   String   @map("organization_id")
+  createdById      String   @map("created_by_id")
+  engine           String   @default("heuristic")
+  summary          String
+  recommendationJson Json   @default("{}") @map("recommendation_json")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  project      MarketingAutopilotProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  organization Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User                      @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  outcomeTracks MarketingAutopilotOutcomeTrack[]
+
+  @@index([projectId, createdAt])
+  @@index([organizationId, createdAt])
+  @@index([createdById])
+  @@map("marketing_autopilot_analyses")
+}
+
+enum MarketingAutopilotDraftType {
+  CONTENT_DRAFT
+  FUNNEL_DRAFT
+  AUTOMATION_DRAFT
+  CAMPAIGN_DRAFT
+}
+
+enum MarketingAutopilotDraftRunStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  BLOCKED
+}
+
+model MarketingAutopilotDraftRun {
+  id                 String   @id @default(uuid())
+  organizationId     String   @map("organization_id")
+  createdById        String   @map("created_by_id")
+  projectId          String   @map("project_id")
+  idempotencyKey     String   @map("idempotency_key")
+  status             MarketingAutopilotDraftRunStatus @default(PENDING)
+  blockedActionsJson Json     @default("{}") @map("blocked_actions_json")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  project      MarketingAutopilotProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  drafts       MarketingAutopilotDraft[]
+  outcomeTracks MarketingAutopilotOutcomeTrack[]
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, projectId, createdAt])
+  @@map("marketing_autopilot_draft_runs")
+}
+
+model MarketingAutopilotDraft {
+  id               String @id @default(uuid())
+  organizationId   String @map("organization_id")
+  createdById      String @map("created_by_id")
+  projectId        String @map("project_id")
+  runId            String @map("run_id")
+  missionId        String? @map("mission_id")
+  type             MarketingAutopilotDraftType
+  status           String @default("CREATED")
+  payload          Json   @default("{}")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  project      MarketingAutopilotProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  run           MarketingAutopilotDraftRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  mission       MarketingMission? @relation(fields: [missionId], references: [id], onDelete: SetNull)
+  outcomeTracks MarketingAutopilotOutcomeTrack[]
+
+  @@index([organizationId, type, createdAt])
+  @@index([runId])
+  @@index([missionId])
+  @@map("marketing_autopilot_drafts")
+}
+
+enum MarketingMissionStatus {
+  PENDING
+  DRAFT
+  GENERATING
+  RUNNING
+  READY_FOR_APPROVAL
+  APPROVED
+  QUEUED
+  FAILED
+  BLOCKED
+}
+
+/// AI Orchestrator A→Z mission — links brief → plan → blueprint → draft assets.
+model MarketingMission {
+  id               String   @id @default(uuid())
+  organizationId   String   @map("organization_id")
+  createdById      String   @map("created_by_id")
+  projectId        String   @map("project_id")
+  idempotencyKey   String   @map("idempotency_key")
+  status           MarketingMissionStatus @default(DRAFT)
+  currentStep      String   @default("BRIEF") @map("current_step")
+  progressPercent  Int      @default(0) @map("progress_percent")
+  stepsJson        Json     @default("{}") @map("steps_json")
+  blueprintJson    Json     @default("{}") @map("blueprint_json")
+  errorJson        Json?    @map("error_json")
+  attemptCount     Int      @default(0) @map("attempt_count")
+  lastErrorAt      DateTime? @map("last_error_at")
+  readyAt          DateTime? @map("ready_at")
+  approvedAt       DateTime? @map("approved_at")
+  approvalVersion  Int      @default(0) @map("approval_version")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  project      MarketingAutopilotProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  drafts       MarketingAutopilotDraft[]
+  assets       MarketingMissionAsset[]
+  approvals    MarketingMissionApproval[]
+  outcomeTracks MarketingAutopilotOutcomeTrack[]
+  outcomeLoop  MarketingAutopilotOutcomeLoop?
+  optimizationProposals MarketingAutopilotOptimizationProposal[]
+  stopLossEvents MarketingAutopilotStopLossEvent[]
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, projectId, createdAt])
+  @@index([organizationId, status])
+  @@index([status, updatedAt])
+  @@map("marketing_missions")
+}
+
+/// Immutable approval snapshot — created once per version on "Duyệt & chạy".
+model MarketingMissionApproval {
+  id               String   @id @default(uuid())
+  organizationId   String   @map("organization_id")
+  missionId        String   @map("mission_id")
+  projectId        String   @map("project_id")
+  version          Int
+  approvedById     String   @map("approved_by_id")
+  approvedAt       DateTime @default(now()) @map("approved_at")
+  /// Immutable payload: strategy, assets, budget, channels, version, approver, approvedAt
+  snapshotJson     Json     @map("snapshot_json")
+  runStatus        String   @default("APPROVED") @map("run_status") /// APPROVED | QUEUED | RUNNING | COMPLETED | FAILED
+  startedAt        DateTime? @map("started_at")
+  completedAt      DateTime? @map("completed_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  mission      MarketingMission  @relation(fields: [missionId], references: [id], onDelete: Cascade)
+  approvedBy   User             @relation(fields: [approvedById], references: [id], onDelete: Cascade)
+
+  @@unique([missionId, version])
+  @@index([organizationId, projectId, createdAt])
+  @@index([organizationId, approvedAt])
+  @@map("marketing_mission_approvals")
+}
+
+/// Per-organization guardrails for Autopilot Execution Engine.
+model MarketingAutopilotGuardrail {
+  id                         String   @id @default(uuid())
+  organizationId             String   @unique @map("organization_id")
+  maxDailyAdSpend            Decimal? @map("max_daily_ad_spend") @db.Decimal(15, 2)
+  maxCampaignBudget          Decimal? @map("max_campaign_budget") @db.Decimal(15, 2)
+  maxBudgetIncreasePercent   Int      @default(20) @map("max_budget_increase_percent")
+  /// JSON string[] e.g. ["FACEBOOK","GOOGLE","EMAIL","ZALO","MESSENGER"]
+  allowedChannels            Json     @default("[]") @map("allowed_channels")
+  allowFacebookPublish       Boolean  @default(false) @map("allow_facebook_publish")
+  allowGoogleAdsPublish      Boolean  @default(false) @map("allow_google_ads_publish")
+  allowEmailSend             Boolean  @default(false) @map("allow_email_send")
+  allowZaloSend              Boolean  @default(false) @map("allow_zalo_send")
+  allowAutomationActivation  Boolean  @default(true) @map("allow_automation_activation")
+  stopLossCpl                Decimal? @map("stop_loss_cpl") @db.Decimal(15, 2)
+  stopLossCpa                Decimal? @map("stop_loss_cpa") @db.Decimal(15, 2)
+  /// APPROVAL_AUTOPILOT (default) | FULL_AUTOPILOT (off by default)
+  autopilotMode              String   @default("APPROVAL_AUTOPILOT") @map("autopilot_mode")
+  fullAutopilotEnabled       Boolean  @default(false) @map("full_autopilot_enabled")
+  createdAt                  DateTime @default(now()) @map("created_at")
+  updatedAt                  DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("marketing_autopilot_guardrails")
+}
+
+/// Before/after execution audit for Autopilot actions (no tokens/secrets).
+model MarketingAutopilotExecutionLog {
+  id               String   @id @default(uuid())
+  organizationId   String   @map("organization_id")
+  missionId        String   @map("mission_id")
+  approvalId       String?  @map("approval_id")
+  module           String   @default("")
+  entityType       String   @map("entity_type")
+  entityId         String   @map("entity_id")
+  action           String
+  phase            String   /// BEFORE | AFTER
+  checkStage       String   @map("check_stage") /// PERMISSION | INTEGRATION | APPROVAL | GUARDRAIL | EXECUTE
+  result           String   /// PASSED | BLOCKED_* | EXECUTED | FAILED | SKIPPED
+  message          String   @default("")
+  beforeJson       Json     @default("{}") @map("before_json")
+  afterJson        Json     @default("{}") @map("after_json")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, missionId, createdAt])
+  @@index([missionId, entityId])
+  @@index([organizationId, result, createdAt])
+  @@map("marketing_autopilot_execution_logs")
+}
+
+/// Registry of real domain assets created by AI Executor (linked by missionId).
+model MarketingMissionAsset {
+  id               String   @id @default(uuid())
+  organizationId   String   @map("organization_id")
+  missionId        String   @map("mission_id")
+  module           String   /// FUNNEL | CONTENT | CRM | AUTOMATION | CAMPAIGN | EMAIL | ZALO | ADS | CHATBOT
+  /// CONTENT_DRAFT | FUNNEL_DRAFT | AUTOMATION_DRAFT | CAMPAIGN_DRAFT | …
+  assetType        String?  @map("asset_type")
+  /// NBA / planner recommendation id (stable key for outcome learning)
+  recommendationId String?  @map("recommendation_id")
+  entityType       String   @map("entity_type")
+  entityId         String   @map("entity_id")
+  /// Deep-link into domain UI for "Xem & chỉnh sửa"
+  editUrl          String?  @map("edit_url")
+  status           String   @default("DRAFT")
+  adapter          String   @default("")
+  metadataJson     Json     @default("{}") @map("metadata_json")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  mission      MarketingMission @relation(fields: [missionId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, entityType, entityId])
+  @@index([missionId, module])
+  @@index([organizationId, module, createdAt])
+  @@index([missionId, recommendationId])
+  @@index([missionId, assetType])
+  @@map("marketing_mission_assets")
+}
+
+enum MarketingAutopilotOutcomeActionType {
+  STRATEGY
+  DRAFT
+}
+
+enum MarketingAutopilotOutcomeTrackStatus {
+  OPEN
+  EVALUATING
+  COMPLETED
+}
+
+enum MarketingAutopilotOutcomeEvalStatus {
+  PENDING
+  DONE
+  SKIPPED
+}
+
+enum MarketingAutopilotLearningCategory {
+  OFFER
+  SEGMENT
+  CONTENT_CHANNEL
+  METRIC_BASELINE
+  TACTIC_SUCCESS
+  TACTIC_FAILED
+  DIAGNOSIS
+  OPTIMIZATION
+  STOP_LOSS
+}
+
+enum MarketingAutopilotOutcomeLoopStep {
+  RUN
+  MONITOR
+  DIAGNOSE
+  RECOMMEND
+  OPTIMIZE
+  LEARN
+}
+
+enum MarketingAutopilotOptimizationStatus {
+  PENDING_APPROVAL
+  APPROVED
+  APPLIED
+  REJECTED
+  BLOCKED_GUARDRAIL
+  STALE
+  SKIPPED
+}
+
+/// Recommendation → Action/Draft → Before → After → Outcome (tenant-scoped).
+model MarketingAutopilotOutcomeTrack {
+  id                   String   @id @default(uuid())
+  organizationId       String   @map("organization_id")
+  createdById          String   @map("created_by_id")
+  projectId            String   @map("project_id")
+  missionId            String?  @map("mission_id")
+  analysisId           String?  @map("analysis_id")
+  draftRunId           String?  @map("draft_run_id")
+  draftId              String?  @map("draft_id")
+  /// Stable NBA recommendation id for ranking / learning loopback
+  recommendationId     String?  @map("recommendation_id")
+  actionType           MarketingAutopilotOutcomeActionType @map("action_type")
+  draftType            MarketingAutopilotDraftType? @map("draft_type")
+  status               MarketingAutopilotOutcomeTrackStatus @default(OPEN)
+  recommendationJson   Json     @default("{}") @map("recommendation_json")
+  beforeMetricsJson    Json     @default("{}") @map("before_metrics_json")
+  beforeSnapshotId     String?  @map("before_snapshot_id")
+  baselineAt           DateTime @default(now()) @map("baseline_at")
+  productName          String   @default("") @map("product_name")
+  customerProfile      String   @default("") @map("customer_profile")
+  targetArea           String   @default("") @map("target_area")
+  primaryGoal          String   @default("") @map("primary_goal")
+  channelsJson         Json     @default("[]") @map("channels_json")
+  offerJson            Json     @default("{}") @map("offer_json")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User         @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  project      MarketingAutopilotProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  mission      MarketingMission? @relation(fields: [missionId], references: [id], onDelete: SetNull)
+  analysis     MarketingAutopilotAnalysis? @relation(fields: [analysisId], references: [id], onDelete: SetNull)
+  draftRun     MarketingAutopilotDraftRun? @relation(fields: [draftRunId], references: [id], onDelete: SetNull)
+  draft        MarketingAutopilotDraft? @relation(fields: [draftId], references: [id], onDelete: SetNull)
+  evaluations  MarketingAutopilotOutcomeEvaluation[]
+
+  @@index([organizationId, status, baselineAt])
+  @@index([organizationId, projectId, createdAt])
+  @@index([organizationId, missionId, createdAt])
+  @@index([analysisId])
+  @@index([draftRunId])
+  @@index([draftId])
+  @@index([missionId])
+  @@map("marketing_autopilot_outcome_tracks")
+}
+
+/// Mission-scoped outcome loop: RUN → MONITOR → DIAGNOSE → RECOMMEND → OPTIMIZE → LEARN.
+model MarketingAutopilotOutcomeLoop {
+  id               String   @id @default(uuid())
+  organizationId   String   @map("organization_id")
+  missionId        String   @unique @map("mission_id")
+  projectId        String   @map("project_id")
+  currentStep      MarketingAutopilotOutcomeLoopStep @default(RUN) @map("current_step")
+  status           String   @default("ACTIVE") /// ACTIVE | PAUSED_STOP_LOSS | COMPLETED
+  autopilotMode    String   @default("APPROVAL_AUTOPILOT") @map("autopilot_mode")
+  monitorJson      Json     @default("{}") @map("monitor_json") /// windows 1/7/30 metrics snapshots
+  diagnosisJson    Json     @default("[]") @map("diagnosis_json")
+  lastMonitorAt    DateTime? @map("last_monitor_at")
+  lastDiagnoseAt   DateTime? @map("last_diagnose_at")
+  lastRecommendAt  DateTime? @map("last_recommend_at")
+  lastOptimizeAt   DateTime? @map("last_optimize_at")
+  lastLearnAt      DateTime? @map("last_learn_at")
+  stopLossActive   Boolean  @default(false) @map("stop_loss_active")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  mission      MarketingMission @relation(fields: [missionId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, currentStep, status])
+  @@index([organizationId, projectId])
+  @@map("marketing_autopilot_outcome_loops")
+}
+
+/// AI optimization proposal — APPROVAL_AUTOPILOT requires user approve before apply.
+model MarketingAutopilotOptimizationProposal {
+  id               String   @id @default(uuid())
+  organizationId   String   @map("organization_id")
+  missionId        String   @map("mission_id")
+  projectId        String   @map("project_id")
+  diagnosisKind    String   @map("diagnosis_kind") /// ADS_INEFFICIENT | FUNNEL_BOTTLENECK | ...
+  title            String
+  summary          String
+  recommendationJson Json   @default("{}") @map("recommendation_json")
+  metricsSnapshotJson Json @default("{}") @map("metrics_snapshot_json")
+  status           MarketingAutopilotOptimizationStatus @default(PENDING_APPROVAL)
+  correlationOnly  Boolean  @default(true) @map("correlation_only")
+  approvedById     String?  @map("approved_by_id")
+  approvedAt       DateTime? @map("approved_at")
+  appliedAt        DateTime? @map("applied_at")
+  blockedReason    String?  @map("blocked_reason")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  mission      MarketingMission @relation(fields: [missionId], references: [id], onDelete: Cascade)
+  approvedBy   User? @relation(fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, missionId, status])
+  @@index([missionId, diagnosisKind])
+  @@map("marketing_autopilot_optimization_proposals")
+}
+
+/// Stop-loss event — pause related assets, trigger diagnose → recommend.
+model MarketingAutopilotStopLossEvent {
+  id               String   @id @default(uuid())
+  organizationId   String   @map("organization_id")
+  missionId        String   @map("mission_id")
+  reason           String   /// TRACKING_ERROR | SPEND_OVER_LIMIT | CPL_OVER | CPA_OVER
+  triggerJson      Json     @default("{}") @map("trigger_json")
+  pausedModules    Json     @default("[]") @map("paused_modules")
+  resolvedAt       DateTime? @map("resolved_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  mission      MarketingMission @relation(fields: [missionId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, missionId, createdAt])
+  @@map("marketing_autopilot_stop_loss_events")
+}
+
+/// Concurrency lock — one mutation per mission target at a time.
+model MarketingAutopilotOutcomeMutationLock {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  lockKey        String   @map("lock_key")
+  holder         String
+  expiresAt      DateTime @map("expires_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, lockKey])
+  @@index([expiresAt])
+  @@map("marketing_autopilot_outcome_mutation_locks")
+}
+
+model MarketingAutopilotOutcomeEvaluation {
+  id                 String   @id @default(uuid())
+  organizationId     String   @map("organization_id")
+  trackId            String   @map("track_id")
+  horizonDays        Int      @map("horizon_days")
+  dueAt              DateTime @map("due_at")
+  evaluatedAt        DateTime? @map("evaluated_at")
+  status             MarketingAutopilotOutcomeEvalStatus @default(PENDING)
+  afterMetricsJson   Json     @default("{}") @map("after_metrics_json")
+  afterSnapshotId    String?  @map("after_snapshot_id")
+  outcomeJson        Json     @default("{}") @map("outcome_json")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  track        MarketingAutopilotOutcomeTrack @relation(fields: [trackId], references: [id], onDelete: Cascade)
+
+  @@unique([trackId, horizonDays])
+  @@index([organizationId, status, dueAt])
+  @@index([trackId, horizonDays])
+  @@map("marketing_autopilot_outcome_evaluations")
+}
+
+/// Org-scoped business memory for Strategy Planner (correlation ≠ causation).
+model MarketingAutopilotBusinessLearning {
+  id               String   @id @default(uuid())
+  organizationId   String   @map("organization_id")
+  category         MarketingAutopilotLearningCategory
+  key              String
+  title            String
+  summary          String
+  evidenceJson     Json     @default("{}") @map("evidence_json")
+  confidence       String   @default("LOW")
+  sampleSize       Int      @default(1) @map("sample_size")
+  correlationOnly  Boolean  @default(true) @map("correlation_only")
+  sourceTrackIds   Json     @default("[]") @map("source_track_ids")
+  isActive         Boolean  @default(true) @map("is_active")
+  lastObservedAt   DateTime @default(now()) @map("last_observed_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, category, key])
+  @@index([organizationId, isActive, category])
+  @@index([organizationId, lastObservedAt])
+  @@map("marketing_autopilot_business_learnings")
+}
+
+model MarketingContextSnapshot {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  createdById    String?  @map("created_by_id")
+  timeRangeFrom  DateTime @map("time_range_from")
+  timeRangeTo    DateTime @map("time_range_to")
+  engineVersion  String   @default("v1") @map("engine_version")
+  metricsJson    Json     @default("{}") @map("metrics_json")
+  insightsJson   Json     @default("[]") @map("insights_json")
+  sourcesJson    Json     @default("[]") @map("sources_json")
+  snapshotJson   Json     @default("{}") @map("snapshot_json")
+  expiresAt      DateTime? @map("expires_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, expiresAt])
+  @@map("marketing_context_snapshots")
+}
+
+
+model MarketingAutopilotFunnelSpec {
+  id                   String   @id @default(uuid())
+  organizationId       String   @map("organization_id")
+  createdById          String?  @map("created_by_id")
+  prompt               String   @db.Text
+  result               Json
+  source               String   @default("ai")
+  selectedSlug         String?  @map("selected_slug")
+  selectedAt           DateTime? @map("selected_at")
+  completeSpec         Json?    @map("complete_spec")
+  completeSource       String?  @map("complete_source")
+  completeGeneratedAt  DateTime? @map("complete_generated_at")
+  status               String   @default("DRAFT")
+  chatbotBotId         String?  @map("chatbot_bot_id")
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, status])
+  @@map("marketing_autopilot_funnel_specs")
+}
+
+model MarketingAutopilotEmailDraft {
+  id               String   @id @default(uuid())
+  organizationId   String   @map("organization_id")
+  createdByUserId  String?  @map("created_by_user_id")
+  name             String
+  subject          String?
+  status           String   @default("DRAFT")
+  sentCount        Int      @default(0) @map("sent_count")
+  openCount        Int      @default(0) @map("open_count")
+  clickCount       Int      @default(0) @map("click_count")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  createdBy    User?        @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, status])
+  @@map("marketing_autopilot_email_drafts")
+}
+
+model MarketingAutopilotScoringConfig {
+  id             String   @id @default(uuid())
+  organizationId String   @map("organization_id")
+  funnelId       String   @unique @map("funnel_id")
+  maxScore       Int      @default(100) @map("max_score")
+  mqlThreshold   Int      @default(50) @map("mql_threshold")
+  sqlThreshold   Int      @default(80) @map("sql_threshold")
+  isActive       Boolean  @default(true) @map("is_active")
+  source         String   @default("executor")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("marketing_autopilot_scoring_configs")
+}
