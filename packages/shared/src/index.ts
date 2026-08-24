@@ -14,4 +14,17 @@ export * from './messaging-template-render';
 export * from './video-transcription';
 export * from './video-transcription-accuracy';
 export * from './ad-url-analyze';
+export * from './marketing-autopilot-planner';
+export * from './marketing-autopilot-planner-v2';
+export * from './marketing-autopilot-planner-v3';
+export * from './marketing-autopilot-nba-v2';
+export * from './marketing-autopilot-nba-v3';
+export * from './marketing-autopilot-outcome-learning';
+export * from './marketing-autopilot-content-draft';
+export * from './marketing-autopilot-draft-normalize';
+export * from './marketing-autopilot-mission';
+export * from './marketing-autopilot-approval';
+export * from './marketing-autopilot-guardrail';
+export * from './marketing-autopilot-outcome-loop';
+export * from './marketing-autopilot-funnel-fallback';
 // ssrf-fetch uses Node dns/net — import '@marketingspa/shared/ssrf-fetch' (server-only)
