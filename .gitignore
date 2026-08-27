@@ -65,4 +65,4 @@ tmp/
 apps/api/uploads/
 
 # Local uploads (root)
-uploads/
+/uploads/
