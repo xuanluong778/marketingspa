@@ -26,10 +26,14 @@ function isMarketingAutoazProduction(getEnv: (key: string) => string | undefined
   const appUrl = (getEnv('APP_URL') ?? getEnv('NEXT_PUBLIC_APP_URL') ?? '').toLowerCase();
   const apiUrl = (getEnv('API_URL') ?? getEnv('NEXT_PUBLIC_API_URL') ?? '').toLowerCase();
   const nodeEnv = (getEnv('NODE_ENV') ?? '').toLowerCase();
-  if (appUrl.includes('marketingautoaz.com') || apiUrl.includes('marketingautoaz.com')) {
-    return true;
+  const explicitUrls = [appUrl, apiUrl].filter(Boolean);
+  if (explicitUrls.length > 0) {
+    return explicitUrls.some((value) => {
+      const host = safeHostname(value);
+      return host === 'marketingautoaz.com' || host === 'www.marketingautoaz.com';
+    });
   }
-  // Production API trên host này luôn enforce khi NODE_ENV=production
+  // Only infer production when no environment URL is available.
   return nodeEnv === 'production';
 }
 
@@ -86,6 +90,11 @@ export function assertAutoPostMetaOAuthConfig(
     MARKETINGAUTOAZ_META_LOGIN_CONFIG_ID;
 
   if (!isMarketingAutoazProduction(getEnv)) {
+    const oauthConnection = (getEnv('OAUTH_CONNECTION') ?? '').trim().toLowerCase();
+    if (['0', 'false', 'off', 'no'].includes(oauthConnection)) {
+      // Dev/staging may boot without Meta credentials when OAuth is explicitly disabled.
+      return { appId, loginConfigId, redirectUri };
+    }
     if (!appId) throw new Error('META_APP_ID / FACEBOOK_APP_ID chưa cấu hình');
     if (!loginConfigId) {
       throw new Error('META_LOGIN_CONFIG_ID bắt buộc cho Facebook Login for Business');

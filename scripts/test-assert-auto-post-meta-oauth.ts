@@ -30,6 +30,22 @@ function main() {
   assert.equal(ok.appId, MARKETINGAUTOAZ_META_APP_ID);
   assert.equal(ok.redirectUri, MARKETINGAUTOAZ_AUTO_POST_OAUTH_REDIRECT_URI);
 
+  const devOauthDisabled = assertAutoPostMetaOAuthConfig(
+    env({
+      NODE_ENV: 'production',
+      APP_URL: 'https://dev.marketingautoaz.com',
+      API_URL: 'https://dev.marketingautoaz.com',
+      OAUTH_CONNECTION: 'false',
+      META_AUTO_POST_REDIRECT_URI:
+        'https://dev.marketingautoaz.com/api/v1/auto-post/facebook/oauth/callback',
+    }),
+  );
+  assert.equal(devOauthDisabled.appId, '');
+  assert.equal(
+    devOauthDisabled.redirectUri,
+    'https://dev.marketingautoaz.com/api/v1/auto-post/facebook/oauth/callback',
+  );
+
   assert.throws(
     () => assertAutoPostMetaOAuthConfig(env({ ...base, META_APP_ID: '1328676135903477' })),
     /META_APP_ID sai|bị cấm|Bắt buộc/,
