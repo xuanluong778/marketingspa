@@ -18,6 +18,7 @@ import {
   WORK_STATUS_ACTIONS,
 } from './work-management.constants';
 import { classifyWorkUpload, WORK_UPLOAD_MAX_BYTES } from './work-file-policy';
+import { withSignedUploadUrl } from '../common/uploads/upload-signed-url';
 import type {
   CreateWorkCommentDto,
   ReviewDecisionDto,
@@ -762,6 +763,8 @@ export class WorkCollabService {
       task: f.task ?? null,
       createdAt: f.createdAt,
       canPreview: f.kind === 'image' || f.kind === 'pdf',
+      // Signed /uploads URL for <img>/preview without Bearer header
+      url: withSignedUploadUrl(`/uploads/${f.fileKey}`),
     };
   }
 

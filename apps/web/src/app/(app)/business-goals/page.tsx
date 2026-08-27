@@ -15,8 +15,8 @@ import {
   BookOpen,
 } from 'lucide-react';
 import { BusinessGoalForm } from '@/components/business-goals/business-goal-form';
-import { FooterTips, InsightsPanel } from '@/components/business-goals/insights-panel';
-import { KpiCards, ResultHeroCard } from '@/components/business-goals/result-hero';
+import { FooterTips } from '@/components/business-goals/insights-panel';
+import { BusinessGoalResultsSummary, BusinessGoalResultsTable } from '@/components/business-goals/business-goal-results-panel';
 import { LoadingState, ErrorState, EmptyState } from '@/components/shared/page-state';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -50,17 +50,40 @@ import { formatDateTime, formatVnd } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { BG_BOX, BG_BOX_FIELDS } from '@/components/business-goals/business-goals-theme';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useT } from '@/i18n/i18n-provider';
+
+function AdPerformanceTabLoading() {
+  const t = useT();
+  return (
+    <div className="rounded-lg border border-white/10 bg-[#0B2115] p-8 text-center text-white/70">
+      {t('businessGoals.loadingAdPerformance')}
+    </div>
+  );
+}
+
+function AdGoalTabLoading() {
+  const t = useT();
+  return (
+    <div className="rounded-lg border border-white/10 bg-[#0B2115] p-8 text-center text-white/70">
+      {t('businessGoals.loadingAdGoal')}
+    </div>
+  );
+}
 
 const AdPerformancePanel = dynamic(
   () =>
     import('@/components/business-goals/ad-performance-panel').then((m) => m.AdPerformancePanel),
   {
     ssr: false,
-    loading: () => (
-      <div className="rounded-lg border border-white/10 bg-[#0B2115] p-8 text-center text-white/70">
-        Đang tải tab Hiệu quả quảng cáo...
-      </div>
-    ),
+    loading: () => <AdPerformanceTabLoading />,
+  },
+);
+
+const AdGoalPanel = dynamic(
+  () => import('@/components/business-goals/ad-goal-panel').then((m) => m.AdGoalPanel),
+  {
+    ssr: false,
+    loading: () => <AdGoalTabLoading />,
   },
 );
 
@@ -68,14 +91,17 @@ import type { BusinessGoalInput, BusinessGoalScenario } from '@/types/business-g
 
 type FormErrors = Partial<Record<keyof BusinessGoalInput, string>>;
 
-function validateApiInput(values: BusinessGoalInput): FormErrors {
+function validateApiInput(
+  values: BusinessGoalInput,
+  msgs: { negative: string; rateMax: string },
+): FormErrors {
   const errors: FormErrors = {};
   const rateFields: (keyof BusinessGoalInput)[] = ['variableCostRate', 'leadConversionRate'];
 
   (Object.keys(values) as (keyof BusinessGoalInput)[]).forEach((key) => {
     const v = values[key];
-    if (!Number.isFinite(v) || v < 0) errors[key] = 'Không được nhập số âm';
-    if (rateFields.includes(key) && v > 100) errors[key] = 'Tỷ lệ tối đa 100%';
+    if (!Number.isFinite(v) || v < 0) errors[key] = msgs.negative;
+    if (rateFields.includes(key) && v > 100) errors[key] = msgs.rateMax;
   });
 
   return errors;
@@ -86,17 +112,19 @@ function currentMonthLabel(): string {
 }
 
 export default function BusinessGoalsPage() {
+  const t = useT();
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState('goals');
 
   useEffect(() => {
     if (searchParams.get('tab') === 'ad-performance') {
       setActiveTab('ad-performance');
+    } else if (searchParams.get('tab') === 'ad-goal') {
+      setActiveTab('ad-goal');
     }
   }, [searchParams]);
 
   const [formState, setFormState] = useState<BusinessGoalFormState>(defaultBusinessGoalFormState);
-  const [inputMode, setInputMode] = useState<'quick' | 'detailed'>('quick');
   const [calculated, setCalculated] = useState(true);
   const [errors, setErrors] = useState<FormErrors>({});
   const [saveOpen, setSaveOpen] = useState(false);
@@ -106,6 +134,8 @@ export default function BusinessGoalsPage() {
   const [draftSaved, setDraftSaved] = useState(false);
 
   const metrics = useMemo(() => calculateBusinessGoalMetrics(formState), [formState]);
+  // Always show live preview; "Tính toán" validates + confirms
+  const showResults = calculated;
 
   const createScenario = useCreateBusinessGoalScenario();
   const deleteScenario = useDeleteBusinessGoalScenario();
@@ -124,27 +154,28 @@ export default function BusinessGoalsPage() {
   }, []);
 
   const handleCalculate = useCallback(() => {
-    const validation = validateApiInput(metrics.apiInput);
+    const validation = validateApiInput(metrics.apiInput, {
+      negative: t('businessGoals.negativeNotAllowed'),
+      rateMax: t('businessGoals.rateMax100'),
+    });
     if (Object.keys(validation).length > 0) {
       setErrors(validation);
       return;
     }
     setErrors({});
     setCalculated(true);
-  }, [metrics.apiInput]);
+  }, [metrics.apiInput, t]);
 
   const handleReset = useCallback(() => {
     setFormState(defaultBusinessGoalFormState);
     setErrors({});
     setCalculated(true);
-    setInputMode('quick');
   }, []);
 
   const handleSample = useCallback(() => {
     setFormState(sampleBusinessGoalFormState);
     setErrors({});
     setCalculated(true);
-    setInputMode('quick');
   }, []);
 
   const handleSaveDraft = useCallback(() => {
@@ -174,7 +205,7 @@ export default function BusinessGoalsPage() {
   }, []);
 
   return (
-    <div className="space-y-5 max-w-[1400px] mx-auto">
+    <div className={cn('space-y-5 max-w-[1400px] mx-auto', activeTab === 'goals' && 'pb-20')}>
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
@@ -183,9 +214,9 @@ export default function BusinessGoalsPage() {
               <Sparkles className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold tracking-tight">Mục tiêu kinh doanh</h1>
+              <h1 className="text-2xl font-bold tracking-tight">{t('businessGoals.title')}</h1>
               <p className="text-sm text-muted-foreground mt-0.5">
-                Nhập số liệu thực tế — hệ thống tự tính lãi/lỗ, hòa vốn và mục tiêu cần đạt
+                {t('businessGoals.description')}
               </p>
             </div>
           </div>
@@ -193,110 +224,72 @@ export default function BusinessGoalsPage() {
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm">
             <BookOpen className="h-4 w-4 mr-1.5" />
-            Hướng dẫn
+            {t('businessGoals.guide')}
           </Button>
           <div className="flex items-center gap-2 rounded-lg border border-white/10 bg-[#0B2115] px-3 py-1.5 text-sm text-white">
             <Calendar className="h-4 w-4 text-white/70" />
-            <span>Tháng {currentMonthLabel()}</span>
+            <span>{t('businessGoals.month', { label: currentMonthLabel() })}</span>
           </div>
           <Button variant="outline" size="sm" onClick={() => setHistoryOpen(true)}>
             <History className="h-4 w-4 mr-1.5" />
-            Lịch sử
+            {t('businessGoals.history')}
           </Button>
         </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-5">
-        <TabsList className="grid w-full max-w-md grid-cols-2">
-          <TabsTrigger value="goals">Tính mục tiêu</TabsTrigger>
-          <TabsTrigger value="ad-performance">Hiệu quả quảng cáo</TabsTrigger>
+        <TabsList className="grid w-full max-w-3xl grid-cols-3">
+          <TabsTrigger value="goals">{t('businessGoals.tabs.goals')}</TabsTrigger>
+          <TabsTrigger value="ad-goal">{t('businessGoals.tabs.adGoal')}</TabsTrigger>
+          <TabsTrigger value="ad-performance">{t('businessGoals.tabs.adPerformance')}</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="goals" className="space-y-5 mt-0">
-          {/* Hero + KPIs */}
-          {calculated && (
-            <div className="space-y-3">
-              <ResultHeroCard metrics={metrics} />
-              <KpiCards metrics={metrics} />
-            </div>
-          )}
+        <TabsContent value="goals" className="mt-0 space-y-5">
+          {/* 4 KPI + Hiểu nhanh — full width trên đầu */}
+          {showResults && <BusinessGoalResultsSummary metrics={metrics} />}
 
-          {/* Main 2-column layout */}
-          <div className="grid gap-5 lg:grid-cols-5">
-            <Card className={cn('lg:col-span-3', BG_BOX, BG_BOX_FIELDS)}>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base text-white">Nhập liệu</CardTitle>
+          <div className="flex w-full flex-col gap-5 lg:flex-row lg:items-start">
+            {/* Cột nhập số liệu — 450px trên desktop */}
+            <Card
+              className={cn(
+                'min-w-0 w-full lg:w-[450px] lg:min-w-[450px] lg:max-w-[450px] lg:shrink-0',
+                BG_BOX,
+                BG_BOX_FIELDS,
+              )}
+            >
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base text-white">{t('businessGoals.enterFigures')}</CardTitle>
+                <p className="text-xs font-normal text-white/60">{t('businessGoals.basicSix')}</p>
               </CardHeader>
               <CardContent className="space-y-4">
                 <BusinessGoalForm
                   state={formState}
                   onChange={(s) => {
                     setFormState(s);
-                    setCalculated(false);
+                    setCalculated(true);
                   }}
-                  inputMode={inputMode}
-                  onInputModeChange={setInputMode}
                 />
-
                 {Object.keys(errors).length > 0 && (
                   <p className="text-sm text-red-300">
                     {Object.values(errors).filter(Boolean).join(' · ')}
                   </p>
                 )}
-
-                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap pt-2 border-t border-white/10">
-                  <Button onClick={handleCalculate} className="sm:flex-1">
-                    <Calculator className="h-4 w-4 mr-2" />
-                    Tính toán
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={handleReset}
-                    className="border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white"
-                  >
-                    <RefreshCw className="h-4 w-4 mr-2" />
-                    Reset
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={handleSaveDraft}
-                    className="border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white"
-                  >
-                    <Save className="h-4 w-4 mr-2" />
-                    {draftSaved ? 'Đã lưu nháp!' : 'Lưu nháp'}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={handleSample}
-                    className="bg-white/15 text-white hover:bg-white/20"
-                  >
-                    <Sparkles className="h-4 w-4 mr-2" />
-                    Dùng dữ liệu mẫu
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => setSaveOpen(true)}
-                    disabled={!calculated || createScenario.isPending}
-                    className="border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white"
-                  >
-                    Lưu kịch bản
-                  </Button>
-                </div>
               </CardContent>
             </Card>
 
-            <div className="lg:col-span-2 space-y-4 lg:sticky lg:top-4 lg:self-start">
-              {!calculated ? (
+            {/* Cột bảng kết quả — chiếm phần còn lại */}
+            <div className="min-w-0 w-full flex-1 space-y-4">
+              {showResults ? (
+                <BusinessGoalResultsTable metrics={metrics} />
+              ) : (
                 <Card className={cn(BG_BOX)}>
-                  <CardContent className="py-12 [&_.text-muted-foreground]:text-white/70 [&_p.font-medium]:text-white">
+                  <CardContent className="py-10 [&_.text-muted-foreground]:text-white/70 [&_p.font-medium]:text-white">
                     <EmptyState
-                      title="Chưa có kết quả"
-                      description="Nhập số liệu và nhấn Tính toán để xem insight"
+                      title={t('businessGoals.noResults')}
+                      description={t('businessGoals.noResultsHint')}
                     />
                   </CardContent>
                 </Card>
-              ) : (
-                <InsightsPanel metrics={metrics} />
               )}
             </div>
           </div>
@@ -304,31 +297,85 @@ export default function BusinessGoalsPage() {
           <FooterTips />
         </TabsContent>
 
+        <TabsContent value="ad-goal" className="mt-0">
+          <AdGoalPanel />
+        </TabsContent>
+
         <TabsContent value="ad-performance" className="mt-0">
           <AdPerformancePanel />
         </TabsContent>
       </Tabs>
 
+      {/* Fixed action bar — tab Tính mục tiêu only; one row, no wrap */}
+      {activeTab === 'goals' && (
+        <div
+          className={cn(
+            'fixed bottom-0 left-0 right-0 z-40 lg:left-64',
+            'border-t border-white/10 bg-[#0B2115]/95 backdrop-blur-sm',
+            'px-3 py-2.5 md:px-6',
+          )}
+        >
+          <div className="mx-auto flex w-full max-w-full flex-row flex-nowrap items-center justify-start gap-2 overflow-x-auto">
+            <Button onClick={handleCalculate} className="shrink-0">
+              <Calculator className="h-4 w-4 mr-2" />
+              {t('businessGoals.calculate')}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleReset}
+              className="shrink-0 border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+            >
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Reset
+            </Button>
+            <Button
+              variant="outline"
+              onClick={handleSaveDraft}
+              className="shrink-0 border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+            >
+              <Save className="h-4 w-4 mr-2" />
+              {draftSaved ? t('businessGoals.draftSaved') : t('businessGoals.saveDraft')}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={handleSample}
+              className="shrink-0 bg-white/15 text-white hover:bg-white/20"
+            >
+              <Sparkles className="h-4 w-4 mr-2" />
+              {t('businessGoals.useSample')}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => setSaveOpen(true)}
+              disabled={!calculated || createScenario.isPending}
+              className="shrink-0 border-white/20 bg-white/5 text-white hover:bg-white/10 hover:text-white"
+            >
+              {t('businessGoals.saveScenario')}
+            </Button>
+          </div>
+        </div>
+      )}
+
       <Dialog open={saveOpen} onOpenChange={setSaveOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Lưu kịch bản</DialogTitle>
+            <DialogTitle>{t('businessGoals.saveScenario')}</DialogTitle>
             <DialogDescription>
-              Lưu kịch bản vào hệ thống (theo tài khoản của bạn)
+              {t('businessGoals.saveScenarioDesc')}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <Label htmlFor="scenario-name">Tên kịch bản</Label>
+            <Label htmlFor="scenario-name">{t('businessGoals.scenarioName')}</Label>
             <Input
               id="scenario-name"
               value={scenarioName}
               onChange={(e) => setScenarioName(e.target.value)}
-              placeholder="VD: Kế hoạch tháng 6/2025"
+              placeholder={t('businessGoals.scenarioNamePlaceholder')}
             />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setSaveOpen(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button
               onClick={handleSave}
@@ -337,10 +384,10 @@ export default function BusinessGoalsPage() {
               {createScenario.isPending ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Đang lưu...
+                  {t('common.saving')}
                 </>
               ) : (
-                'Lưu'
+                t('common.save')
               )}
             </Button>
           </DialogFooter>
@@ -350,16 +397,16 @@ export default function BusinessGoalsPage() {
       <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
         <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Lịch sử kịch bản</DialogTitle>
-            <DialogDescription>Các kịch bản đã lưu trên server</DialogDescription>
+            <DialogTitle>{t('businessGoals.scenarioHistory')}</DialogTitle>
+            <DialogDescription>{t('businessGoals.historyDesc')}</DialogDescription>
           </DialogHeader>
 
           {scenariosLoading && <LoadingState />}
           {scenariosError && (
-            <ErrorState message="Không tải được lịch sử" onRetry={() => refetchScenarios()} />
+            <ErrorState message={t('businessGoals.loadHistoryFailed')} onRetry={() => refetchScenarios()} />
           )}
           {!scenariosLoading && !scenariosError && scenarios.length === 0 && (
-            <EmptyState title="Chưa có kịch bản" description="Lưu kịch bản sau khi tính toán" />
+            <EmptyState title={t('businessGoals.noScenarios')} description={t('businessGoals.saveScenarioHint')} />
           )}
 
           {!scenariosLoading && scenarios.length > 0 && (
@@ -380,7 +427,7 @@ export default function BusinessGoalsPage() {
                             : undefined
                         }
                       >
-                        {Number(s.calculatedNetProfit) >= 0 ? 'Lãi' : 'Lỗ'}{' '}
+                        {Number(s.calculatedNetProfit) >= 0 ? t('businessGoals.profitLoss') : t('businessGoals.loss')}{' '}
                         {formatVnd(Math.abs(Number(s.calculatedNetProfit)))}
                       </Badge>
                     </div>
@@ -391,7 +438,7 @@ export default function BusinessGoalsPage() {
                   </div>
                   <div className="flex gap-2 shrink-0">
                     <Button size="sm" variant="outline" onClick={() => loadScenario(s)}>
-                      Tải vào form
+                      {t('businessGoals.loadIntoForm')}
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => setDeleteId(s.id)}>
                       <Trash2 className="h-4 w-4 text-destructive" />
@@ -407,9 +454,9 @@ export default function BusinessGoalsPage() {
       <ConfirmDialog
         open={!!deleteId}
         onOpenChange={(open) => !open && setDeleteId(null)}
-        title="Xóa kịch bản?"
-        description="Kịch bản sẽ bị xóa vĩnh viễn."
-        confirmLabel="Xóa"
+        title={t('businessGoals.deleteScenarioTitle')}
+        description={t('businessGoals.deleteScenarioDesc')}
+        confirmLabel={t('common.delete')}
         destructive
         isPending={deleteScenario.isPending}
         onConfirm={() => {

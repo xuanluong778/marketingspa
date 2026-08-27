@@ -27,6 +27,7 @@ import {
   type MessageTemplateDetail,
 } from '@/types/automation-messaging';
 import type { FlowInput } from '@/hooks/use-automation';
+import { useAutomationFunnels } from '@/hooks/use-automation';
 
 interface FlowFormDialogProps {
   open: boolean;
@@ -45,6 +46,7 @@ export function FlowFormDialog({
   onSubmit,
   isPending,
 }: FlowFormDialogProps) {
+  const funnels = useAutomationFunnels({ enabled: open });
   const [form, setForm] = useState<FlowInput>({
     name: '',
     triggerType: 'LEAD_CREATED',
@@ -57,6 +59,7 @@ export function FlowFormDialog({
       setForm({
         name: initial?.name ?? '',
         triggerType: initial?.triggerType ?? 'LEAD_CREATED',
+        funnelId: initial?.funnelId ?? initial?.funnel?.id ?? '',
         messageTemplateId: initial?.messageTemplate?.id ?? '',
         channel: (initial?.channel as MessageChannel) ?? undefined,
         delayMinutes: initial?.delayMinutes ?? 0,
@@ -76,6 +79,7 @@ export function FlowFormDialog({
             e.preventDefault();
             onSubmit({
               ...form,
+              funnelId: form.funnelId || undefined,
               messageTemplateId: form.messageTemplateId || undefined,
               channel: form.channel || undefined,
             });
@@ -89,6 +93,30 @@ export function FlowFormDialog({
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
               required
             />
+          </div>
+          <div className="space-y-2">
+            <Label>Funnel *</Label>
+            <Select
+              value={form.funnelId || 'none'}
+              onValueChange={(v) =>
+                setForm((f) => ({ ...f, funnelId: v === 'none' ? '' : v }))
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Chọn funnel" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">— Chọn funnel —</SelectItem>
+                {(funnels.data ?? []).map((fn) => (
+                  <SelectItem key={fn.id} value={fn.id}>
+                    {fn.selectedSlug || fn.prompt.slice(0, 48) || fn.id.slice(0, 8)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Flow chỉ chạy cho lead thuộc funnel này (multi-tenant).
+            </p>
           </div>
           <div className="space-y-2">
             <Label>Trigger *</Label>

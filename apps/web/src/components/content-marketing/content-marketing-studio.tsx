@@ -81,6 +81,7 @@ import {
   emptyAdProductDetails,
   emptyAdServiceDetails,
 } from '@/types/content-marketing';
+import { useT } from '@/i18n/i18n-provider';
 
 function safeScore(n: number | undefined | null): number {
   if (n == null || !Number.isFinite(n) || Number.isNaN(n)) return 0;
@@ -190,6 +191,7 @@ function ContentForm({
   urlAnalyzeResetKey?: number;
   onUrlAnalyzeDirtyChange?: (dirty: boolean) => void;
 }) {
+  const t = useT();
   const kind = form.adPostKind === 'service' ? 'service' : 'product';
   const patchProduct = (patch: Partial<AdProductDetails>) => {
     const next = { ...form.productDetails, ...patch };
@@ -418,7 +420,7 @@ function ContentForm({
             />
           </div>
           <div className="space-y-1.5">
-            <Label>Khách hàng phù hợp</Label>
+            <Label>{t('content.matchingCustomers')}</Label>
             <Textarea
               rows={2}
               className="bg-white"
@@ -516,7 +518,7 @@ function ContentForm({
 
       <div className="grid gap-4 sm:grid-cols-2">
         <PresetOrCustomField
-          label="Khách hàng mục tiêu"
+          label={t('content.targetCustomers')}
           value={form.targetAudience}
           options={TARGET_AUDIENCE_OPTIONS}
           placeholder="VD: Nữ 28–45, văn phòng"
@@ -738,6 +740,7 @@ export function AdStudioTabPanel({
   onHistoryEditApplied?: () => void;
   onHistoryChange?: () => void;
 }) {
+  const t = useT();
   const { data: user } = useCurrentUser();
   const userId = user?.id;
   const { data: aiStatus, isLoading: aiStatusLoading, isError: aiStatusError } =
@@ -1263,7 +1266,7 @@ export function AdStudioTabPanel({
 
   const hasResult = !!content.trim();
 
-  if (!draftLoaded) return <LoadingState message="Đang tải nháp..." />;
+  if (!draftLoaded) return <LoadingState message={t('content.loadingDraft')} />;
 
   return (
     <div className="space-y-6 pb-24">
@@ -1368,7 +1371,7 @@ export function AdStudioTabPanel({
           {!hasResult && !isGeneratingResult && (
             <EmptyState
               className="text-white [&_svg]:text-white"
-              title="Chưa có content"
+              title={t('content.emptyContent')}
               description="Nhập form bên trái và bấm Tạo bài viết để xem kết quả, điểm số và cảnh báo chính sách."
             />
           )}
@@ -1744,8 +1747,8 @@ export function ContentMarketingStudio() {
           onDelete={handleDeleteHistory}
           emptyMessage={
             historyTabFilter === 'ad'
-              ? 'Chưa có bài quảng cáo bán hàng đã lưu'
-              : 'Chưa có bài xây dựng thương hiệu đã lưu'
+              ? t('content.emptySavedSales')
+              : t('content.emptySavedBrand')
           }
         />
       </section>

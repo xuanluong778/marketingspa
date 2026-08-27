@@ -26,6 +26,7 @@ import {
 } from '@/hooks/use-channel-connections';
 import { ApiError } from '@/lib/api-client';
 import { formatDateTime } from '@/lib/format';
+import { useT } from '@/i18n/i18n-provider';
 
 function channelLabel(channel: ChannelConnectionItem['channel']) {
   return channel === 'MESSENGER' ? 'Messenger / Fanpage' : 'Zalo OA';
@@ -51,6 +52,7 @@ function statusLabel(status: ChannelConnectionItem['status']) {
 }
 
 export function ChannelConnectionsPanel() {
+  const t = useT();
   const list = useChannelConnections();
   const sync = useSyncMessagingFromChatbot();
   const test = useTestChannelConnection();
@@ -99,7 +101,7 @@ export function ChannelConnectionsPanel() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="font-semibold">Kết nối kênh nhắn tin</h3>
+          <h3 className="font-semibold">{t('automation.channelTitle')}</h3>
           <p className="text-sm text-muted-foreground">
             Messenger / Zalo OA dùng cho chiến dịch hàng loạt — tái sử dụng kết nối Chatbot / Nội dung
           </p>
@@ -107,7 +109,7 @@ export function ChannelConnectionsPanel() {
         <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={runSync} disabled={sync.isPending || list.isLoading}>
             <RefreshCw className={`mr-1 h-3.5 w-3.5 ${sync.isPending ? 'animate-spin' : ''}`} />
-            {sync.isPending ? 'Đang đồng bộ…' : 'Đồng bộ từ Chatbot'}
+            {sync.isPending ? t('automation.syncing') : t('automation.syncFromChatbot')}
           </Button>
           <Button size="sm" variant="outline" onClick={() => setMessengerOpen(true)}>
             + Messenger
@@ -129,17 +131,17 @@ export function ChannelConnectionsPanel() {
         </div>
       )}
 
-      {list.isLoading && <LoadingState message="Đang tải kết nối kênh…" />}
+      {list.isLoading && <LoadingState message={t('automation.loadingChannels')} />}
       {list.isError && (
         <ErrorState
-          message="Không tải được danh sách kết nối kênh"
+          message={t('automation.loadChannelsFailed')}
           onRetry={() => list.refetch()}
         />
       )}
       {showEmpty && (
         <EmptyState
-          title="Chưa có kết nối kênh"
-          description="Bấm «Đồng bộ từ Chatbot» để lấy Fanpage/Zalo đã kết nối, hoặc thêm thủ công."
+          title={t('automation.emptyChannels')}
+          description={t('automation.emptyChannelsHint')}
         />
       )}
 
@@ -198,7 +200,7 @@ export function ChannelConnectionsPanel() {
                   variant="ghost"
                   className="text-destructive"
                   onClick={() => {
-                    if (!window.confirm('Ngắt kết nối kênh này? Token sẽ bị gỡ khỏi messaging.')) return;
+                    if (!window.confirm(t('automation.disconnectConfirm'))) return;
                     setActionError('');
                     remove.mutate(c.id, { onError: showErr });
                   }}
@@ -215,7 +217,7 @@ export function ChannelConnectionsPanel() {
       <Dialog open={messengerOpen} onOpenChange={setMessengerOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Kết nối Messenger Page</DialogTitle>
+            <DialogTitle>{t('automation.connectMessenger')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1">
@@ -270,7 +272,7 @@ export function ChannelConnectionsPanel() {
       <Dialog open={zaloOpen} onOpenChange={setZaloOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Kết nối Zalo OA</DialogTitle>
+            <DialogTitle>{t('automation.connectZaloOa')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1">

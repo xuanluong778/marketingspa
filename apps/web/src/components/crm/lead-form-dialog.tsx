@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/select';
 import type { CreateLeadInput } from '@/types/crm';
 import type { Lead } from '@/types/api';
+import { useT } from '@/i18n/i18n-provider';
 
 interface LeadFormDialogProps {
   open: boolean;
@@ -43,6 +44,7 @@ export function LeadFormDialog({
   onSubmit,
   isPending,
 }: LeadFormDialogProps) {
+  const t = useT();
   const [form, setForm] = useState<CreateLeadInput>(() => ({
     name: initial?.name ?? '',
     phone: initial?.phone ?? '',
@@ -53,6 +55,20 @@ export function LeadFormDialog({
     assignedToId: initial?.assignedTo?.id ?? '',
     estimatedValue: initial?.estimatedValue ?? undefined,
   }));
+
+  useEffect(() => {
+    if (!open) return;
+    setForm({
+      name: initial?.name ?? '',
+      phone: initial?.phone ?? '',
+      email: initial?.email ?? '',
+      note: initial?.note ?? '',
+      leadSourceId: initial?.leadSource?.id ?? '',
+      branchId: initial?.branch?.id ?? '',
+      assignedToId: initial?.assignedTo?.id ?? '',
+      estimatedValue: initial?.estimatedValue ?? undefined,
+    });
+  }, [open, initial]);
 
   function update(field: keyof CreateLeadInput, value: string | number | undefined) {
     setForm((f) => ({ ...f, [field]: value }));
@@ -74,11 +90,11 @@ export function LeadFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{initial ? 'Sửa lead' : 'Thêm lead mới'}</DialogTitle>
+          <DialogTitle>{initial ? t('crm.editLead') : t('crm.addLead')}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="lead-name">Họ tên *</Label>
+            <Label htmlFor="lead-name">{t('crm.fullNameRequired')}</Label>
             <Input
               id="lead-name"
               value={form.name}
@@ -88,11 +104,11 @@ export function LeadFormDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label>SĐT</Label>
+              <Label>{t('crm.phoneShort')}</Label>
               <Input value={form.phone ?? ''} onChange={(e) => update('phone', e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label>Email</Label>
+              <Label>{t('common.email')}</Label>
               <Input
                 type="email"
                 value={form.email ?? ''}
@@ -102,7 +118,7 @@ export function LeadFormDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label>Nguồn</Label>
+              <Label>{t('crm.source')}</Label>
               <Select
                 value={form.leadSourceId || 'none'}
                 onValueChange={(v) => update('leadSourceId', v === 'none' ? '' : v)}
@@ -121,7 +137,7 @@ export function LeadFormDialog({
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Chi nhánh</Label>
+              <Label>{t('crm.branch')}</Label>
               <Select
                 value={form.branchId || 'none'}
                 onValueChange={(v) => update('branchId', v === 'none' ? '' : v)}
@@ -141,16 +157,16 @@ export function LeadFormDialog({
             </div>
           </div>
           <div className="space-y-2">
-            <Label>Phụ trách</Label>
+            <Label>{t('crm.assignee')}</Label>
             <Select
               value={form.assignedToId || 'none'}
               onValueChange={(v) => update('assignedToId', v === 'none' ? '' : v)}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Chọn nhân viên" />
+                <SelectValue placeholder={t('crm.selectEmployee')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="none">Chưa gán</SelectItem>
+                <SelectItem value="none">{t('crm.unassigned')}</SelectItem>
                 {employees.map((e) => (
                   <SelectItem key={e.id} value={e.id}>
                     {e.name}
@@ -160,7 +176,7 @@ export function LeadFormDialog({
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>Ghi chú</Label>
+            <Label>{t('crm.note')}</Label>
             <Textarea
               value={form.note ?? ''}
               onChange={(e) => update('note', e.target.value)}
@@ -169,10 +185,10 @@ export function LeadFormDialog({
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button type="submit" disabled={isPending}>
-              {isPending ? 'Đang lưu...' : 'Lưu'}
+              {isPending ? t('common.saving') : t('common.save')}
             </Button>
           </DialogFooter>
         </form>

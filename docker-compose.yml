@@ -23,7 +23,14 @@ services:
     image: redis:7-alpine
     container_name: marketingspa-redis
     restart: unless-stopped
-    command: redis-server --appendonly yes
+    command:
+      - redis-server
+      - --appendonly
+      - 'yes'
+      - --maxmemory
+      - 512mb
+      - --maxmemory-policy
+      - noeviction
     volumes:
       - redis_data:/data
     # Không bind port ra host — tránh xung đột với Redis hệ thống.

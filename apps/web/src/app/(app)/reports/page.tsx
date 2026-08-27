@@ -5,8 +5,10 @@ import { DataTable, StatusBadge } from '@/components/shared/data-table';
 import { LoadingState, EmptyState, ErrorState } from '@/components/shared/page-state';
 import { useMarketingReports } from '@/hooks/use-queries';
 import { formatCurrency } from '@/lib/format';
+import { useT } from '@/i18n/i18n-provider';
 
 export default function ReportsPage() {
+  const t = useT();
   const { data, isLoading, isError, refetch } = useMarketingReports();
 
   if (isLoading) return <LoadingState />;
@@ -17,17 +19,17 @@ export default function ReportsPage() {
   return (
     <div>
       <PageHeader
-        title="Báo cáo"
+        title={t('reports.title')}
         description={`Marketing ${data?.from ? new Date(data.from).toLocaleDateString('vi-VN') : ''} — ${data?.to ? new Date(data.to).toLocaleDateString('vi-VN') : ''}`}
       />
       {campaigns.length === 0 ? (
-        <EmptyState title="Chưa có dữ liệu báo cáo" />
+        <EmptyState title={t('reports.emptyCampaigns')} />
       ) : (
         <DataTable
           data={campaigns}
           isLoading={false}
           isError={false}
-          emptyTitle="Chưa có dữ liệu"
+          emptyTitle={t('reports.empty')}
           getRowKey={(r) => r.campaignId}
           columns={[
             { key: 'name', header: 'Chiến dịch', cell: (r) => r.campaignName },

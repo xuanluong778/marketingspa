@@ -1,9 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState, type ElementType } from 'react';
+import { useEffect, useMemo, useRef, useState, type ElementType, type UIEvent } from 'react';
 import {
   Bot,
-  Copy,
   Globe,
   MessageSquare,
   Plus,
@@ -11,7 +10,6 @@ import {
   Users,
   Zap,
   Facebook,
-  Code2,
 } from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { LoadingState, EmptyState, ErrorState } from '@/components/shared/page-state';
@@ -20,6 +18,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Select,
   SelectContent,
@@ -27,12 +26,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useT } from '@/i18n/i18n-provider';
 import {
   useChatbotOverview,
   useChatbotBots,
   useChatbotKnowledge,
   useChatbotChannels,
   useChatbotInbox,
+  useChatbotInboxChannelOptions,
+  useChatbotUnreadSummary,
   useChatbotLeads,
   useChatbotSettings,
   useChatbotOpenAiStatus,
@@ -51,15 +53,22 @@ import {
   useDisconnectFacebookPage,
   useSyncChatbotFacebookFromAutoPost,
   useChatbotTakeover,
+  useChatbotInboxReply,
   useChatbotConversation,
+  useMarkChatbotConversationRead,
 } from '@/hooks/use-chatbot-cskh';
 import { CHANNEL_LABELS, SOURCE_TYPE_LABELS, type ChatbotBot } from '@/types/chatbot-cskh';
 import { formatDateTime } from '@/lib/format';
 import { copyToClipboard } from '@/lib/copy-to-clipboard';
+import Link from 'next/link';
 import { BotFormPanel } from '@/components/chatbot-cskh/bot-form-panel';
 import { ChatbotEmbedList } from '@/components/chatbot-cskh/chatbot-embed-list';
+import { ChatbotVisitorAvatar } from '@/components/chatbot-cskh/chatbot-visitor-avatar';
+import {
+  ChatbotInboxFilters,
+  type InboxChannelFilter,
+} from '@/components/chatbot-cskh/chatbot-inbox-filters';
 import { useAutoPostStatus } from '@/hooks/use-auto-post';
-import Link from 'next/link';
 
 function StatCard({
   label,
@@ -81,13 +90,51 @@ function StatCard({
   );
 }
 
-function copyText(text: string) {
-  void copyToClipboard(text);
+function InboxListSkeleton({ count = 6 }: { count?: number }) {
+  return (
+    <div className="space-y-2">
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="rounded-lg border p-3">
+          <div className="flex items-start gap-2">
+            <Skeleton className="h-9 w-9 shrink-0 rounded-full" />
+            <div className="min-w-0 flex-1 space-y-2">
+              <Skeleton className="h-4 w-2/3 max-w-[180px]" />
+              <Skeleton className="h-3 w-1/2 max-w-[140px]" />
+              <Skeleton className="h-3 w-full" />
+            </div>
+            <Skeleton className="h-7 w-7 shrink-0 rounded-full" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
+function ConversationDetailSkeleton() {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 border-b pb-2">
+        <Skeleton className="h-8 w-8 rounded-full" />
+        <div className="space-y-2">
+          <Skeleton className="h-4 w-32" />
+          <Skeleton className="h-3 w-48" />
+        </div>
+      </div>
+      {Array.from({ length: 5 }).map((_, i) => (
+        <div key={i} className={`flex ${i % 2 === 0 ? 'justify-end' : 'justify-start'}`}>
+          <Skeleton className={`h-10 rounded-lg ${i % 2 === 0 ? 'w-2/3' : 'w-1/2'}`} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+
 export default function ChatbotCskhPage() {
+  const t = useT();
   const [selectedBotId, setSelectedBotId] = useState<string | null>(null);
   const [inboxId, setInboxId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState('bots');
   const [botForm, setBotForm] = useState<Partial<ChatbotBot> | null>(null);
   const [kbForm, setKbForm] = useState({ title: '', content: '', sourceType: 'FAQ' });
   const [fbForm, setFbForm] = useState({ pageName: '', pageId: '', pageAccessToken: '' });
@@ -98,6 +145,10 @@ export default function ChatbotCskhPage() {
     monthlyLimit?: number;
   } | null>(null);
   const [testOpenAi, setTestOpenAi] = useState(false);
+  const [inboxChannel, setInboxChannel] = useState<InboxChannelFilter>('all');
+  const [inboxChannelId, setInboxChannelId] = useState<string | null>(null);
+  const [replyText, setReplyText] = useState('');
+  const inboxScrollRef = useRef<HTMLDivElement | null>(null);
 
   const overview = useChatbotOverview();
   const bots = useChatbotBots();
@@ -105,8 +156,18 @@ export default function ChatbotCskhPage() {
   const { data: autoPostStatus } = useAutoPostStatus();
   const canPastePageToken = Boolean(autoPostStatus?.canUseServerEnv);
   const channels = useChatbotChannels();
-  const inbox = useChatbotInbox();
+  const inbox = useChatbotInbox({
+    enabled: activeTab === 'inbox',
+    botId: selectedBotId,
+    channel: inboxChannel,
+    channelId: inboxChannelId,
+  });
+  const channelOptions = useChatbotInboxChannelOptions(selectedBotId);
+  const unreadSummary = useChatbotUnreadSummary(15, {
+    botId: activeTab === 'inbox' ? selectedBotId : null,
+  });
   const conversation = useChatbotConversation(inboxId);
+  const markRead = useMarkChatbotConversationRead();
   const leads = useChatbotLeads();
   const settings = useChatbotSettings();
   const openAiStatus = useChatbotOpenAiStatus(testOpenAi);
@@ -126,12 +187,30 @@ export default function ChatbotCskhPage() {
   const disconnectFb = useDisconnectFacebookPage();
   const syncFbFromAutoPost = useSyncChatbotFacebookFromAutoPost();
   const takeover = useChatbotTakeover();
+  const inboxReply = useChatbotInboxReply();
+
+  const inboxItems = useMemo(
+    () =>
+      inbox.data?.pages.flatMap((p) => {
+        if (Array.isArray(p?.items)) return p.items;
+        if (Array.isArray(p)) return p;
+        return [];
+      }) ?? [],
+    [inbox.data],
+  );
 
   useEffect(() => {
     if (!selectedBotId && bots.data?.[0]?.id) {
       setSelectedBotId(bots.data[0].id);
     }
   }, [bots.data, selectedBotId]);
+
+  useEffect(() => {
+    if (!inboxId) return;
+    markRead.mutate(inboxId);
+    setReplyText('');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inboxId]);
 
   const activeBot = useMemo(
     () => bots.data?.find((b) => b.id === selectedBotId) ?? bots.data?.[0],
@@ -140,11 +219,19 @@ export default function ChatbotCskhPage() {
 
   const botId = activeBot?.id ?? null;
 
+  const onInboxScroll = (e: UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight > 80) return;
+    if (inbox.hasNextPage && !inbox.isFetchingNextPage) {
+      void inbox.fetchNextPage();
+    }
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Chatbot CSKH"
-        description="Tạo chatbot tư vấn khách, quản lý kiến thức và gắn lên website hoặc Facebook"
+        title={t('chatbot.title')}
+        description={t('chatbot.extendedDescription')}
       />
 
       {overview.isLoading && <LoadingState />}
@@ -152,30 +239,30 @@ export default function ChatbotCskhPage() {
 
       {overview.data && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="Chatbot đang chạy" value={overview.data.botsActive} icon={Bot} />
+          <StatCard label={t('chatbot.stats.activeBots')} value={overview.data.botsActive} icon={Bot} />
           <StatCard
-            label="Hội thoại"
+            label={t('chatbot.stats.conversations')}
             value={overview.data.conversationsTotal}
             icon={MessageSquare}
           />
-          <StatCard label="Khách tiềm năng hôm nay" value={overview.data.leadsToday} icon={Users} />
+          <StatCard label={t('chatbot.stats.leadsToday')} value={overview.data.leadsToday} icon={Users} />
           <StatCard
-            label="Câu trả lời AI còn lại"
+            label={t('chatbot.stats.aiRepliesRemaining')}
             value={`${overview.data.repliesRemaining}/${overview.data.monthlyReplyLimit}`}
             icon={Zap}
           />
         </div>
       )}
 
-      <Tabs defaultValue="bots">
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="flex flex-wrap h-auto gap-1">
-          <TabsTrigger value="bots">Chatbot</TabsTrigger>
-          <TabsTrigger value="knowledge">Kiến thức</TabsTrigger>
-          <TabsTrigger value="channels">Kênh chat</TabsTrigger>
-          <TabsTrigger value="embed">Gắn lên website</TabsTrigger>
-          <TabsTrigger value="inbox">Hộp thư</TabsTrigger>
-          <TabsTrigger value="leads">Khách tiềm năng</TabsTrigger>
-          <TabsTrigger value="settings">Cài đặt AI</TabsTrigger>
+          <TabsTrigger value="bots">{t('chatbot.tabs.bots')}</TabsTrigger>
+          <TabsTrigger value="knowledge">{t('chatbot.tabs.knowledge')}</TabsTrigger>
+          <TabsTrigger value="channels">{t('chatbot.tabs.channels')}</TabsTrigger>
+          <TabsTrigger value="embed">{t('chatbot.tabs.embed')}</TabsTrigger>
+          <TabsTrigger value="inbox">{t('chatbot.tabs.inbox')}</TabsTrigger>
+          <TabsTrigger value="leads">{t('chatbot.tabs.leads')}</TabsTrigger>
+          <TabsTrigger value="settings">{t('chatbot.tabs.settings')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="bots" className="space-y-4">
@@ -464,6 +551,16 @@ export default function ChatbotCskhPage() {
                   <li className="break-all">
                     Callback URL: {fbWebhook.data.webhookUrl || '—'}
                   </li>
+                  <li>
+                    Avatar khách Messenger:{' '}
+                    {fbWebhook.data.visitorAvatarAccess === 'ok'
+                      ? 'Meta cho phép lấy ảnh thật (profile_pic)'
+                      : fbWebhook.data.visitorAvatarAccess === 'blocked'
+                        ? 'Meta chặn ảnh — cần App Review «Business Asset User Profile Access»'
+                        : fbWebhook.data.visitorAvatarAccess === 'no_data'
+                          ? 'chưa có hội thoại để kiểm tra'
+                          : 'chưa kiểm tra'}
+                  </li>
                 </ul>
                 <Button
                   size="sm"
@@ -562,48 +659,95 @@ export default function ChatbotCskhPage() {
         </TabsContent>
 
         <TabsContent value="embed" className="space-y-4">
-          <div className="flex gap-2 items-center">
-            <Label>Chatbot:</Label>
-            <Select value={botId ?? ''} onValueChange={setSelectedBotId}>
-              <SelectTrigger className="w-[220px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {bots.data?.map((b) => (
-                  <SelectItem key={b.id} value={b.id}>
-                    {b.botName}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {embed.data && (
-            <div className="rounded-lg border p-4 space-y-3">
-              <div className="flex items-center gap-2">
-                <Code2 className="h-4 w-4" />
-                <h3 className="font-semibold">Mã nhúng Website</h3>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Dán đoạn mã sau trước thẻ <code>&lt;/body&gt;</code> trên website. Chatbot chỉ hoạt
-                động khi bot ở trạng thái <strong>Đang chạy</strong>.
-              </p>
-              <pre className="rounded bg-muted p-3 text-xs overflow-x-auto whitespace-pre-wrap">
-                {embed.data.embedCode}
-              </pre>
-              <Button size="sm" variant="outline" onClick={() => copyText(embed.data!.embedCode)}>
-                <Copy className="h-4 w-4 mr-2" /> Sao chép mã
-              </Button>
-              <p className="text-xs text-muted-foreground">
-                Sau khi dán mã, ô chat sẽ hiện trên website của bạn.
-              </p>
-            </div>
-          )}
+          <ChatbotEmbedList
+            bots={bots.data}
+            isLoading={bots.isLoading}
+            selectedBotId={botId}
+            embedCode={embed.data?.embedCode}
+            onSelectBot={setSelectedBotId}
+            onDelete={(id) => deleteBot.mutate(id)}
+            onUpdateStatus={(id, status) => updateBot.mutate({ id, status })}
+            statusChangingId={updateBot.isPending ? (updateBot.variables?.id ?? null) : null}
+            onEdit={(bot) => {
+              setSelectedBotId(bot.id);
+              setBotForm(bot);
+            }}
+          />
         </TabsContent>
 
-        <TabsContent value="inbox" className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-2 max-h-[480px] overflow-y-auto">
-            {inbox.data?.map((c) => (
+        <TabsContent value="inbox" className="space-y-4">
+          <ChatbotInboxFilters
+            bots={bots.data || []}
+            botId={selectedBotId}
+            onBotIdChange={(id) => {
+              setSelectedBotId(id);
+              setInboxId(null);
+            }}
+            channel={inboxChannel}
+            onChannelChange={(ch) => {
+              setInboxChannel(ch);
+              setInboxId(null);
+            }}
+            channelId={inboxChannelId}
+            onChannelIdChange={(id) => {
+              setInboxChannelId(id);
+              setInboxId(null);
+            }}
+            fanpages={channelOptions.data?.fanpages}
+            websites={channelOptions.data?.websites}
+            oas={channelOptions.data?.oas}
+            unreadByBot={unreadSummary.data?.unreadByBot}
+          />
+          {!selectedBotId ? (
+            <EmptyState
+              title="Chọn Project / Bot"
+              description="Hộp thư được tách theo từng Project — chọn bot để xem hội thoại Messenger, Zalo OA và Website của Project đó."
+            />
+          ) : (
+          <div className="grid gap-4 md:grid-cols-2">
+          <div
+            ref={inboxScrollRef}
+            onScroll={onInboxScroll}
+            className="space-y-2 max-h-[480px] overflow-y-auto"
+          >
+            {inbox.isLoading && <InboxListSkeleton />}
+            {inbox.isError && <ErrorState onRetry={() => void inbox.refetch()} />}
+            {!inbox.isLoading && !inbox.isError && inboxItems.length === 0 && (
+              <EmptyState
+                title={t('inbox.emptyConversations')}
+                description={t('inbox.emptyConversationsHint')}
+              />
+            )}
+            {inboxItems.map((c) => {
+              const isZalo = c.channel === 'zalo';
+              const isFb = c.channel === 'facebook';
+              const displayName = isZalo
+                ? c.customer?.name &&
+                  !/^Khách Zalo\b/i.test(c.customer.name) &&
+                  !/^Khách Digi\b/i.test(c.customer.name) &&
+                  !/^Zalo\s*[….]/i.test(c.customer.name)
+                  ? c.customer.name
+                  : c.visitorName &&
+                      !/^Khách Zalo\b/i.test(c.visitorName) &&
+                      !/^Khách Digi\b/i.test(c.visitorName) &&
+                      !/^Zalo\s*[….]/i.test(c.visitorName)
+                    ? c.visitorName
+                    : `Khách Zalo • ${(c.customer?.zaloUid || c.externalUserId || '').slice(-6) || '????'}`
+                : c.customer?.name ||
+                  c.visitorName ||
+                  (c.customer?.psid || c.externalUserId
+                    ? `PSID …${(c.customer?.psid || c.externalUserId || '').slice(-4)}`
+                    : null) ||
+                  c.visitorPhone ||
+                  c.sessionId.slice(0, 8);
+              const channelLine = isZalo
+                ? `Zalo · ${c.zaloOa?.oaName || c.channelRef || 'OA'}`
+                : isFb
+                  ? `${c.fanpage?.pageName || 'Messenger'}${c.fanpage?.pageId ? ` · ID ${c.fanpage.pageId}` : ''}`
+                  : c.channel === 'website'
+                    ? `Website · ${c.channelRef || 'widget'}`
+                    : c.channel;
+              return (
               <button
                 key={c.id}
                 type="button"
@@ -611,30 +755,30 @@ export default function ChatbotCskhPage() {
                 className={`w-full text-left rounded-lg border p-3 ${inboxId === c.id ? 'border-primary' : ''}`}
               >
                 <div className="flex items-start gap-2">
-                  {c.customer?.avatarUrl || c.visitorAvatarUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={c.customer?.avatarUrl || c.visitorAvatarUrl || ''}
-                      alt=""
-                      className="h-9 w-9 rounded-full object-cover shrink-0"
-                    />
-                  ) : (
-                    <div className="h-9 w-9 rounded-full bg-muted shrink-0" />
-                  )}
+                  <ChatbotVisitorAvatar
+                    name={displayName}
+                    src={c.customer?.avatarUrl || c.visitorAvatarUrl}
+                    size={36}
+                  />
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium truncate">
-                      {c.customer?.name ||
-                        c.visitorName ||
-                        (c.customer?.psid || c.externalUserId
-                          ? `PSID …${(c.customer?.psid || c.externalUserId || '').slice(-4)}`
-                          : null) ||
-                        c.visitorPhone ||
-                        c.sessionId.slice(0, 8)}
-                    </p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="font-medium truncate">{displayName}</p>
+                      {isZalo ? (
+                        <span className="shrink-0 rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-800">
+                          Zalo
+                        </span>
+                      ) : isFb ? (
+                        <span className="shrink-0 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-medium text-blue-800">
+                          Messenger
+                        </span>
+                      ) : c.channel === 'website' ? (
+                        <span className="shrink-0 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-medium text-emerald-800">
+                          Website
+                        </span>
+                      ) : null}
+                    </div>
                     <p className="text-xs text-muted-foreground truncate">
-                      {c.fanpage?.pageName ||
-                        (c.channel === 'facebook' ? 'Messenger' : c.channel)}
-                      {c.fanpage?.pageId ? ` · ID ${c.fanpage.pageId}` : ''}
+                      {channelLine}
                       {' · '}
                       {formatDateTime(c.updatedAt)}
                     </p>
@@ -645,42 +789,74 @@ export default function ChatbotCskhPage() {
                       {c.messages?.[0]?.message}
                     </p>
                   </div>
-                  {c.fanpage?.avatarUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={c.fanpage.avatarUrl}
-                      alt=""
-                      className="h-7 w-7 rounded-full object-cover shrink-0"
-                      title={c.fanpage.pageName || c.fanpage.pageId || 'Fanpage'}
-                    />
-                  ) : null}
+                  <ChatbotVisitorAvatar
+                    name={
+                      isZalo
+                        ? c.zaloOa?.oaName || 'Zalo OA'
+                        : c.fanpage?.pageName || 'Fanpage'
+                    }
+                    src={isZalo ? c.zaloOa?.avatarUrl : c.fanpage?.avatarUrl}
+                    size={28}
+                    title={
+                      isZalo
+                        ? c.zaloOa?.oaName || c.zaloOa?.accountRef || 'Zalo OA'
+                        : c.fanpage?.pageName || c.fanpage?.pageId || 'Fanpage'
+                    }
+                  />
                 </div>
               </button>
-            ))}
+              );
+            })}
+            {inbox.isFetchingNextPage && <InboxListSkeleton count={2} />}
           </div>
-          <div className="rounded-lg border p-4 min-h-[320px]">
+          <div className="rounded-lg border p-4 min-h-[320px] flex flex-col">
             {!inboxId && (
               <p className="text-muted-foreground text-sm">Chọn hội thoại để xem chi tiết</p>
+            )}
+            {inboxId && conversation.isLoading && <ConversationDetailSkeleton />}
+            {inboxId && conversation.isError && (
+              <ErrorState onRetry={() => void conversation.refetch()} />
             )}
             {inboxId && conversation.data && (
               <div className="mb-3 space-y-2 border-b pb-2">
                 <div className="flex items-center gap-2">
-                  {conversation.data.customer?.avatarUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={conversation.data.customer.avatarUrl}
-                      alt=""
-                      className="h-8 w-8 rounded-full object-cover"
-                    />
-                  ) : null}
+                  <ChatbotVisitorAvatar
+                    name={
+                      conversation.data.customer?.name ||
+                      conversation.data.visitorName ||
+                      'Khách'
+                    }
+                    src={
+                      conversation.data.customer?.avatarUrl ||
+                      conversation.data.visitorAvatarUrl
+                    }
+                    size={32}
+                  />
                   <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">
-                      {conversation.data.customer?.name || conversation.data.visitorName || 'Khách'}
-                    </p>
+                    <div className="flex items-center gap-1.5">
+                      <p className="text-sm font-medium truncate">
+                        {conversation.data.customer?.name ||
+                          conversation.data.visitorName ||
+                          'Khách'}
+                      </p>
+                      {conversation.data.channel === 'zalo' ? (
+                        <span className="shrink-0 rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-800">
+                          Zalo
+                        </span>
+                      ) : null}
+                    </div>
                     <p className="text-[11px] text-muted-foreground truncate">
-                      {conversation.data.customer?.psid
-                        ? `PSID …${conversation.data.customer.psid.slice(-6)}`
-                        : null}
+                      {conversation.data.channel === 'zalo'
+                        ? `UID ${(conversation.data.customer?.zaloUid || conversation.data.externalUserId || '').slice(0, 12)}…`
+                        : conversation.data.customer?.psid
+                          ? `PSID …${conversation.data.customer.psid.slice(-6)}`
+                          : null}
+                      {conversation.data.zaloOa?.oaName
+                        ? ` · OA ${conversation.data.zaloOa.oaName}`
+                        : ''}
+                      {conversation.data.zaloOa?.accountRef
+                        ? ` (${conversation.data.zaloOa.accountRef})`
+                        : ''}
                       {conversation.data.fanpage?.pageName
                         ? ` · Fanpage ${conversation.data.fanpage.pageName}`
                         : ''}
@@ -718,52 +894,135 @@ export default function ChatbotCskhPage() {
                 </div>
               </div>
             )}
+            <div className="flex-1 overflow-y-auto max-h-[360px]">
             {conversation.data?.messages?.map((m) => {
               const inbound = m.direction === 'INBOUND' || m.role === 'user';
+              const failed = m.status === 'FAILED';
               const outbound =
                 m.direction === 'OUTBOUND' || m.role === 'assistant' || m.role === 'system';
+              const isZaloThread = conversation.data?.channel === 'zalo';
+              const label =
+                failed || m.senderType === 'SYSTEM'
+                  ? 'Hệ thống'
+                  : m.senderType === 'STAFF'
+                    ? 'Nhân viên'
+                    : m.senderType === 'BOT' || m.role === 'assistant'
+                      ? isZaloThread
+                        ? 'Bot / OA'
+                        : 'Bot / Fanpage'
+                      : m.senderType === 'CUSTOMER' || m.role === 'user'
+                        ? 'Khách'
+                        : m.senderType || m.role;
+              const statusLabel = failed
+                ? isZaloThread
+                  ? 'Chưa gửi Zalo'
+                  : 'Chưa gửi Messenger'
+                : m.status === 'SENT'
+                  ? isZaloThread
+                    ? 'Đã gửi Zalo'
+                    : 'Đã gửi Messenger'
+                  : m.status === 'DELIVERED'
+                    ? 'Đã nhận'
+                    : m.status === 'SEEN'
+                      ? 'Đã xem'
+                      : m.status;
               return (
                 <div
                   key={m.id}
                   className={`mb-2 text-sm ${inbound ? 'text-right' : ''}`}
                 >
                   <p className="mb-0.5 text-[10px] text-muted-foreground">
-                    {m.senderType === 'BOT' || m.role === 'assistant'
-                      ? 'Bot / Fanpage'
-                      : m.senderType === 'CUSTOMER' || m.role === 'user'
-                        ? 'Khách'
-                        : m.senderType || m.role}
+                    {label}
                     {m.direction ? ` · ${m.direction}` : ''}
                   </p>
                   <span
                     className={`inline-block rounded-lg px-3 py-2 ${
-                      inbound
-                        ? 'bg-primary text-primary-foreground'
-                        : outbound
-                          ? 'bg-muted'
-                          : 'bg-muted'
+                      failed
+                        ? 'border border-destructive/40 bg-destructive/10 text-destructive'
+                        : inbound
+                          ? 'bg-primary text-primary-foreground'
+                          : outbound
+                            ? 'bg-muted'
+                            : 'bg-muted'
                     }`}
                   >
                     {m.message}
                   </span>
                   {m.status ? (
-                    <p className="mt-0.5 text-[10px] text-muted-foreground">
-                      {m.status}
+                    <p
+                      className={`mt-0.5 text-[10px] ${
+                        failed ? 'font-medium text-destructive' : 'text-muted-foreground'
+                      }`}
+                    >
+                      {statusLabel}
                       {m.errorCode === 'MESSENGER_STANDARD_ACCESS'
                         ? ' · Chưa Advanced Access (chỉ Admin/Dev/Tester)'
                         : m.errorCode === 'MISSING_SCOPE'
                           ? ' · Thiếu scope — reconnect OAuth'
                           : m.errorCode === 'TOKEN_EXPIRED'
                             ? ' · Token hết hạn'
-                            : m.errorCode
+                            : m.errorCode && failed
                               ? ` · ${m.errorCode}`
-                              : ''}
+                              : m.errorCode && m.status !== 'SENT'
+                                ? ` · ${m.errorCode}`
+                                : ''}
                     </p>
                   ) : null}
                 </div>
               );
             })}
+            </div>
+            {inboxId && conversation.data ? (
+              <div className="mt-3 border-t pt-3 space-y-2">
+                <Textarea
+                  rows={3}
+                  placeholder="Nhập tin nhắn..."
+                  value={replyText}
+                  onChange={(e) => setReplyText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      const text = replyText.trim();
+                      if (!text || !inboxId || inboxReply.isPending) return;
+                      inboxReply.mutate(
+                        { id: inboxId, text },
+                        { onSuccess: () => setReplyText('') },
+                      );
+                    }
+                  }}
+                  disabled={inboxReply.isPending}
+                />
+                <div className="flex justify-between gap-2">
+                  <p className="text-[11px] text-muted-foreground">
+                    Enter gửi · Shift+Enter xuống dòng
+                  </p>
+                  <Button
+                    size="sm"
+                    disabled={!replyText.trim() || inboxReply.isPending}
+                    onClick={() => {
+                      const text = replyText.trim();
+                      if (!text || !inboxId) return;
+                      inboxReply.mutate(
+                        { id: inboxId, text },
+                        {
+                          onSuccess: () => setReplyText(''),
+                        },
+                      );
+                    }}
+                  >
+                    {inboxReply.isPending ? 'Đang gửi…' : 'Gửi'}
+                  </Button>
+                </div>
+                {inboxReply.isError ? (
+                  <p className="text-xs text-destructive">
+                    {(inboxReply.error as Error)?.message || 'Gửi thất bại'}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
           </div>
+          </div>
+          )}
         </TabsContent>
 
         <TabsContent value="leads" className="space-y-2">
@@ -888,21 +1147,6 @@ export default function ChatbotCskhPage() {
           )}
         </TabsContent>
       </Tabs>
-
-      <ChatbotEmbedList
-        bots={bots.data}
-        isLoading={bots.isLoading}
-        selectedBotId={botId}
-        embedCode={embed.data?.embedCode}
-        onSelectBot={setSelectedBotId}
-        onDelete={(id) => deleteBot.mutate(id)}
-        onUpdateStatus={(id, status) => updateBot.mutate({ id, status })}
-        statusChangingId={updateBot.isPending ? (updateBot.variables?.id ?? null) : null}
-        onEdit={(bot) => {
-          setSelectedBotId(bot.id);
-          setBotForm(bot);
-        }}
-      />
     </div>
   );
 }

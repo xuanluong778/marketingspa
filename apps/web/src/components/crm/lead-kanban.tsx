@@ -17,6 +17,7 @@ import { PIPELINE_COLUMNS, type LeadPipelineStatus } from '@/types/crm';
 import type { Lead } from '@/types/api';
 import { formatDateTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { useT } from '@/i18n/i18n-provider';
 
 export type KanbanColumnState = {
   items: Lead[];
@@ -57,6 +58,7 @@ export function LeadKanban({
   onEdit,
   onOpenLead,
 }: LeadKanbanProps) {
+  const t = useT();
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<LeadPipelineStatus | null>(null);
 
@@ -114,7 +116,9 @@ export function LeadKanban({
                 <ScrollArea className="h-[420px] pr-2">
                   <div className="space-y-2">
                     {items.length === 0 && (
-                      <p className="text-xs text-muted-foreground text-center py-8">Trống</p>
+                      <p className="text-xs text-muted-foreground text-center py-8">
+                        {t('crm.kanbanEmpty')}
+                      </p>
                     )}
                     {items.map((lead) => (
                       <div
@@ -152,21 +156,33 @@ export function LeadKanban({
                               {lead.assignedTo && (
                                 <p className="text-xs mt-1">→ {lead.assignedTo.name}</p>
                               )}
+                              {(lead.score != null || lead.qualification) && (
+                                <p className="text-xs mt-1 text-muted-foreground">
+                                  {t('crm.score')} {lead.score ?? 0}
+                                  {lead.qualification ? ` · ${lead.qualification}` : ''}
+                                </p>
+                              )}
                             </div>
                           </div>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-10 w-10 shrink-0 sm:h-8 sm:w-8"
+                              >
                                 <MoreHorizontal className="h-4 w-4" />
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => onEdit?.(lead)}>Sửa</DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => onEdit?.(lead)}>
+                                {t('common.edit')}
+                              </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => onAssign?.(lead)}>
-                                Gán nhân viên
+                                {t('crm.assignEmployee')}
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => onCreateAppointment?.(lead)}>
-                                Tạo lịch hẹn
+                                {t('crm.createAppointment')}
                               </DropdownMenuItem>
                               {PIPELINE_COLUMNS.filter((c) => c.status !== lead.pipelineStatus).map(
                                 (c) => (

@@ -20,8 +20,11 @@ import {
   useLeadSources,
 } from '@/hooks/use-crm';
 import { formatCurrency, formatDateTime } from '@/lib/format';
+import { customerSourceDisplay } from '@/lib/customer-source-label';
+import { useT } from '@/i18n/i18n-provider';
 
 export default function CustomerDetailPage() {
+  const t = useT();
   const params = useParams();
   const id = params.id as string;
   const { data, isLoading, isError, refetch } = useCustomerHistory(id);
@@ -35,7 +38,7 @@ export default function CustomerDetailPage() {
 
   if (isLoading) return <LoadingState />;
   if (isError) return <ErrorState onRetry={refetch} />;
-  if (!data) return <EmptyState title="Không tìm thấy khách hàng" />;
+  if (!data) return <EmptyState title={t('customers.notFound')} />;
 
   const { customer, leads, appointments, orders, consultationNotes } = data;
   const leadSources = leadSourcesData?.items ?? [];
@@ -62,6 +65,9 @@ export default function CustomerDetailPage() {
             <h1 className="text-2xl font-bold">{customer.name}</h1>
             <p className="text-sm text-muted-foreground">
               {[customer.phone, customer.email].filter(Boolean).join(' · ') || '—'}
+              {typeof data.totalSpend === 'number'
+                ? ` · Doanh thu ${formatCurrency(data.totalSpend)}`
+                : ''}
             </p>
           </div>
         </div>
@@ -81,20 +87,63 @@ export default function CustomerDetailPage() {
         </div>
       )}
 
-      <Tabs defaultValue="info">
+      <Tabs defaultValue="timeline" data-testid="customer-360-tabs">
         <TabsList className="flex-wrap h-auto">
+          <TabsTrigger value="timeline">Hành trình 360</TabsTrigger>
           <TabsTrigger value="info">Thông tin</TabsTrigger>
           <TabsTrigger value="leads">Lead ({leads.length})</TabsTrigger>
           <TabsTrigger value="appointments">Lịch hẹn ({appointments.length})</TabsTrigger>
-          <TabsTrigger value="orders">Mua hàng ({orders.length})</TabsTrigger>
+          <TabsTrigger value="orders">Doanh thu ({orders.length})</TabsTrigger>
+          <TabsTrigger value="channels" data-testid="customer-360-channels-tab">
+            Kênh
+          </TabsTrigger>
           <TabsTrigger value="notes">Ghi chú tư vấn</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="timeline" className="mt-4">
+          {(data.timeline ?? []).length === 0 ? (
+            <EmptyState title={t('customers.emptyEvents')} />
+          ) : (
+            <ol
+              data-testid="customer-360-timeline"
+              className="space-y-3 border-l border-border pl-4"
+            >
+              {(data.timeline ?? []).map((item, idx) => (
+                <li key={`${item.type}-${item.at}-${idx}`} className="relative">
+                  <span className="absolute -left-[21px] top-1.5 h-2 w-2 rounded-full bg-foreground" />
+                  <p className="text-xs text-muted-foreground">{formatDateTime(item.at)}</p>
+                  <p className="text-sm font-medium">
+                    <span className="mr-2 uppercase tracking-wide text-[11px] text-muted-foreground">
+                      {item.type}
+                    </span>
+                    {item.title}
+                  </p>
+                </li>
+              ))}
+            </ol>
+          )}
+        </TabsContent>
 
         <TabsContent value="info" className="mt-4">
           <Card>
             <CardContent className="pt-6 grid gap-4 sm:grid-cols-2 text-sm">
               <InfoRow label="Chi nhánh" value={customer.branch?.name} />
-              <InfoRow label="Nguồn khách" value={customer.leadSource?.name} />
+              <InfoRow
+                label="Nguồn đầu tiên"
+                value={customerSourceDisplay(
+                  customer.firstSource ?? undefined,
+                  (data as { firstSourceLabel?: string }).firstSourceLabel,
+                )}
+              />
+              <InfoRow
+                label="Nguồn gần nhất"
+                value={customerSourceDisplay(
+                  customer.latestSource ?? customer.source ?? undefined,
+                  (data as { latestSourceLabel?: string }).latestSourceLabel ??
+                    (data as { sourceLabel?: string }).sourceLabel,
+                )}
+              />
+              <InfoRow label="Nguồn CRM (LeadSource)" value={customer.leadSource?.name} />
               <InfoRow label="Giới tính" value={customer.gender} />
               <InfoRow
                 label="Ngày sinh"
@@ -115,7 +164,7 @@ export default function CustomerDetailPage() {
 
         <TabsContent value="leads" className="mt-4">
           {leads.length === 0 ? (
-            <EmptyState title="Chưa có lead" />
+            <EmptyState title={t('customers.emptyLeads')} />
           ) : (
             <div className="space-y-2">
               {leads.map((l) => (
@@ -135,7 +184,7 @@ export default function CustomerDetailPage() {
 
         <TabsContent value="appointments" className="mt-4">
           {appointments.length === 0 ? (
-            <EmptyState title="Chưa có lịch hẹn" />
+            <EmptyState title={t('customers.emptyAppointments')} />
           ) : (
             <div className="space-y-2">
               {appointments.map((a) => (
@@ -157,7 +206,7 @@ export default function CustomerDetailPage() {
 
         <TabsContent value="orders" className="mt-4">
           {orders.length === 0 ? (
-            <EmptyState title="Chưa có đơn hàng" />
+            <EmptyState title={t('customers.emptyOrders')} />
           ) : (
             <div className="space-y-2">
               {orders.map((o) => (
@@ -176,6 +225,43 @@ export default function CustomerDetailPage() {
               ))}
             </div>
           )}
+        </TabsContent>
+
+        <TabsContent value="channels" className="mt-4 space-y-4" data-testid="customer-360-channels">
+          <section>
+            <h2 className="mb-2 text-sm font-medium">Email Marketing</h2>
+            {(data.emailContacts ?? []).length === 0 ? (
+              <p className="text-sm text-muted-foreground">Chưa gắn EmailContact</p>
+            ) : (
+              <ul className="space-y-1 text-sm">
+                {(data.emailContacts ?? []).map((c) => (
+                  <li key={c.id}>
+                    {c.email} · {c.status}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+          <section>
+            <h2 className="mb-2 text-sm font-medium">Zalo / Messenger / Chat</h2>
+            {(data.messagingIdentities ?? []).length === 0 &&
+            (data.conversations ?? []).length === 0 ? (
+              <p className="text-sm text-muted-foreground">{t('customers.emptyChannelIdentity')}</p>
+            ) : (
+              <ul className="space-y-1 text-sm">
+                {(data.messagingIdentities ?? []).map((i) => (
+                  <li key={i.id}>
+                    {i.channel}: {i.displayName || i.externalUserId}
+                  </li>
+                ))}
+                {(data.conversations ?? []).map((c) => (
+                  <li key={c.id}>
+                    Hội thoại {c.channel || 'web'} · {c.status}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
         </TabsContent>
 
         <TabsContent value="notes" className="mt-4 space-y-4">
@@ -197,7 +283,7 @@ export default function CustomerDetailPage() {
             </CardContent>
           </Card>
           {consultationNotes.length === 0 ? (
-            <EmptyState title="Chưa có ghi chú tư vấn" />
+            <EmptyState title={t('customers.emptyConsultNotes')} />
           ) : (
             <div className="space-y-2">
               {consultationNotes.map((n) => (

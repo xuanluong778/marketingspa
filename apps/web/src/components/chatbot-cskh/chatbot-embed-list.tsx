@@ -23,12 +23,17 @@ import {
 import { EmptyState, LoadingState } from '@/components/shared/page-state';
 import { BOT_STATUS_LABELS, type ChatbotBot, type ChatbotBotStatus } from '@/types/chatbot-cskh';
 import { copyToClipboard } from '@/lib/copy-to-clipboard';
+import { useT } from '@/i18n/i18n-provider';
 
 interface ChatbotEmbedListProps {
   bots: ChatbotBot[] | undefined;
   isLoading: boolean;
   selectedBotId: string | null;
   embedCode?: string;
+  /** Hiện block Mã nhúng website (mặc định true) */
+  showEmbed?: boolean;
+  /** Hiện bảng Danh sách chatbot (mặc định true) */
+  showList?: boolean;
   onSelectBot: (id: string) => void;
   onDelete: (id: string) => void;
   onEdit: (bot: ChatbotBot) => void;
@@ -41,12 +46,15 @@ export function ChatbotEmbedList({
   isLoading,
   selectedBotId,
   embedCode,
+  showEmbed = true,
+  showList = true,
   onSelectBot,
   onDelete,
   onEdit,
   onUpdateStatus,
   statusChangingId,
 }: ChatbotEmbedListProps) {
+  const t = useT();
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [copyError, setCopyError] = useState<string | null>(null);
 
@@ -60,14 +68,15 @@ export function ChatbotEmbedList({
       setCopiedKey(key);
       window.setTimeout(() => setCopiedKey((k) => (k === key ? null : k)), 2000);
     } else {
-      setCopyError('Không copy được. Hãy chọn và copy thủ công từ ô mã bên trên.');
+      setCopyError(t('chatbot.copyFailed'));
     }
-  }, []);
+  }, [t]);
 
   return (
-    <div className="space-y-6 pt-4 border-t">
+    <div className="space-y-6">
+      {showEmbed && (
       <section className="rounded-lg border bg-[#0B2115] text-white p-5 space-y-3">
-        <h3 className="font-semibold text-lg">Mã nhúng website</h3>
+        <h3 className="font-semibold text-lg">{t('chatbot.embedCode')}</h3>
         <p className="text-sm text-white/75">
           Dán đoạn mã sau trước thẻ <code className="text-white/90">&lt;/body&gt;</code> trên
           website. Kích hoạt chatbot trước khi widget hiển thị cho khách.
@@ -76,7 +85,7 @@ export function ChatbotEmbedList({
           Website HTTPS cần <strong>plugin proxy WordPress</strong> trên server (chưa cài → widget
           404). Cài file{' '}
           <code className="text-white/90">scripts/chatbot-embed-proxy/mspa-chatbot-proxy.zip</code>{' '}
-          qua WP Admin → Plugins → Add New → Upload. Kích hoạt plugin → Settings → MarketingSpa
+          qua WP Admin → Plugins → Add New → Upload. Kích hoạt plugin → Settings → Marketing Auto
           Chatbot → nhập URL API. Vào Settings → Permalinks → Save để refresh rewrite.
         </p>
 
@@ -85,7 +94,7 @@ export function ChatbotEmbedList({
             <Label className="text-white/80 shrink-0">Chatbot:</Label>
             <Select value={activeBot?.id ?? ''} onValueChange={onSelectBot}>
               <SelectTrigger className="bg-white/10 border-white/20 text-white">
-                <SelectValue placeholder="Chọn bot" />
+                <SelectValue placeholder={t('chatbot.selectBot')} />
               </SelectTrigger>
               <SelectContent>
                 {bots.map((b) => (
@@ -134,23 +143,25 @@ export function ChatbotEmbedList({
                 )}
               </Button>
               {copiedKey === 'main' && (
-                <span className="text-sm text-emerald-300">Mã đã được sao chép vào clipboard.</span>
+                <span className="text-sm text-emerald-300">{t('chatbot.copied')}</span>
               )}
             </div>
             {copyError && <p className="text-sm text-amber-300">{copyError}</p>}
           </>
         ) : (
-          <p className="text-sm text-white/60">Tạo và kích hoạt chatbot để lấy mã nhúng.</p>
+          <p className="text-sm text-white/60">{t('chatbot.createToEmbed')}</p>
         )}
       </section>
+      )}
 
+      {showList && (
       <section className="space-y-3">
-        <h3 className="font-semibold text-lg">Danh sách chatbot</h3>
+        <h3 className="font-semibold text-lg">{t('chatbot.botList')}</h3>
 
         {isLoading && <LoadingState />}
 
         {!isLoading && (!bots || bots.length === 0) && (
-          <EmptyState title="Chưa có chatbot" description="Nhấn Tạo chatbot để bắt đầu" />
+          <EmptyState title={t('chatbot.emptyBots')} description={t('chatbot.emptyBotsHint')} />
         )}
 
         {!isLoading && bots && bots.length > 0 && (
@@ -158,10 +169,10 @@ export function ChatbotEmbedList({
             <Table>
               <TableHeader>
                 <TableRow className="bg-[#0B2115] hover:bg-[#0B2115]">
-                  <TableHead className="text-white font-semibold">TÊN</TableHead>
+                  <TableHead className="text-white font-semibold">{t('chatbot.nameCol')}</TableHead>
                   <TableHead className="text-white font-semibold">WEBSITE</TableHead>
-                  <TableHead className="text-white font-semibold">TRẠNG THÁI</TableHead>
-                  <TableHead className="text-white font-semibold text-right">THAO TÁC</TableHead>
+                  <TableHead className="text-white font-semibold">{t('chatbot.statusCol')}</TableHead>
+                  <TableHead className="text-white font-semibold text-right">{t('chatbot.actionsCol')}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -203,7 +214,7 @@ export function ChatbotEmbedList({
                             onClick={() => onUpdateStatus(bot.id, 'ACTIVE')}
                           >
                             <Play className="h-3 w-3 mr-1" />
-                            Kích hoạt
+                            {t('common.activate')}
                           </Button>
                         )}
                         {bot.status === 'ACTIVE' && onUpdateStatus && (
@@ -216,7 +227,7 @@ export function ChatbotEmbedList({
                             onClick={() => onUpdateStatus(bot.id, 'PAUSED')}
                           >
                             <Pause className="h-3 w-3 mr-1" />
-                            Tạm dừng
+                            {t('common.pause')}
                           </Button>
                         )}
                         <Button
@@ -230,12 +241,12 @@ export function ChatbotEmbedList({
                           {copiedKey === bot.id ? (
                             <>
                               <Check className="h-3 w-3 mr-1" />
-                              Đã copy
+                              {t('creditsPage.copied')}
                             </>
                           ) : (
                             <>
                               <Copy className="h-3 w-3 mr-1" />
-                              Copy mã
+                              {t('common.copy')}
                             </>
                           )}
                         </Button>
@@ -245,7 +256,7 @@ export function ChatbotEmbedList({
                           variant="outline"
                           onClick={() => onEdit(bot)}
                         >
-                          Sửa
+                          {t('common.edit')}
                         </Button>
                         <Button
                           type="button"
@@ -255,7 +266,7 @@ export function ChatbotEmbedList({
                           onClick={() => onDelete(bot.id)}
                         >
                           <Trash2 className="h-3 w-3 mr-1" />
-                          Xóa
+                          {t('common.delete')}
                         </Button>
                       </div>
                     </TableCell>
@@ -266,6 +277,7 @@ export function ChatbotEmbedList({
           </div>
         )}
       </section>
+      )}
     </div>
   );
 }

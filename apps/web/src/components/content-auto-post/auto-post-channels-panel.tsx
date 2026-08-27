@@ -19,10 +19,15 @@ import {
   useAutoPostMutations,
   useAutoPostOauthPages,
   useAutoPostStatus,
+  useSyncFanpageDetails,
 } from '@/hooks/use-auto-post';
+import { formatFanpageSyncDisplay } from '@/lib/format-fanpage-sync';
 import { formatMutationError } from '@/lib/format-mutation-error';
+import { humanizeFacebookChannelError, humanizeOAuthPagesStatus } from '@/lib/humanize-facebook-channel-error';
 import { redactClientSecrets } from '@/lib/redact-client-secrets';
 import { buildContentAutoPostHref } from '@/lib/content-auto-post-routes';
+import { useT } from '@/i18n/i18n-provider';
+import type { TranslateParams } from '@/i18n/types';
 import type { AutoPostFacebookPage } from '@/types/auto-post';
 
 function PageAvatar({ page }: { page: Pick<AutoPostFacebookPage, 'pageName' | 'pagePictureUrl'> }) {
@@ -40,20 +45,24 @@ function PageAvatar({ page }: { page: Pick<AutoPostFacebookPage, 'pageName' | 'p
   );
 }
 
-function permissionLabel(page: AutoPostFacebookPage): { text: string; ok: boolean } {
+function permissionLabel(
+  page: AutoPostFacebookPage,
+  t: (key: string, params?: TranslateParams) => string,
+): { text: string; ok: boolean } {
   if (page.canManagePosts === false) {
-    return { text: 'Thiếu quyền đăng bài', ok: false };
+    return { text: t('facebookFlow.permMissingPost'), ok: false };
   }
   if (page.canManagePosts === true) {
-    return { text: 'Đủ quyền quản lý', ok: true };
+    return { text: t('facebookFlow.permOk'), ok: true };
   }
   if (page.tasks?.length) {
     return { text: page.tasks.slice(0, 3).join(', '), ok: true };
   }
-  return { text: 'Quyền từ Facebook', ok: true };
+  return { text: t('facebookFlow.permFromFacebook'), ok: true };
 }
 
 export function AutoPostChannelsPanel() {
+  const t = useT();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: status, isLoading: isStatusLoading } = useAutoPostStatus();
@@ -67,6 +76,9 @@ export function AutoPostChannelsPanel() {
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
   const [detailsPage, setDetailsPage] = useState<AutoPostFacebookPage | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsAutoSync, setDetailsAutoSync] = useState(false);
+  const [syncingId, setSyncingId] = useState<string | null>(null);
+  const syncFanpage = useSyncFanpageDetails();
 
   const facebookParam = searchParams.get('facebook');
 
@@ -74,22 +86,26 @@ export function AutoPostChannelsPanel() {
   useEffect(() => {
     if (facebookParam === 'oauth_connected' || facebookParam === 'connected') {
       if (searchParams.get('mode') === 'env') {
-        setMsg('Đã kết nối Fanpage bằng Page Token trên server (không cần OAuth).');
+        setMsg(t('facebookFlow.connectedEnv'));
       } else if (facebookParam === 'oauth_connected') {
         setSelectionMode(true);
-        setMsg('Đăng nhập Facebook thành công — chọn Fanpage muốn kết nối.');
+        setMsg(t('facebookFlow.oauthSuccessPick'));
       } else {
-        setMsg('Đã kết nối Facebook Fanpage thành công!');
+        setMsg(t('facebookFlow.connectedSuccess'));
       }
     }
     if (facebookParam === 'error') {
-      const raw = searchParams.get('message') ?? 'Kết nối Facebook thất bại';
-      setErrorMsg(redactClientSecrets(raw));
+      const raw = searchParams.get('message');
+      setErrorMsg(
+        raw
+          ? humanizeOAuthPagesStatus(undefined, t, redactClientSecrets(raw))
+          : t('facebookFlow.connectFailed'),
+      );
       setSelectionMode(false);
       // Drop sensitive query params from the address bar immediately.
       router.replace(buildContentAutoPostHref('channels'));
     }
-  }, [facebookParam, searchParams, router]);
+  }, [facebookParam, searchParams, router, t]);
 
   const oauthPagesQuery = useAutoPostOauthPages(selectionMode);
   const oauthPages = oauthPagesQuery.data;
@@ -118,9 +134,9 @@ export function AutoPostChannelsPanel() {
     try {
       await mutations.connectFacebook.mutateAsync();
     } catch (error) {
-      setErrorMsg(formatMutationError(error, 'Kết nối Facebook thất bại'));
+      setErrorMsg(formatMutationError(error, t('facebookFlow.connectFailed')));
     }
-  }, [mutations.connectFacebook]);
+  }, [mutations.connectFacebook, t]);
 
   const handleReconnect = useCallback(async () => {
     setSelectionMode(false);
@@ -136,24 +152,24 @@ export function AutoPostChannelsPanel() {
     setErrorMsg('');
     try {
       await mutations.refreshPages.mutateAsync();
-      setMsg('Đã làm mới danh sách Fanpage.');
+      setMsg(t('facebookFlow.refreshedPages'));
     } catch (error) {
-      setErrorMsg(formatMutationError(error, 'Không thể làm mới Fanpage'));
+      setErrorMsg(formatMutationError(error, t('facebookFlow.refreshFailed')));
     }
-  }, [mutations.refreshPages]);
+  }, [mutations.refreshPages, t]);
 
   const handleDisconnectAll = useCallback(async () => {
     setMsg('');
     setErrorMsg('');
     try {
       await mutations.disconnectFacebook.mutateAsync();
-      setMsg('Đã ngắt kết nối Facebook.');
+      setMsg(t('facebookFlow.disconnectedAll'));
       setSelectionMode(false);
       setSelectedPageIds(new Set());
     } catch (error) {
-      setErrorMsg(formatMutationError(error, 'Không thể ngắt kết nối Facebook'));
+      setErrorMsg(formatMutationError(error, t('facebookFlow.disconnectFailed')));
     }
-  }, [mutations.disconnectFacebook]);
+  }, [mutations.disconnectFacebook, t]);
 
   const handleDisconnectPage = useCallback(
     async (fanpageRowId: string) => {
@@ -162,15 +178,15 @@ export function AutoPostChannelsPanel() {
       setDisconnectingId(fanpageRowId);
       try {
         await mutations.disconnectPage.mutateAsync(fanpageRowId);
-        setMsg('Đã ngắt kết nối Fanpage.');
+        setMsg(t('facebookFlow.disconnectedPage'));
         await refetchFbStatus();
       } catch (error) {
-        setErrorMsg(formatMutationError(error, 'Không thể ngắt kết nối Fanpage'));
+        setErrorMsg(formatMutationError(error, t('facebookFlow.disconnectPageFailed')));
       } finally {
         setDisconnectingId(null);
       }
     },
-    [mutations.disconnectPage, refetchFbStatus],
+    [mutations.disconnectPage, refetchFbStatus, t],
   );
 
   const togglePage = useCallback((pageId: string) => {
@@ -185,7 +201,7 @@ export function AutoPostChannelsPanel() {
   const handleSelectPages = useCallback(async () => {
     const pageIds = [...selectedPageIds];
     if (pageIds.length === 0) {
-      setErrorMsg('Hãy chọn ít nhất một Fanpage để kết nối.');
+      setErrorMsg(t('facebookFlow.selectAtLeastOne'));
       return;
     }
     setMsg('');
@@ -200,24 +216,30 @@ export function AutoPostChannelsPanel() {
           .slice(0, 3)
           .join('; ');
         setErrorMsg(
-          result.warning ||
-            `Đã lưu ${okCount} Fanpage; ${failCount} trang thất bại. ${reasons}`,
+          result.warning
+            ? humanizeOAuthPagesStatus(undefined, t, result.warning)
+            : t('facebookFlow.savedSomeFailed', {
+                ok: okCount,
+                fail: failCount,
+                reasons,
+              }),
         );
       } else {
-        setMsg(`Đã kết nối ${okCount} Fanpage đã chọn.`);
+        setMsg(t('facebookFlow.connectedCount', { count: okCount }));
       }
       setSelectionMode(false);
       setSelectedPageIds(new Set());
       clearOauthQuery();
       await refetchFbStatus();
     } catch (error) {
-      setErrorMsg(formatMutationError(error, 'Không thể lưu Fanpage đã chọn'));
+      setErrorMsg(formatMutationError(error, t('facebookFlow.saveSelectedFailed')));
     }
   }, [
     selectedPageIds,
     mutations.selectOauthPages,
     clearOauthQuery,
     refetchFbStatus,
+    t,
   ]);
 
   const selectablePages = useMemo(() => oauthPages?.pages ?? [], [oauthPages?.pages]);
@@ -230,7 +252,7 @@ export function AutoPostChannelsPanel() {
   }, [selectionMode, oauthPages, selectedPageIds.size]);
 
   if (isLoading || isStatusLoading) {
-    return <LoadingState message="Đang tải kết nối kênh..." />;
+    return <LoadingState message={t('facebookFlow.loadingChannels')} />;
   }
 
   const showPicker =
@@ -250,27 +272,26 @@ export function AutoPostChannelsPanel() {
     <div className="space-y-5 sm:space-y-6">
       <div className="rounded-xl border border-white/10 bg-[#0A3D30] p-5 shadow-lg sm:p-7">
         <h2 className="text-xl font-bold tracking-tight text-[#F97316] sm:text-2xl">
-          Kết nối Facebook Fanpage
+          {t('facebookFlow.connectTitle')}
         </h2>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-white/80 sm:text-base">
-          Đăng nhập Facebook để kết nối và quản lý các Fanpage bạn được cấp quyền.
+          {t('facebookFlow.connectDescription')}
         </p>
 
         {status && status.facebookConnectAvailable === false && (
           <div className="mt-4 rounded-lg border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-            Kết nối Facebook OAuth chưa sẵn sàng trên tài khoản này. Liên hệ quản trị nếu cần bật
-            quyền kết nối Fanpage.
+            {t('facebookFlow.oauthNotReady')}
           </div>
         )}
 
         {status?.metaPageEnvConfigured && (
           <div className="mt-4 rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
-            Server đã cấu hình Page Token — có thể đồng bộ Fanpage môi trường (admin).
+            {t('facebookFlow.envTokenReady')}
           </div>
         )}
 
         {msg && (
-          <div className="mt-4 rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-100">
+          <div className="mt-4 whitespace-pre-line rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-100">
             {msg}
           </div>
         )}
@@ -281,7 +302,9 @@ export function AutoPostChannelsPanel() {
         )}
         {fbStatus?.lastError && !errorMsg && (
           <div className="mt-4 rounded-lg border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-100">
-            Lỗi gần nhất: {fbStatus.lastError}
+            {t('facebookFlow.lastError', {
+              error: humanizeFacebookChannelError(fbStatus.lastError, t),
+            })}
           </div>
         )}
 
@@ -300,8 +323,8 @@ export function AutoPostChannelsPanel() {
                 <Facebook className="mr-2 h-5 w-5" />
               )}
               {fbStatus?.connected || fbStatus?.needsReconnect
-                ? 'Kết nối lại Facebook'
-                : 'Kết nối Facebook'}
+                ? t('facebookFlow.reconnectFacebook')
+                : t('facebookFlow.connectFacebook')}
             </Button>
           )}
 
@@ -319,7 +342,7 @@ export function AutoPostChannelsPanel() {
                 ) : (
                   <RefreshCw className="mr-2 h-4 w-4" />
                 )}
-                Làm mới Fanpage
+                {t('facebookFlow.refreshPages')}
               </Button>
               <Button
                 type="button"
@@ -328,10 +351,10 @@ export function AutoPostChannelsPanel() {
                 onClick={() => {
                   setSelectionMode(true);
                   setSelectedPageIds(new Set());
-                  setMsg('Chọn thêm Fanpage từ tài khoản Facebook đã đăng nhập.');
+                  setMsg(t('facebookFlow.pickMorePages'));
                 }}
               >
-                Chọn thêm Fanpage
+                {t('facebookFlow.addMorePages')}
               </Button>
               <Button
                 type="button"
@@ -344,7 +367,7 @@ export function AutoPostChannelsPanel() {
                 ) : (
                   <Unplug className="mr-2 h-4 w-4" />
                 )}
-                Ngắt tất cả
+                {t('facebookFlow.disconnectAll')}
               </Button>
             </>
           )}
@@ -355,7 +378,7 @@ export function AutoPostChannelsPanel() {
           <div className="mt-6 space-y-4 rounded-lg border border-white/10 bg-[#083028] p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-sm font-semibold text-white">
-                Chọn Fanpage muốn kết nối
+                {t('facebookFlow.selectPagesTitle')}
                 {oauthPages?.facebookUserName
                   ? ` — ${oauthPages.facebookUserName}`
                   : ''}
@@ -370,19 +393,19 @@ export function AutoPostChannelsPanel() {
                   clearOauthQuery();
                 }}
               >
-                Đóng
+                {t('facebookFlow.close')}
               </Button>
             </div>
 
             {oauthPagesQuery.isLoading || oauthPagesQuery.isFetching ? (
               <LoadingState
-                message="Đang tải danh sách Fanpage từ Facebook..."
+                message={t('facebookFlow.loadingPages')}
                 className="py-8 text-white [&_svg]:text-white"
               />
             ) : oauthPagesQuery.isError ? (
               <div className="space-y-3">
                 <p className="text-sm text-red-200">
-                  {formatMutationError(oauthPagesQuery.error, 'Không tải được danh sách Fanpage')}
+                  {formatMutationError(oauthPagesQuery.error, t('facebookFlow.loadPagesFailed'))}
                 </p>
                 <Button
                   type="button"
@@ -390,18 +413,15 @@ export function AutoPostChannelsPanel() {
                   className="bg-[#F97316] text-white hover:bg-[#ea6a0c]"
                 >
                   <Facebook className="mr-2 h-4 w-4" />
-                  Kết nối lại
+                  {t('facebookFlow.reconnect')}
                 </Button>
               </div>
             ) : showPicker && oauthPages?.status === 'MISSING_PERMISSION' ? (
               <div className="space-y-3">
-                <p className="text-sm text-amber-100">
-                  {oauthPages.message ||
-                    'Facebook chưa cấp đủ quyền (pages_show_list / pages_manage_posts).'}
-                </p>
+                <p className="text-sm text-amber-100">{t('facebookFlow.missingPermission')}</p>
                 {oauthPages.missingScopes?.length > 0 && (
                   <p className="text-xs text-white/60">
-                    Thiếu: {oauthPages.missingScopes.join(', ')}
+                    {t('facebookFlow.permMissingPrefix')}: {oauthPages.missingScopes.join(', ')}
                   </p>
                 )}
                 <Button
@@ -410,64 +430,56 @@ export function AutoPostChannelsPanel() {
                   className="bg-[#F97316] text-white hover:bg-[#ea6a0c]"
                 >
                   <Facebook className="mr-2 h-4 w-4" />
-                  Kết nối lại
+                  {t('facebookFlow.reconnect')}
                 </Button>
               </div>
             ) : showPicker &&
               (oauthPages?.status === 'TOKEN_EXPIRED' ||
                 oauthPages?.status === 'NO_PENDING_OAUTH') ? (
               <div className="space-y-3">
-                <p className="text-sm text-amber-100">
-                  {oauthPages.message ||
-                    'Phiên OAuth không còn hiệu lực — bấm Kết nối lại Facebook.'}
-                </p>
+                <p className="text-sm text-amber-100">{t('facebookFlow.oauthExpired')}</p>
                 <Button
                   type="button"
                   onClick={handleReconnect}
                   className="bg-[#F97316] text-white hover:bg-[#ea6a0c]"
                 >
                   <Facebook className="mr-2 h-4 w-4" />
-                  Kết nối lại
+                  {t('facebookFlow.reconnect')}
                 </Button>
               </div>
             ) : showPicker && oauthPages?.status === 'NO_PAGES' ? (
               <div className="space-y-3">
-                <p className="text-sm text-white/75">
-                  {oauthPages.message ||
-                    'Không có Fanpage nào mà tài khoản này được phép quản lý.'}
-                </p>
+                <p className="text-sm text-white/75">{t('facebookFlow.noManagedPages')}</p>
                 <Button
                   type="button"
                   onClick={handleReconnect}
                   className="bg-[#F97316] text-white hover:bg-[#ea6a0c]"
                 >
                   <Facebook className="mr-2 h-4 w-4" />
-                  Kết nối lại
+                  {t('facebookFlow.reconnect')}
                 </Button>
               </div>
             ) : showPicker && oauthPages?.status === 'META_API_ERROR' ? (
               <div className="space-y-3">
-                <p className="text-sm text-red-200">
-                  {oauthPages.message || 'Lỗi khi gọi Facebook API.'}
-                </p>
+                <p className="text-sm text-red-200">{t('facebookFlow.metaApiError')}</p>
                 <Button
                   type="button"
                   onClick={handleReconnect}
                   className="bg-[#F97316] text-white hover:bg-[#ea6a0c]"
                 >
                   <Facebook className="mr-2 h-4 w-4" />
-                  Kết nối lại
+                  {t('facebookFlow.reconnect')}
                 </Button>
               </div>
             ) : showPicker && oauthPages?.status === 'OK' ? (
               <>
                 {selectablePages.length === 0 ? (
-                  <p className="text-sm text-white/70">Không có Fanpage để hiển thị.</p>
+                  <p className="text-sm text-white/70">{t('facebookFlow.noPagesToShow')}</p>
                 ) : (
                   <ul className="space-y-2">
                     {selectablePages.map((page) => {
                       const checked = selectedPageIds.has(page.pageId);
-                      const perm = permissionLabel(page);
+                      const perm = permissionLabel(page, t);
                       return (
                         <li key={page.pageId}>
                           <label
@@ -487,14 +499,14 @@ export function AutoPostChannelsPanel() {
                             <div className="min-w-0 flex-1">
                               <p className="font-medium text-white">{page.pageName}</p>
                               <p className="mt-0.5 break-all text-xs text-white/55">
-                                Page ID: {page.pageId}
+                                {t('facebookFlow.pageId')}: {page.pageId}
                               </p>
                               <p
                                 className={`mt-1 text-xs ${
                                   perm.ok ? 'text-emerald-300' : 'text-amber-300'
                                 }`}
                               >
-                                Quyền: {perm.text}
+                                {t('facebookFlow.permission')}: {perm.text}
                               </p>
                             </div>
                           </label>
@@ -516,7 +528,7 @@ export function AutoPostChannelsPanel() {
                     ) : (
                       <CheckCircle2 className="mr-2 h-4 w-4" />
                     )}
-                    Kết nối Fanpage đã chọn
+                    {t('facebookFlow.connectSelected')}
                     {selectedPageIds.size > 0 ? ` (${selectedPageIds.size})` : ''}
                   </Button>
                   <Button
@@ -527,7 +539,7 @@ export function AutoPostChannelsPanel() {
                     disabled={connecting}
                   >
                     <Facebook className="mr-2 h-4 w-4" />
-                    Kết nối lại
+                    {t('facebookFlow.reconnect')}
                   </Button>
                 </div>
               </>
@@ -539,19 +551,28 @@ export function AutoPostChannelsPanel() {
         {fbStatus?.connected && (
           <div className="mt-6 rounded-lg border border-white/10 bg-[#083028] p-4 space-y-3">
             <p className="text-sm font-medium text-white">
-              {fbStatus.connectionMode === 'env' ? 'Fanpage (server token)' : 'Tài khoản'}:{' '}
-              {fbStatus.facebookUserName ?? 'Facebook'}
+              {fbStatus.connectionMode === 'env'
+                ? t('facebookFlow.envFanpageLabel')
+                : t('facebookFlow.accountLabel')}
+              : {fbStatus.facebookUserName ?? 'Facebook'}
             </p>
             <p className="text-sm font-medium text-white">
-              Fanpage đã kết nối ({fbStatus.pages.length})
+              {t('facebookFlow.connectedPages', { count: fbStatus.pages.length })}
             </p>
             {fbStatus.pages.length === 0 ? (
-              <p className="text-sm text-white/65">
-                Chưa có Fanpage được chọn — bấm Kết nối Facebook hoặc Chọn thêm Fanpage.
-              </p>
+              <p className="text-sm text-white/65">{t('facebookFlow.noPagesSelected')}</p>
             ) : (
               <ul className="space-y-2">
-                {fbStatus.pages.map((p) => (
+                {fbStatus.pages.map((p) => {
+                  const lastSynced = formatFanpageSyncDisplay(
+                    p.lastSyncedAtDisplay,
+                    p.lastSyncedAt,
+                  );
+                  const lastPost = formatFanpageSyncDisplay(
+                    p.lastPostCreatedAtDisplay,
+                    p.lastPostCreatedAt,
+                  );
+                  return (
                   <li
                     key={p.id}
                     className="flex flex-wrap items-center gap-3 rounded-md border border-white/10 bg-[#0A3D30] px-3 py-2.5 text-sm text-white"
@@ -559,11 +580,34 @@ export function AutoPostChannelsPanel() {
                     <PageAvatar page={p} />
                     <div className="min-w-0 flex-1">
                       <p className="font-medium">{p.pageName}</p>
-                      <p className="break-all text-xs text-white/55">Page ID: {p.pageId}</p>
+                      <p className="break-all text-xs text-white/55">
+                        {t('facebookFlow.pageId')}: {p.pageId}
+                      </p>
                       <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-300">
                         <CheckCircle2 className="h-3 w-3" />
-                        Đã kết nối
+                        {t('facebookFlow.connected')}
                       </span>
+                      {lastSynced ? (
+                        <p className="mt-1.5 text-xs text-white/70">
+                          {t('facebookFlow.lastUpdated', { when: lastSynced })}
+                        </p>
+                      ) : (
+                        <p className="mt-1.5 text-xs text-white/45">
+                          {t('facebookFlow.neverSynced')}
+                        </p>
+                      )}
+                      {lastPost ? (
+                        <p className="text-xs text-white/70">
+                          {t('facebookFlow.latestPost', { when: lastPost })}
+                        </p>
+                      ) : null}
+                      {p.lastSyncError ? (
+                        <p className="mt-1 text-xs text-red-300">
+                          {t('facebookFlow.syncError', {
+                            error: humanizeFacebookChannelError(p.lastSyncError, t),
+                          })}
+                        </p>
+                      ) : null}
                     </div>
                     <div className="flex shrink-0 flex-wrap gap-2">
                       <Button
@@ -573,11 +617,48 @@ export function AutoPostChannelsPanel() {
                         className="border-white/25 bg-transparent text-white hover:bg-white/10"
                         onClick={() => {
                           setDetailsPage(p);
+                          setDetailsAutoSync(false);
                           setDetailsOpen(true);
                         }}
                       >
                         <Eye className="mr-1 h-3.5 w-3.5" />
-                        Xem chi tiết
+                        {t('facebookFlow.viewDetails')}
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="bg-[#F97316] text-white hover:bg-[#ea6a0c]"
+                        disabled={syncingId === p.id}
+                        onClick={async () => {
+                          setSyncingId(p.id);
+                          setErrorMsg('');
+                          try {
+                            const synced = await syncFanpage.mutateAsync(p.id);
+                            const when = formatFanpageSyncDisplay(
+                              synced.lastSyncedAtDisplay,
+                              synced.lastSyncedAt,
+                            );
+                            setMsg(
+                              when
+                                ? t('facebookFlow.syncSuccessWithTime', { when })
+                                : t('facebookFlow.syncSuccess'),
+                            );
+                            await refetchFbStatus();
+                          } catch (err) {
+                            setErrorMsg(
+                              formatMutationError(err, t('facebookFlow.syncKeepOld')),
+                            );
+                          } finally {
+                            setSyncingId(null);
+                          }
+                        }}
+                      >
+                        {syncingId === p.id ? (
+                          <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <RefreshCw className="mr-1 h-3.5 w-3.5" />
+                        )}
+                        {t('facebookFlow.syncPageInfo')}
                       </Button>
                       <Button
                         type="button"
@@ -591,11 +672,12 @@ export function AutoPostChannelsPanel() {
                         ) : (
                           <Unplug className="mr-1 h-3.5 w-3.5" />
                         )}
-                        Ngắt kết nối
+                        {t('facebookFlow.disconnect')}
                       </Button>
                     </div>
                   </li>
-                ))}
+                  );
+                })}
               </ul>
             )}
           </div>
@@ -606,21 +688,36 @@ export function AutoPostChannelsPanel() {
         open={detailsOpen}
         onOpenChange={(open) => {
           setDetailsOpen(open);
-          if (!open) setDetailsPage(null);
+          if (!open) {
+            setDetailsPage(null);
+            setDetailsAutoSync(false);
+          }
         }}
         page={detailsPage}
+        autoSync={detailsAutoSync}
       />
 
       <div className="rounded-xl border border-white/10 bg-[#0A3D30]/80 p-5 sm:p-6">
         <div className="mb-2 flex items-center gap-2 text-[#F97316]">
           <ShieldCheck className="h-5 w-5 shrink-0" />
-          <h3 className="text-sm font-semibold uppercase tracking-wide">Quyền pages_show_list</h3>
+          <h3 className="text-sm font-semibold uppercase tracking-wide">
+            {t('facebookFlow.scopeShowListTitle')}
+          </h3>
         </div>
         <p className="text-sm leading-relaxed text-white/85 sm:text-[15px]">
-          MarketingAutoAZ sử dụng quyền <strong className="text-white">pages_show_list</strong> để
-          hiển thị những Fanpage mà người dùng được Facebook cho phép quản lý. Người dùng tự chọn
-          Fanpage muốn kết nối. Hệ thống không tự động kết nối hoặc đăng bài lên Fanpage chưa được
-          chọn.
+          {t('facebookFlow.scopeShowListBody')}
+        </p>
+      </div>
+
+      <div className="rounded-xl border border-white/10 bg-[#0A3D30]/80 p-5 sm:p-6">
+        <div className="mb-2 flex items-center gap-2 text-[#F97316]">
+          <ShieldCheck className="h-5 w-5 shrink-0" />
+          <h3 className="text-sm font-semibold uppercase tracking-wide">
+            {t('facebookFlow.scopeReadTitle')}
+          </h3>
+        </div>
+        <p className="text-sm leading-relaxed text-white/85 sm:text-[15px]">
+          {t('facebookFlow.scopeReadBody')}
         </p>
       </div>
     </div>

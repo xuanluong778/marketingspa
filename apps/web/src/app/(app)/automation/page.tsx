@@ -40,6 +40,7 @@ import {
   type AutomationLogDetail,
 } from '@/types/automation-messaging';
 import { formatDateTime } from '@/lib/format';
+import { useT } from '@/i18n/i18n-provider';
 
 function channelLabel(v?: string | null) {
   return CHANNEL_OPTIONS.find((c) => c.value === v)?.label ?? v ?? '—';
@@ -53,6 +54,7 @@ const TAB_VALUES = ['audience', 'templates', 'campaigns', 'flows', 'logs', 'chan
 type TabValue = (typeof TAB_VALUES)[number];
 
 function AutomationPageInner() {
+  const tr = useT();
   const searchParams = useSearchParams();
   const router = useRouter();
   const tabParam = searchParams.get('tab');
@@ -106,18 +108,18 @@ function AutomationPageInner() {
   return (
     <div>
       <PageHeader
-        title="Nhắn tin hàng loạt & tự động"
-        description="Tệp khách hàng, chiến dịch blast Messenger/Zalo, mẫu tin, automation flow và kết nối kênh"
+        title={tr('automation.pageTitle')}
+        description={tr('automation.pageDescription')}
       />
 
       <Tabs value={activeTab} onValueChange={changeTab}>
         <TabsList className="mb-4 flex h-auto flex-wrap gap-1">
-          <TabsTrigger value="campaigns">Chiến dịch hàng loạt</TabsTrigger>
-          <TabsTrigger value="audience">Tệp khách hàng</TabsTrigger>
-          <TabsTrigger value="templates">Mẫu tin</TabsTrigger>
-          <TabsTrigger value="flows">Automation Flow</TabsTrigger>
-          <TabsTrigger value="logs">Nhật ký</TabsTrigger>
-          <TabsTrigger value="channels">Kết nối kênh</TabsTrigger>
+          <TabsTrigger value="campaigns">{tr('automation.tabs.campaigns')}</TabsTrigger>
+          <TabsTrigger value="audience">{tr('automation.tabs.audience')}</TabsTrigger>
+          <TabsTrigger value="templates">{tr('automation.tabs.templates')}</TabsTrigger>
+          <TabsTrigger value="flows">{tr('automation.tabs.flows')}</TabsTrigger>
+          <TabsTrigger value="logs">{tr('automation.tabs.logs')}</TabsTrigger>
+          <TabsTrigger value="channels">{tr('automation.tabs.channels')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="audience">
@@ -133,13 +135,13 @@ function AutomationPageInner() {
           <div className="mb-3 flex justify-end">
             <Button onClick={() => setTemplateForm('new')}>
               <Plus className="mr-2 h-4 w-4" />
-              Tạo mẫu tin
+              {tr('automation.createTemplate')}
             </Button>
           </div>
           {templates.isLoading && <LoadingState />}
           {templates.isError && <ErrorState onRetry={templates.refetch} />}
           {!templates.isLoading && !templates.isError && templateItems.length === 0 && (
-            <EmptyState title="Chưa có mẫu tin nhắn" />
+            <EmptyState title={tr('automation.emptyTemplates')} />
           )}
           {!templates.isLoading && !templates.isError && templateItems.length > 0 && (
             <div className="grid gap-4 sm:grid-cols-2">
@@ -150,7 +152,7 @@ function AutomationPageInner() {
                       <h3 className="font-semibold">{t.name}</h3>
                       <div className="mt-1 flex gap-1">
                         <Badge variant="outline">{channelLabel(t.channel)}</Badge>
-                        {!t.isActive && <Badge variant="secondary">Tắt</Badge>}
+                        {!t.isActive && <Badge variant="secondary">{tr('status.disabled')}</Badge>}
                       </div>
                     </div>
                     <div className="flex gap-1">
@@ -190,13 +192,13 @@ function AutomationPageInner() {
           <div className="mb-3 flex justify-end">
             <Button onClick={() => setFlowForm('new')}>
               <Plus className="mr-2 h-4 w-4" />
-              Tạo flow
+              {tr('automation.createFlow')}
             </Button>
           </div>
           {flows.isLoading && <LoadingState />}
           {flows.isError && <ErrorState onRetry={flows.refetch} />}
           {!flows.isLoading && !flows.isError && flowItems.length === 0 && (
-            <EmptyState title="Chưa có automation flow" />
+            <EmptyState title={tr('automation.emptyFlows')} />
           )}
           {!flows.isLoading && !flows.isError && flowItems.length > 0 && (
             <div className="space-y-3">
@@ -206,13 +208,17 @@ function AutomationPageInner() {
                     <div className="space-y-1">
                       <h3 className="font-semibold">{f.name}</h3>
                       <p className="text-sm text-muted-foreground">
-                        Trigger: {triggerLabel(f.triggerType)} · Kênh:{' '}
+                        Funnel:{' '}
+                        {f.funnel?.selectedSlug ||
+                          f.funnel?.prompt?.slice(0, 40) ||
+                          (f.funnelId ? f.funnelId.slice(0, 8) : 'Toàn tổ chức')}{' '}
+                        · Trigger: {triggerLabel(f.triggerType)} · Kênh:{' '}
                         {channelLabel(f.channel ?? f.messageTemplate?.channel)} · Delay:{' '}
                         {f.delayMinutes} phút
                       </p>
                       <p className="text-sm">
                         Mẫu: {f.messageTemplate?.name ?? '—'}{' '}
-                        {!f.isActive && <Badge variant="secondary">Tắt</Badge>}
+                        {!f.isActive && <Badge variant="secondary">{tr('status.disabled')}</Badge>}
                       </p>
                     </div>
                     <div className="flex shrink-0 gap-1">
@@ -229,7 +235,7 @@ function AutomationPageInner() {
                         }}
                       >
                         <Play className="mr-1 h-3.5 w-3.5" />
-                        Giả lập
+                        {tr('automation.simulate')}
                       </Button>
                       <Button
                         variant="ghost"
@@ -268,18 +274,18 @@ function AutomationPageInner() {
             isLoading={logs.isLoading}
             isError={logs.isError}
             onRetry={logs.refetch}
-            emptyTitle="Chưa có nhật ký gửi"
+            emptyTitle={tr('automation.emptyLogs')}
             getRowKey={(r) => r.id}
             columns={[
               {
                 key: 'customer',
-                header: 'Khách hàng',
+                header: tr('automation.logs.customer'),
                 cell: (r) => r.customer?.name ?? r.lead?.name ?? '—',
               },
-              { key: 'channel', header: 'Kênh', cell: (r) => channelLabel(r.channel) },
+              { key: 'channel', header: tr('automation.logs.channel'), cell: (r) => channelLabel(r.channel) },
               {
                 key: 'content',
-                header: 'Nội dung',
+                header: tr('automation.logs.content'),
                 cell: (r) => (
                   <span className="line-clamp-2 max-w-[280px] text-sm">
                     {r.renderedContent ?? '—'}
@@ -288,12 +294,12 @@ function AutomationPageInner() {
               },
               {
                 key: 'status',
-                header: 'Trạng thái',
+                header: tr('automation.logs.status'),
                 cell: (r) => <StatusBadge status={LOG_STATUS_LABELS[r.status] ?? r.status} />,
               },
               {
                 key: 'time',
-                header: 'Thời gian',
+                header: tr('automation.logs.time'),
                 cell: (r) => formatDateTime(r.executedAt ?? r.createdAt),
               },
             ]}
@@ -339,9 +345,9 @@ function AutomationPageInner() {
       <ConfirmDialog
         open={!!deleteTemplateId}
         onOpenChange={(o) => !o && setDeleteTemplateId(null)}
-        title="Ẩn mẫu tin?"
-        description="Mẫu tin sẽ được đánh dấu không hoạt động."
-        confirmLabel="Xóa"
+        title={tr('automation.hideTemplateTitle')}
+        description={tr('automation.hideTemplateDesc')}
+        confirmLabel={tr('common.delete')}
         destructive
         isPending={deleteTemplate.isPending}
         onConfirm={() =>
@@ -355,9 +361,9 @@ function AutomationPageInner() {
       <ConfirmDialog
         open={!!deleteFlowId}
         onOpenChange={(o) => !o && setDeleteFlowId(null)}
-        title="Tắt flow?"
-        description="Flow sẽ được đánh dấu không hoạt động."
-        confirmLabel="Tắt"
+        title={tr('automation.disableFlowTitle')}
+        description={tr('automation.disableFlowDesc')}
+        confirmLabel={tr('automation.disable')}
         destructive
         isPending={deleteFlow.isPending}
         onConfirm={() =>
@@ -370,8 +376,9 @@ function AutomationPageInner() {
 }
 
 export default function AutomationPage() {
+  const tr = useT();
   return (
-    <Suspense fallback={<LoadingState message="Đang tải trang nhắn tin…" />}>
+    <Suspense fallback={<LoadingState message={tr('automation.loading')} />}>
       <AutomationPageInner />
     </Suspense>
   );

@@ -10,8 +10,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { useGoogleLogin, useLogin } from '@/hooks/use-auth';
 import { GoogleSignInButton } from '@/components/auth/google-sign-in-button';
 import { BrandLogo } from '@/components/brand/brand-logo';
+import { useT } from '@/i18n/i18n-provider';
 
 export default function LoginPage() {
+  const t = useT();
   const router = useRouter();
   const login = useLogin();
   const googleLogin = useGoogleLogin();
@@ -35,8 +37,8 @@ export default function LoginPage() {
         <div className="flex justify-center mb-2">
           <BrandLogo href={null} size={56} showWordmark={false} priority />
         </div>
-        <CardTitle>Đăng nhập</CardTitle>
-        <CardDescription>Marketing Auto AZ — quản lý marketing spa</CardDescription>
+        <CardTitle>{t('auth.login')}</CardTitle>
+        <CardDescription>{t('auth.loginDescription')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <GoogleSignInButton
@@ -50,12 +52,12 @@ export default function LoginPage() {
             <span className="w-full border-t border-border" />
           </div>
           <div className="relative flex justify-center text-xs uppercase">
-            <span className="bg-card px-2 text-muted-foreground">hoặc email</span>
+            <span className="bg-card px-2 text-muted-foreground">{t('auth.orEmail')}</span>
           </div>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
+            <Label htmlFor="email">{t('auth.email')}</Label>
             <Input
               id="email"
               type="email"
@@ -66,7 +68,7 @@ export default function LoginPage() {
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="password">Mật khẩu</Label>
+            <Label htmlFor="password">{t('auth.password')}</Label>
             <Input
               id="password"
               type="password"
@@ -78,13 +80,13 @@ export default function LoginPage() {
           </div>
           {errorMsg && <p className="text-sm text-destructive">{errorMsg}</p>}
           <Button type="submit" className="w-full" disabled={pending}>
-            {login.isPending ? 'Đang đăng nhập...' : 'Đăng nhập'}
+            {login.isPending ? t('auth.loggingIn') : t('auth.login')}
           </Button>
         </form>
         <p className="mt-4 text-center text-sm text-muted-foreground">
-          Chưa có tài khoản?{' '}
+          {t('auth.noAccount')}{' '}
           <Link href="/register" className="text-primary hover:underline">
-            Đăng ký spa mới
+            {t('auth.registerSpa')}
           </Link>
         </p>
       </CardContent>

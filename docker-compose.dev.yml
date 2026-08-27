@@ -24,9 +24,21 @@ services:
     container_name: marketingspa-redis-dev
     restart: unless-stopped
     # Ưu tiên 6379; nếu cổng bị chiếm (app khác), map sang 6380 và set REDIS_URL=redis://localhost:6380
+    command:
+      - redis-server
+      - --maxmemory
+      - 512mb
+      - --maxmemory-policy
+      - noeviction
     ports:
       # Chỉ bind loopback — không publish 0.0.0.0/IPv6
       - '127.0.0.1:${REDIS_HOST_PORT:-6379}:6379'
+    volumes:
+      # Preserve the running anonymous volume so compose recreate does not wipe BullMQ.
+      - redis_data:/data
 
 volumes:
   marketingspa_postgres_dev:
+  redis_data:
+    external: true
+    name: 1f840f4d8aab254d8b603c92f1eb9ce588ae175a0e50e8023b8ec452e7cb08ee

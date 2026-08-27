@@ -366,6 +366,14 @@ export class ContentMarketingService {
     file?: { buffer: Buffer; mimetype?: string; originalname?: string; size?: number },
     thumb?: { buffer: Buffer; mimetype?: string },
   ) {
+    if (file?.buffer?.length) {
+      const { assertUploadFile } = await import('../common/uploads/upload-policy');
+      assertUploadFile('media', {
+        originalname: file.originalname || 'media.bin',
+        mimetype: file.mimetype,
+        size: file.size ?? file.buffer.length,
+      });
+    }
     const mediaType =
       dto.mediaType ||
       (file?.mimetype?.startsWith('video/')

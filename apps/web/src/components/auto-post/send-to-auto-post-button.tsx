@@ -9,6 +9,8 @@ import {
 } from '@/lib/auto-post-ai-marketing-bridge';
 import type { ContentStudioTab } from '@/types/content-marketing';
 
+import { useT } from '@/i18n/i18n-provider';
+
 export function SendToAutoPostButton({
   tab,
   title,
@@ -29,6 +31,7 @@ export function SendToAutoPostButton({
   className?: string;
 }) {
   const router = useRouter();
+  const t = useT();
 
   return (
     <Button
@@ -45,7 +48,7 @@ export function SendToAutoPostButton({
       }
     >
       <Send className="mr-1 h-4 w-4" />
-      Gửi Auto Post
+      {t('facebookFlow.sendToAutoPost')}
     </Button>
   );
 }

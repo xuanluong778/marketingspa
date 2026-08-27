@@ -17,7 +17,7 @@ async function main() {
   await prisma.subscriptionPlan.upsert({
     where: { code: 'msp-pro-6m' },
     update: {
-      name: 'Marketing SPA Pro — 6 tháng',
+      name: 'Marketing Auto AZ Pro — 6 tháng',
       priceMonthly: new Decimal(650000),
       priceVnd: new Decimal(3900000),
       durationMonths: 6,
@@ -29,7 +29,7 @@ async function main() {
     },
     create: {
       code: 'msp-pro-6m',
-      name: 'Marketing SPA Pro — 6 tháng',
+      name: 'Marketing Auto AZ Pro — 6 tháng',
       priceMonthly: new Decimal(650000),
       priceVnd: new Decimal(3900000),
       durationMonths: 6,
@@ -42,7 +42,7 @@ async function main() {
   await prisma.subscriptionPlan.upsert({
     where: { code: 'msp-pro-12m' },
     update: {
-      name: 'Marketing SPA Pro — 12 tháng',
+      name: 'Marketing Auto AZ Pro — 12 tháng',
       priceMonthly: new Decimal(458333),
       priceVnd: new Decimal(5500000),
       durationMonths: 12,
@@ -54,7 +54,7 @@ async function main() {
     },
     create: {
       code: 'msp-pro-12m',
-      name: 'Marketing SPA Pro — 12 tháng',
+      name: 'Marketing Auto AZ Pro — 12 tháng',
       priceMonthly: new Decimal(458333),
       priceVnd: new Decimal(5500000),
       durationMonths: 12,

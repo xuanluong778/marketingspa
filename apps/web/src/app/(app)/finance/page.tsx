@@ -34,8 +34,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useT } from '@/i18n/i18n-provider';
 
 export default function FinancePage() {
+  const t = useT();
   const [filters, setFilters] = useState<FinanceDateFilters>(defaultFinanceFilters);
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<ExpenseRow | null>(null);
@@ -58,7 +60,7 @@ export default function FinancePage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Doanh thu & Lãi lỗ" description="Tổng quan tài chính spa" />
+      <PageHeader title={t('finance.title')} description={t('finance.description')} />
 
       <div className="flex flex-col gap-3 p-4 rounded-lg border bg-card sm:flex-row sm:flex-wrap sm:items-end">
         <div className="space-y-1">
@@ -138,9 +140,9 @@ export default function FinancePage() {
 
       <Tabs defaultValue="expenses">
         <TabsList className="flex-wrap h-auto">
-          <TabsTrigger value="expenses">Chi phí</TabsTrigger>
-          <TabsTrigger value="revenue">Doanh thu</TabsTrigger>
-          <TabsTrigger value="campaigns">Báo cáo chiến dịch</TabsTrigger>
+          <TabsTrigger value="expenses">{t('finance.tabs.expenses')}</TabsTrigger>
+          <TabsTrigger value="revenue">{t('finance.tabs.revenue')}</TabsTrigger>
+          <TabsTrigger value="campaigns">{t('finance.tabs.campaigns')}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="expenses" className="mt-4">
@@ -159,23 +161,23 @@ export default function FinancePage() {
             data={expenses?.items}
             isLoading={false}
             isError={false}
-            emptyTitle="Chưa có chi phí trong kỳ"
+            emptyTitle={t('finance.emptyExpenses')}
             getRowKey={(r) => r.id}
             columns={[
               {
                 key: 'date',
-                header: 'Ngày',
+                header: t('finance.date'),
                 cell: (r) => new Date(r.expenseDate).toLocaleDateString('vi-VN'),
               },
               {
                 key: 'cat',
-                header: 'Loại',
+                header: t('finance.type'),
                 cell: (r) => expenseCategoryLabel(r.category),
               },
-              { key: 'desc', header: 'Mô tả', cell: (r) => r.description },
+              { key: 'desc', header: t('finance.description'), cell: (r) => r.description },
               {
                 key: 'amount',
-                header: 'Số tiền',
+                header: t('finance.amount'),
                 cell: (r) => formatCurrency(Number(r.amount)),
               },
               {
@@ -211,19 +213,19 @@ export default function FinancePage() {
 
         <TabsContent value="revenue" className="mt-4">
           {!orders?.items?.length ? (
-            <EmptyState title="Chưa có đơn hàng trong kỳ" />
+            <EmptyState title={t('finance.emptyOrders')} />
           ) : (
             <DataTable
               data={orders.items}
               isLoading={false}
               isError={false}
-              emptyTitle="Chưa có đơn hàng"
+              emptyTitle={t('finance.emptyOrders')}
               getRowKey={(r) => r.id}
               columns={[
                 { key: 'order', header: 'Mã đơn', cell: (r) => r.orderNumber },
                 {
                   key: 'customer',
-                  header: 'Khách hàng',
+                  header: t('finance.customer'),
                   cell: (r) => r.customer?.name ?? '—',
                 },
                 {
@@ -262,7 +264,7 @@ export default function FinancePage() {
 
         <TabsContent value="campaigns" className="mt-4">
           {!reports?.campaigns?.length ? (
-            <EmptyState title="Chưa có dữ liệu chiến dịch" />
+            <EmptyState title={t('finance.emptyCampaigns')} />
           ) : (
             <div className="rounded-md border overflow-x-auto">
               <table className="w-full text-sm">

@@ -2,6 +2,7 @@
 
 import { ErrorState, LoadingState } from '@/components/shared/page-state';
 import { useAdminOverview } from '@/hooks/use-platform-admin';
+import { useT } from '@/i18n/i18n-provider';
 
 function Stat({ label, value, tone }: { label: string; value: number; tone?: 'warn' | 'danger' }) {
   return (
@@ -21,6 +22,7 @@ function Stat({ label, value, tone }: { label: string; value: number; tone?: 'wa
 }
 
 export default function AdminOverviewPage() {
+  const t = useT();
   const { data, isLoading, isError, refetch } = useAdminOverview();
   if (isLoading) return <LoadingState />;
   if (isError || !data) return <ErrorState onRetry={() => void refetch()} />;
@@ -28,7 +30,7 @@ export default function AdminOverviewPage() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Tổng quan nền tảng — số liệu realtime từ PostgreSQL.
+        {t('admin.platformOverview')}
       </p>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <Stat label="Tổ chức / Spa" value={data.organizations} />

@@ -31,7 +31,14 @@ export class LeadAssignmentService {
 
   async autoAssign(
     organizationId: string,
-    opts: { branchId?: string | null; preferredEmployeeId?: string | null },
+    opts: {
+      branchId?: string | null;
+      preferredEmployeeId?: string | null;
+      leadSourceId?: string | null;
+      adCampaignId?: string | null;
+      score?: number | null;
+      excludeEmployeeId?: string | null;
+    },
   ): Promise<string | null> {
     if (opts.preferredEmployeeId) {
       const emp = await this.prisma.employee.findFirst({
@@ -199,5 +206,14 @@ export class LeadAssignmentService {
       where: { organizationId },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  async deleteRule(organizationId: string, id: string) {
+    const owned = await this.prisma.leadAssignmentRule.findFirst({
+      where: { id, organizationId },
+    });
+    if (!owned) throw new NotFoundException('Assignment rule not found');
+    await this.prisma.leadAssignmentRule.delete({ where: { id } });
+    return { ok: true };
   }
 }

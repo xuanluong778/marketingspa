@@ -195,7 +195,7 @@ export class AppointmentsService {
         where: { id: dto.leadId },
         data: {
           pipelineStatus: LeadPipelineStatus.BOOKED,
-          funnelStageId: stage?.id,
+          stageId: stage?.id,
         },
       });
     }
@@ -369,7 +369,7 @@ export class AppointmentsService {
         const stage = await this.pipeline.resolveStageForStatus(organizationId, next);
         await this.prisma.lead.update({
           where: { id: existing.leadId },
-          data: { pipelineStatus: next, funnelStageId: stage?.id },
+          data: { pipelineStatus: next, stageId: stage?.id },
         });
       }
     }

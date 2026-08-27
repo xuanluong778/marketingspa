@@ -21,6 +21,7 @@ import type {
   AutomationLog,
   EmailReportConfig,
 } from '@/types/ai-ads-manager';
+import { useT } from '@/i18n/i18n-provider';
 
 export function AdsSettingsTab({
   settings,
@@ -58,12 +59,13 @@ export function AdsSettingsTab({
   onUpsertEmailReport: (body: Record<string, unknown>) => void;
   onSendReport: () => void;
 }) {
+  const t = useT();
   const [reportEmail, setReportEmail] = useState('');
 
-  if (isLoading) return <LoadingState message="Đang tải cài đặt..." />;
+  if (isLoading) return <LoadingState message={t('aiAds.loadingSettings')} />;
   if (isError) return <ErrorState onRetry={onRetry} />;
   if (!settings) {
-    return <EmptyState title="Chưa có cài đặt Ads" />;
+    return <EmptyState title={t('aiAds.emptySettings')} />;
   }
 
   const s = settings;
@@ -211,7 +213,7 @@ export function AdsSettingsTab({
         </CardHeader>
         <CardContent className="p-0 overflow-x-auto">
           {logs.length === 0 ? (
-            <EmptyState title="Chưa có audit log" className="py-8" />
+            <EmptyState title={t('aiAds.emptyAuditLog')} className="py-8" />
           ) : (
             <Table>
               <TableHeader>

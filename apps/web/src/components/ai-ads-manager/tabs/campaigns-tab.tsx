@@ -15,6 +15,7 @@ import {
 import { LoadingState, EmptyState, ErrorState } from '@/components/shared/page-state';
 import type { AdManagerCampaignRow } from '@/types/ai-ads-manager';
 import { formatMoney, formatNum, platformLabel } from '../ads-format';
+import { useT } from '@/i18n/i18n-provider';
 
 export function AdsCampaignsTab({
   items,
@@ -43,12 +44,13 @@ export function AdsCampaignsTab({
   onOptimize: (id: string) => void;
   onSendReport: () => void;
 }) {
-  if (isLoading) return <LoadingState message="Đang tải chiến dịch từ database..." />;
+  const t = useT();
+  if (isLoading) return <LoadingState message={t('aiAds.loadingCampaignsDb')} />;
   if (isError) return <ErrorState onRetry={onRetry} />;
   if (!items.length) {
     return (
       <EmptyState
-        title="Chưa có chiến dịch"
+        title={t('aiAds.emptyCampaignsList')}
         description="Kết nối tài khoản và đồng bộ để lưu insights vào PostgreSQL."
       />
     );

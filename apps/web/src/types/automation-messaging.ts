@@ -2,6 +2,12 @@ export type MessageChannel = 'EMAIL' | 'SMS' | 'ZALO' | 'MESSENGER' | 'PUSH';
 
 export type AutomationTriggerType =
   | 'LEAD_CREATED'
+  | 'STAGE_CHANGED'
+  | 'SCORE_CHANGED'
+  | 'MESSAGE_RECEIVED'
+  | 'NO_REPLY'
+  | 'BOOKING_CREATED'
+  | 'PURCHASED'
   | 'APPOINTMENT_CREATED'
   | 'APPOINTMENT_24H_BEFORE'
   | 'APPOINTMENT_2H_BEFORE'
@@ -23,6 +29,12 @@ export const CHANNEL_OPTIONS: { value: MessageChannel; label: string }[] = [
 
 export const TRIGGER_OPTIONS: { value: AutomationTriggerType; label: string }[] = [
   { value: 'LEAD_CREATED', label: 'Lead mới tạo' },
+  { value: 'STAGE_CHANGED', label: 'Đổi giai đoạn Funnel' },
+  { value: 'SCORE_CHANGED', label: 'Đổi điểm lead' },
+  { value: 'MESSAGE_RECEIVED', label: 'Khách nhắn tin' },
+  { value: 'NO_REPLY', label: 'Không phản hồi' },
+  { value: 'BOOKING_CREATED', label: 'Tạo lịch hẹn' },
+  { value: 'PURCHASED', label: 'Đã mua' },
   { value: 'APPOINTMENT_CREATED', label: 'Lịch hẹn mới' },
   { value: 'APPOINTMENT_24H_BEFORE', label: 'Trước lịch 24h' },
   { value: 'APPOINTMENT_2H_BEFORE', label: 'Trước lịch 2h' },
@@ -66,13 +78,24 @@ export interface MessageTemplateDetail {
   variableFallbacks?: Record<string, string>;
 }
 
+export interface AutomationFunnelOption {
+  id: string;
+  prompt: string;
+  selectedSlug?: string | null;
+  completeGeneratedAt?: string | null;
+  createdAt: string;
+}
+
 export interface AutomationFlowDetail {
   id: string;
   name: string;
   triggerType: AutomationTriggerType;
+  funnelId?: string | null;
+  funnel?: { id: string; selectedSlug?: string | null; prompt?: string | null } | null;
   channel?: MessageChannel | null;
   delayMinutes: number;
   isActive: boolean;
+  actions?: unknown[];
   messageTemplate?: MessageTemplateDetail | null;
 }
 

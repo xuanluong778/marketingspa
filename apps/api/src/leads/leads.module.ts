@@ -1,14 +1,16 @@
 import { Module } from '@nestjs/common';
 import { LeadsController } from './leads.controller';
 import { LeadsService } from './leads.service';
+import { FunnelAnalyticsService } from './funnel-analytics.service';
 import { EventsModule } from '../events/events.module';
 import { AttributionModule } from '../attribution/attribution.module';
 import { CrmModule } from '../crm/crm.module';
+import { CustomersModule } from '../customers/customers.module';
 
 @Module({
-  imports: [EventsModule, AttributionModule, CrmModule],
+  imports: [EventsModule, AttributionModule, CrmModule, CustomersModule],
   controllers: [LeadsController],
-  providers: [LeadsService],
-  exports: [LeadsService],
+  providers: [LeadsService, FunnelAnalyticsService],
+  exports: [LeadsService, FunnelAnalyticsService],
 })
 export class LeadsModule {}

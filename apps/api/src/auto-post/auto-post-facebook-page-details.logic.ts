@@ -211,6 +211,24 @@ export function mergeConnectionScopes(
  * Tránh likes/comments/reactions.summary — Meta hay trả (#10) pages_read_engagement
  * / pages_read_user_content dù /me/permissions đã granted (Standard Access / thiếu Advanced).
  */
+export const FANPAGE_DETAILS_PAGE_FIELDS = [
+  'id',
+  'name',
+  'about',
+  'category',
+  'description',
+  'website',
+  'link',
+  'username',
+  'phone',
+  'emails',
+  'fan_count',
+  'followers_count',
+  'picture.width(200).height(200){url}',
+  'cover{source}',
+  'location{city,country,street}',
+] as const;
+
 export const FANPAGE_DETAILS_SAFE_POST_FIELDS = [
   'id',
   'message',
@@ -230,9 +248,14 @@ type RawPage = {
   description?: string;
   website?: string;
   link?: string;
+  username?: string;
+  phone?: string;
+  emails?: string[];
   fan_count?: number;
   followers_count?: number;
   picture?: { data?: { url?: string }; url?: string };
+  cover?: { source?: string };
+  location?: { city?: string; country?: string; street?: string };
 };
 
 type RawPost = {
@@ -276,15 +299,30 @@ export function mapMetaPageToDetails(
     strOrNull(raw.picture?.url) ??
     local.pagePictureUrl;
 
+  const loc = raw.location;
+  const location = loc
+    ? [loc.street, loc.city, loc.country].map((p) => strOrNull(p)).filter(Boolean).join(', ') ||
+      null
+    : null;
+  const emails = Array.isArray(raw.emails)
+    ? raw.emails.map((e) => String(e).trim()).filter(Boolean)
+    : null;
+
   return {
     id: local.id,
     pageId: strOrNull(raw.id) ?? local.pageId,
     name: strOrNull(raw.name) ?? local.pageName,
     pictureUrl,
+    coverUrl: strOrNull(raw.cover?.source),
     category: strOrNull(raw.category),
-    about: strOrNull(raw.about) ?? strOrNull(raw.description),
+    about: strOrNull(raw.about),
+    description: strOrNull(raw.description),
     website: strOrNull(raw.website),
     link: strOrNull(raw.link),
+    username: strOrNull(raw.username),
+    phone: strOrNull(raw.phone),
+    emails: emails && emails.length ? emails : null,
+    location,
     followersCount: numOrNull(raw.followers_count),
     fanCount: numOrNull(raw.fan_count),
   };
@@ -333,4 +371,39 @@ export function mapMetaPosts(rawList: RawPost[] | undefined, limit: number): Fan
 /** Cache key an toàn — không chứa token. */
 export function fanpageDetailsCacheKey(organizationId: string, fanpageId: string): string {
   return `${organizationId}:${fanpageId}`;
+}
+
+export const FANPAGE_SYNC_TIMEZONE = 'Asia/Ho_Chi_Minh';
+
+/** HH:mm DD/MM/YYYY theo Asia/Ho_Chi_Minh — không fake timezone. */
+export function formatHoChiMinhDateTime(input: Date | string | null | undefined): string | null {
+  if (input == null) return null;
+  const d = input instanceof Date ? input : new Date(input);
+  if (Number.isNaN(d.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: FANPAGE_SYNC_TIMEZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour12: false,
+  }).formatToParts(d);
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? '';
+  const hour = get('hour');
+  const minute = get('minute');
+  const day = get('day');
+  const month = get('month');
+  const year = get('year');
+  if (!hour || !minute || !day || !month || !year) return null;
+  return `${hour}:${minute} ${day}/${month}/${year}`;
+}
+
+export function snapshotHasTokenLeak(value: unknown): boolean {
+  const s = JSON.stringify(value);
+  return (
+    /encryptedPageAccessToken|access_token/i.test(s) ||
+    /\b(?:EAAG|EAAD|EAA)[A-Za-z0-9_-]{20,}\b/.test(s)
+  );
 }

@@ -25,6 +25,7 @@ import { HrmLeaveCreateDialog } from '@/components/hrm/hrm-leave-create-dialog';
 import { HrmOtCreateDialog } from '@/components/hrm/hrm-ot-create-dialog';
 import { ApiError, getApiUrl } from '@/lib/api-client';
 import { authStorage } from '@/lib/auth-storage';
+import { useT } from '@/i18n/i18n-provider';
 import {
   LEAVE_DAY_PART_OPTIONS,
   LEAVE_STATUS_OPTIONS,
@@ -83,6 +84,7 @@ async function openAttachment(id: string) {
 }
 
 export default function HrmLeavePage() {
+  const t = useT();
   const { data: user } = useCurrentUser();
   const [tab, setTab] = useState<'leave' | 'overtime'>('leave');
   const [branchId, setBranchId] = useState('');
@@ -122,7 +124,7 @@ export default function HrmLeavePage() {
   const annualHint = useMemo(() => {
     const row = balance?.balances?.find((b) => b.leaveType === 'ANNUAL');
     if (!row) return undefined;
-    if (row.remaining == null) return 'Phép năm: không giới hạn';
+    if (row.remaining == null) return t('hrm.annualLeaveUnlimited');
     return `Số dư phép năm: ${row.remaining}/${row.quota} ngày (đã dùng ${row.used})`;
   }, [balance]);
 
@@ -144,7 +146,7 @@ export default function HrmLeavePage() {
 
   return (
     <div>
-      <PageHeader title="Phép & OT" description="Tạo và duyệt đơn nghỉ phép / làm thêm giờ">
+      <PageHeader title={t('hrm.leaveTitle')} description={t('hrm.leaveDescription')}>
         {canCreate && (
           <Button
             onClick={() => {
@@ -154,7 +156,7 @@ export default function HrmLeavePage() {
             }}
           >
             <Plus className="mr-2 h-4 w-4" />
-            {tab === 'leave' ? 'Tạo đơn phép' : 'Tạo đơn OT'}
+            {tab === 'leave' ? t('hrm.createLeave') : t('hrm.createOt')}
           </Button>
         )}
       </PageHeader>
@@ -336,7 +338,7 @@ export default function HrmLeavePage() {
           isLoading={leaveLoading}
           isError={leaveError}
           onRetry={() => refetchLeave()}
-          emptyTitle="Không có đơn phép"
+          emptyTitle={t('hrm.leaveEmpty')}
           getRowKey={(row) => row.id}
         />
       ) : (
@@ -435,7 +437,7 @@ export default function HrmLeavePage() {
           isLoading={otLoading}
           isError={otError}
           onRetry={() => refetchOt()}
-          emptyTitle="Không có đơn OT"
+          emptyTitle={t('hrm.otEmpty')}
           getRowKey={(row) => row.id}
         />
       )}

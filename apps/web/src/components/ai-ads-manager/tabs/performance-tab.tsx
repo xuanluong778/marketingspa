@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { LoadingState, EmptyState, ErrorState } from '@/components/shared/page-state';
 import type { AdManagerCampaignRow, AdManagerDashboard } from '@/types/ai-ads-manager';
 import { formatMoney, formatNum, platformLabel } from '../ads-format';
+import { useT } from '@/i18n/i18n-provider';
 
 export function AdsPerformanceTab({
   dashboard,
@@ -19,12 +20,13 @@ export function AdsPerformanceTab({
   isError: boolean;
   onRetry: () => void;
 }) {
-  if (isLoading) return <LoadingState message="Đang tải hiệu quả..." />;
+  const t = useT();
+  if (isLoading) return <LoadingState message={t('aiAds.loadingPerformance')} />;
   if (isError) return <ErrorState onRetry={onRetry} />;
   if (!dashboard || campaigns.length === 0) {
     return (
       <EmptyState
-        title="Chưa có metrics hiệu quả"
+        title={t('aiAds.emptyMetrics')}
         description="Đồng bộ Ads để lưu impressions, spend, ROAS… vào PostgreSQL."
       />
     );
@@ -100,7 +102,7 @@ export function AdsPerformanceTab({
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             {topRoas.length === 0 ? (
-              <p className="text-muted-foreground">Chưa có ROAS</p>
+              <p className="text-muted-foreground">{t('aiAds.emptyRoas')}</p>
             ) : (
               topRoas.map((c) => (
                 <div key={c.insightId} className="flex justify-between gap-2">

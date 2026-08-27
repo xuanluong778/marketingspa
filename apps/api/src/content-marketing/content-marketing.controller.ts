@@ -12,6 +12,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
+import { createUploadMulterOptions } from '../common/uploads/upload-policy';
 import { ContentMarketingService } from './content-marketing.service';
 import { ContentIndustryService } from './content-industry.service';
 import { OpinionVoiceProfileService } from './opinion-voice-profile.service';
@@ -305,7 +306,10 @@ export class ContentMarketingController {
         { name: 'file', maxCount: 1 },
         { name: 'thumbnail', maxCount: 1 },
       ],
-      { limits: { fileSize: 25 * 1024 * 1024 } },
+      {
+        ...createUploadMulterOptions('media'),
+        limits: { fileSize: 25 * 1024 * 1024, files: 2 },
+      },
     ),
   )
   analyzeFacebookPolicyMedia(

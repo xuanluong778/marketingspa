@@ -25,6 +25,7 @@ interface DataTableProps<T> {
   isError: boolean;
   onRetry?: () => void;
   emptyTitle?: string;
+  emptyDescription?: string;
   getRowKey: (row: T) => string;
 }
 
@@ -35,11 +36,12 @@ export function DataTable<T>({
   isError,
   onRetry,
   emptyTitle,
+  emptyDescription,
   getRowKey,
 }: DataTableProps<T>) {
   if (isLoading) return <LoadingState />;
   if (isError) return <ErrorState onRetry={onRetry} />;
-  if (!data?.length) return <EmptyState title={emptyTitle} />;
+  if (!data?.length) return <EmptyState title={emptyTitle} description={emptyDescription} />;
 
   return (
     <div className="rounded-md border overflow-x-auto">

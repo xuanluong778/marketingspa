@@ -50,12 +50,14 @@ export class MessagingWebhookController {
 
   @Post('zalo')
   @HttpCode(200)
-  receiveZalo(
+  async receiveZalo(
     @Req() req: RequestWithRawBody,
     @Body() body: Record<string, unknown>,
     @Headers('x-zevent-signature') signature?: string,
   ) {
     const raw = req.rawBody ?? Buffer.from(JSON.stringify(body));
+    // Fail-closed sync trước khi trả 200
+    await this.ingress.assertZaloSignature(raw, body, signature);
     void this.ingress.ingestZalo(raw, body, signature).catch((err) => {
       this.logger.warn(`Zalo ingest error: ${(err as Error).message}`);
     });

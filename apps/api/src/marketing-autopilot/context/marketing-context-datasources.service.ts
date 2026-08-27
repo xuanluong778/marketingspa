@@ -287,7 +287,7 @@ export class MarketingContextDatasourcesService {
       this.prisma.lead.count({
         where: {
           organizationId,
-          funnelStageId: { not: null },
+          stageId: { not: null },
           createdAt: { gte: range.from, lte: range.to },
         },
       }),

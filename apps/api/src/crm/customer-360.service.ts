@@ -30,16 +30,18 @@ export class Customer360Service {
         this.prisma.lead.findMany({
           where: { organizationId, customerId },
           orderBy: { createdAt: 'desc' },
+          take: 50,
           include: {
             leadSource: true,
             assignedTo: true,
             attribution: true,
-            funnelStage: true,
+            stage: true,
           },
         }),
         this.prisma.appointment.findMany({
           where: { organizationId, customerId },
           orderBy: { scheduledAt: 'desc' },
+          take: 50,
           include: {
             employee: true,
             service: true,
@@ -52,6 +54,7 @@ export class Customer360Service {
         this.prisma.order.findMany({
           where: { organizationId, customerId },
           orderBy: { orderedAt: 'desc' },
+          take: 50,
           include: { items: true, payments: true },
         }),
         this.prisma.auditLog.findMany({
@@ -75,6 +78,7 @@ export class Customer360Service {
         this.prisma.crmTask.findMany({
           where: { organizationId, customerId, status: 'OPEN' },
           orderBy: { dueAt: 'asc' },
+          take: 50,
         }),
       ]);
 

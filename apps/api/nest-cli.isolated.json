@@ -4,8 +4,8 @@
   "sourceRoot": "src",
   "compilerOptions": {
     "tsConfigPath": "tsconfig.build.isolated.json",
-    "outDir": "../../.build/api",
-    "deleteOutDir": true,
+    "outDir": "./dist",
+    "deleteOutDir": false,
     "webpack": false
   }
 }

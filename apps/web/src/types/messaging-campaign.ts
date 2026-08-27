@@ -129,7 +129,7 @@ export interface MessagingIdentityRow {
     pipelineStatus?: string;
     branch?: { id: string; name: string } | null;
     assignedTo?: { id: string; name: string } | null;
-    funnelStage?: { id: string; name: string } | null;
+    stage?: { id: string; name: string } | null;
   } | null;
   eligibility?: {
     eligible: boolean;

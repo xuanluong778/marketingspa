@@ -37,6 +37,11 @@ export interface WorkTask {
   priority: WorkPriority | string;
   labels: string[];
   progress: number;
+  estimatedMinutes?: number | null;
+  completedAt?: string | null;
+  recurrenceRule?: string | null;
+  recurrenceInterval?: number;
+  isRecurrenceTemplate?: boolean;
   sortOrder: number;
   isArchived: boolean;
   copiedFromId?: string | null;
@@ -160,7 +165,13 @@ export interface CreateWorkTaskInput {
   checklist?: Array<{ title: string; isDone?: boolean; sortOrder?: number }>;
 }
 
-export type UpdateWorkTaskInput = Partial<CreateWorkTaskInput> & {
+export type UpdateWorkTaskInput = Partial<
+  Omit<CreateWorkTaskInput, 'description' | 'assignerId' | 'startDate' | 'deadline'>
+> & {
+  description?: string | null;
+  assignerId?: string | null;
+  startDate?: string | null;
+  deadline?: string | null;
   isArchived?: boolean;
 };
 

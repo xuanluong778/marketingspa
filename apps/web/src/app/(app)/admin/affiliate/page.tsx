@@ -16,6 +16,7 @@ import {
   useAdminAffiliateReferrals,
   useAdminAffiliateSettings,
 } from '@/hooks/use-affiliate';
+import { useT } from '@/i18n/i18n-provider';
 
 type Tab =
   | 'overview'
@@ -28,12 +29,13 @@ type Tab =
   | 'audit';
 
 export default function AdminAffiliatePage() {
+  const t = useT();
   const [tab, setTab] = useState<Tab>('overview');
   const overview = useAdminAffiliateOverview();
   const mut = useAdminAffiliateMut();
 
   const tabs: Array<[Tab, string]> = [
-    ['overview', 'Tổng quan'],
+    ['overview', t('admin.overview')],
     ['partners', 'Đối tác'],
     ['referrals', 'Referrals'],
     ['commissions', 'Hoa hồng'],

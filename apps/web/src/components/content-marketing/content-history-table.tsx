@@ -6,6 +6,7 @@ import { Copy, ExternalLink, Pencil, Send, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { contentHistoryItemToPayload, sendToAutoPost } from '@/lib/auto-post-ai-marketing-bridge';
 import type { ContentHistoryItem } from '@/types/content-marketing';
+import { useT } from '@/i18n/i18n-provider';
 
 function safeScore(n: number | undefined | null): number | null {
   if (n == null || !Number.isFinite(n) || Number.isNaN(n)) return null;
@@ -24,7 +25,7 @@ export function ContentHistoryTable({
   onOpen,
   onEdit,
   onDelete,
-  emptyMessage = 'Chưa có bài viết đã lưu',
+  emptyMessage,
 }: {
   items: ContentHistoryItem[];
   onOpen: (item: ContentHistoryItem) => void;
@@ -32,6 +33,8 @@ export function ContentHistoryTable({
   onDelete: (item: ContentHistoryItem) => void;
   emptyMessage?: string;
 }) {
+  const t = useT();
+  const resolvedEmpty = emptyMessage ?? t('content.emptySavedPosts');
   const router = useRouter();
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -45,7 +48,7 @@ export function ContentHistoryTable({
   if (items.length === 0) {
     return (
       <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 px-4 py-8 text-center text-sm text-emerald-800">
-        {emptyMessage}
+        {resolvedEmpty}
       </div>
     );
   }

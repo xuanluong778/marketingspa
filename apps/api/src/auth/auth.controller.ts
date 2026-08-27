@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Patch,
   Post,
   Req,
   Res,
@@ -18,6 +19,7 @@ import {
   ResendRegistrationOtpDto,
   VerifyRegistrationOtpDto,
 } from './dto/registration-otp.dto';
+import { UpdateLocaleDto } from './dto/update-locale.dto';
 import { JwtAuthGuard } from '../common/guards/auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ClientIp } from '../common/decorators/client-ip.decorator';
@@ -250,5 +252,11 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   me(@CurrentUser() user: AuthUser) {
     return this.authService.getCurrentUser(user.id);
+  }
+
+  @Patch('locale')
+  @UseGuards(JwtAuthGuard)
+  updateLocale(@CurrentUser() user: AuthUser, @Body() dto: UpdateLocaleDto) {
+    return this.authService.updateLocale(user.id, dto.locale);
   }
 }

@@ -28,6 +28,7 @@ import {
 } from '@/hooks/use-marketing-autopilot';
 import type { MarketingAutopilotProject } from '@/types/marketing-autopilot';
 import { cn } from '@/lib/utils';
+import { useT } from '@/i18n/i18n-provider';
 
 const GOAL_CHIPS = [
   { id: 'tang-lead', label: 'Tăng Lead' },
@@ -112,6 +113,7 @@ export function ProjectHistoryPanel({
   onPageChange?: (page: number) => void;
   hasActiveFilters?: boolean;
 }) {
+  const t = useT();
   const updateProject = useUpdateMarketingAutopilotProject();
   const archiveProject = useArchiveMarketingAutopilotProject();
   const [editProject, setEditProject] = useState<MarketingAutopilotProject | null>(null);
@@ -121,8 +123,8 @@ export function ProjectHistoryPanel({
 
   useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => setToast(null), 4000);
-    return () => clearTimeout(t);
+    const timer = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(timer);
   }, [toast]);
 
   useEffect(() => {
@@ -183,7 +185,7 @@ export function ProjectHistoryPanel({
         onError: (err) => {
           setToast({
             type: 'error',
-            message: formatMutationError(err, 'Không lưu được project.'),
+            message: formatMutationError(err, t('autopilot.saveFailed')),
           });
         },
       },
@@ -209,16 +211,16 @@ export function ProjectHistoryPanel({
     });
   };
 
-  if (isLoading && !items.length) return <LoadingState message="Đang tải lịch sử project..." />;
-  if (isError) return <ErrorState message="Không tải được lịch sử project." onRetry={onRetry} />;
+  if (isLoading && !items.length) return <LoadingState message={t('autopilot.loadingHistory')} />;
+  if (isError) return <ErrorState message={t('autopilot.loadHistoryFailed')} onRetry={onRetry} />;
   if (!items.length) {
     return (
       <EmptyState
-        title={hasActiveFilters ? 'Không có project phù hợp' : 'Chưa có project'}
+        title={hasActiveFilters ? t('autopilot.noMatchingProjects') : t('autopilot.emptyProjects')}
         description={
           hasActiveFilters
-            ? 'Thử đổi bộ lọc hoặc xóa lọc để xem thêm kết quả.'
-            : 'Project Autopilot đầu tiên sẽ xuất hiện tại đây.'
+            ? t('autopilot.tryChangeFilters')
+            : t('autopilot.emptyProjectsHint')
         }
       />
     );
@@ -370,7 +372,7 @@ export function ProjectHistoryPanel({
                 </div>
               </div>
               <div className="space-y-1">
-                <Label htmlFor="edit-customer">Khách hàng mục tiêu</Label>
+                <Label htmlFor="edit-customer">{t('autopilot.targetCustomers')}</Label>
                 <Textarea
                   id="edit-customer"
                   rows={2}

@@ -22,7 +22,9 @@ import {
   suggestProduct,
   type AudienceOption,
 } from '@/lib/marketing-autopilot-suggestions';
+import { VN_PROVINCE_NAMES } from '@/lib/vn-provinces';
 import type { AutopilotFormOptions, MarketingContextSnapshot } from '@/types/marketing-autopilot';
+import { useT } from '@/i18n/i18n-provider';
 
 export type AutopilotBriefFormState = {
   projectName: string;
@@ -55,6 +57,7 @@ const BUDGET_PRESETS = [
   { id: '20tr', label: '20tr', amount: 20_000_000 },
   { id: '50tr', label: '50tr', amount: 50_000_000 },
 ];
+const SELECT_UNSET = '__unset__';
 
 /** Digits only → number (empty → 0). */
 function parseMoneyDigits(raw: string): number {
@@ -95,8 +98,12 @@ export function AutopilotBriefForm({
   snapshot?: MarketingContextSnapshot | null;
   compact?: boolean;
 }) {
+  const t = useT();
   const products = options?.products ?? [];
-  const provinces = options?.provinces ?? [];
+  const provinces =
+    options?.provinces && options.provinces.length > 0
+      ? options.provinces
+      : [...VN_PROVINCE_NAMES];
   const goalChips = options?.goals?.length ? options.goals : GOAL_CHIPS;
   const [audienceOptions, setAudienceOptions] = useState<AudienceOption[]>([]);
   const [audienceHint, setAudienceHint] = useState<string | null>(null);
@@ -286,13 +293,23 @@ export function AutopilotBriefForm({
         </div>
       ) : (
         <Select
-          value={form.budgetPresetId === 'ai' ? undefined : form.budgetPresetId || undefined}
-          onValueChange={applyBudget}
+          value={
+            form.budgetPresetId && form.budgetPresetId !== 'ai'
+              ? form.budgetPresetId
+              : SELECT_UNSET
+          }
+          onValueChange={(v) => {
+            if (v === SELECT_UNSET) return;
+            applyBudget(v);
+          }}
         >
           <SelectTrigger id="monthlyBudget" className={compact ? 'h-9' : undefined}>
             <SelectValue placeholder="Chọn ngân sách" />
           </SelectTrigger>
           <SelectContent>
+            <SelectItem value={SELECT_UNSET} disabled className="hidden">
+              Chọn ngân sách
+            </SelectItem>
             {BUDGET_PRESETS.map((p) => (
               <SelectItem key={p.id} value={p.id}>
                 {p.label}
@@ -308,11 +325,17 @@ export function AutopilotBriefForm({
   const areaField = (
     <div className={fieldGap}>
       <Label className={compact ? 'text-xs' : undefined}>Khu vực</Label>
-      <Select value={form.targetArea || undefined} onValueChange={applyArea}>
+      <Select
+        value={form.targetArea || SELECT_UNSET}
+        onValueChange={(v) => applyArea(v === SELECT_UNSET ? '' : v)}
+      >
         <SelectTrigger className={compact ? 'h-9' : undefined}>
           <SelectValue placeholder="Chọn tỉnh/thành" />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent className="z-[120] max-h-72">
+          <SelectItem value={SELECT_UNSET} disabled className="hidden">
+            Chọn tỉnh/thành
+          </SelectItem>
           {provinces.map((p) => (
             <SelectItem key={p} value={p}>
               {p}
@@ -327,7 +350,7 @@ export function AutopilotBriefForm({
     <div className={fieldGap}>
       <div className="flex items-center justify-between gap-2">
         <Label htmlFor="customerProfile" className={compact ? 'text-xs' : undefined}>
-          Khách hàng mục tiêu
+          {t('autopilot.targetCustomers')}
         </Label>
         <Button
           type="button"

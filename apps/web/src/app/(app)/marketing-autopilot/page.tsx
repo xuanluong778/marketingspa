@@ -19,9 +19,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { LoadingState, ErrorState } from '@/components/shared/page-state';
 import type { AutopilotBriefFormState } from '@/components/marketing-autopilot/autopilot-brief-form';
 import { AutopilotCreateTab } from '@/components/marketing-autopilot/autopilot-create-tab';
-import { AutopilotAnalysisTab } from '@/components/marketing-autopilot/autopilot-analysis-tab';
-import { ProjectHistoryPanel } from '@/components/marketing-autopilot/project-history-panel';
 import { ProjectHistoryToolbar } from '@/components/marketing-autopilot/project-history-toolbar';
+import dynamic from 'next/dynamic';
 import {
   buildAutopilotPageQueryString,
   parseAutopilotPageQuery,
@@ -31,6 +30,22 @@ import {
 } from '@/lib/marketing-autopilot-project-query';
 import type { AutopilotContentIdeaView } from '@/types/marketing-autopilot';
 import { cn } from '@/lib/utils';
+import { useT } from '@/i18n/i18n-provider';
+
+const AutopilotAnalysisTab = dynamic(
+  () =>
+    import('@/components/marketing-autopilot/autopilot-analysis-tab').then((m) => ({
+      default: m.AutopilotAnalysisTab,
+    })),
+  { loading: () => <LoadingState /> },
+);
+const ProjectHistoryPanel = dynamic(
+  () =>
+    import('@/components/marketing-autopilot/project-history-panel').then((m) => ({
+      default: m.ProjectHistoryPanel,
+    })),
+  { loading: () => <LoadingState /> },
+);
 
 const AUTOPILOT_DRAFT_TYPES = [
   'CONTENT_DRAFT',
@@ -68,6 +83,7 @@ const defaultForm: AutopilotBriefFormState = {
 };
 
 export default function MarketingAutopilotPage() {
+  const t = useT();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -81,7 +97,9 @@ export default function MarketingAutopilotPage() {
   const needsHistoryData = activeTab === 'history';
 
   const apiListQuery = useMemo(() => {
-    const { projectId: _pid, tab: _tab, ...rest } = pageQuery;
+    const rest = { ...pageQuery };
+    delete rest.projectId;
+    delete rest.tab;
     return rest;
   }, [pageQuery]);
 
@@ -90,7 +108,7 @@ export default function MarketingAutopilotPage() {
     enabled && (needsHistoryData || needsAnalysisData),
   );
   const filterOptions = useMarketingAutopilotProjectFilterOptions(enabled && needsHistoryData);
-  const formOptions = useMarketingAutopilotFormOptions(enabled && activeTab === 'create');
+  const formOptions = useMarketingAutopilotFormOptions(activeTab === 'create');
   const context = useMarketingAutopilotContext(
     enabled && (activeTab === 'create' || activeTab === 'analysis'),
   );
@@ -130,15 +148,15 @@ export default function MarketingAutopilotPage() {
     () =>
       Boolean(
         pageQuery.q ||
-          pageQuery.datePreset ||
-          pageQuery.dateFrom ||
-          pageQuery.dateTo ||
-          pageQuery.status ||
-          pageQuery.goal ||
-          pageQuery.product ||
-          pageQuery.budgetMin != null ||
-          pageQuery.budgetMax != null ||
-          pageQuery.quickFilter,
+        pageQuery.datePreset ||
+        pageQuery.dateFrom ||
+        pageQuery.dateTo ||
+        pageQuery.status ||
+        pageQuery.goal ||
+        pageQuery.product ||
+        pageQuery.budgetMin != null ||
+        pageQuery.budgetMax != null ||
+        pageQuery.quickFilter,
       ),
     [pageQuery],
   );
@@ -153,7 +171,9 @@ export default function MarketingAutopilotPage() {
 
   const currentMission = currentProject?.mission ?? null;
   const currentAnalysis = useMemo(() => {
-    return currentProject?.analysisJson ?? currentProject?.analyses?.[0]?.recommendationJson ?? null;
+    return (
+      currentProject?.analysisJson ?? currentProject?.analyses?.[0]?.recommendationJson ?? null
+    );
   }, [currentProject]);
 
   useEffect(() => {
@@ -173,7 +193,11 @@ export default function MarketingAutopilotPage() {
     const fromApi: Partial<
       Record<AutopilotDraftType, { draftId: string; editUrl: string; status: string }>
     > = {};
-    const resolveEditUrl = (type: AutopilotDraftType, externalId: string | null, existing?: string | null) => {
+    const resolveEditUrl = (
+      type: AutopilotDraftType,
+      externalId: string | null,
+      existing?: string | null,
+    ) => {
       if (existing) return existing;
       const base = DRAFT_EDIT_FALLBACK[type];
       if (externalId && type === 'CONTENT_DRAFT') {
@@ -224,13 +248,11 @@ export default function MarketingAutopilotPage() {
   const contentDraftEditUrl = createdDraftsByType.CONTENT_DRAFT?.editUrl ?? null;
 
   if (status.isLoading) {
-    return <LoadingState message="Đang kiểm tra trạng thái Marketing Autopilot..." />;
+    return <LoadingState message={t('autopilot.loadingStatus')} />;
   }
 
   if (status.isError || !status.data) {
-    return (
-      <ErrorState message="Không tải được trạng thái Marketing Autopilot." onRetry={() => status.refetch()} />
-    );
+    return <ErrorState message={t('autopilot.errorStatus')} onRetry={() => status.refetch()} />;
   }
 
   const isCreateTab = activeTab === 'create';
@@ -252,9 +274,9 @@ export default function MarketingAutopilotPage() {
                 <Sparkles className="h-5 w-5 text-primary" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold tracking-tight">Marketing Autopilot</h1>
+                <h1 className="text-2xl font-bold tracking-tight">{t('autopilot.title')}</h1>
                 <p className="text-sm text-muted-foreground">
-                  Phân tích kế hoạch marketing và lưu project theo từng tổ chức.
+                  {t('autopilot.extendedDescription')}
                 </p>
               </div>
             </div>
@@ -265,15 +287,17 @@ export default function MarketingAutopilotPage() {
           <div className="rounded-md bg-primary/10 p-1.5">
             <Sparkles className="h-4 w-4 text-primary" />
           </div>
-          <h1 className="text-lg font-semibold tracking-tight sm:text-xl">Marketing Autopilot</h1>
+          <h1 className="text-lg font-semibold tracking-tight sm:text-xl">
+            {t('autopilot.title')}
+          </h1>
         </div>
       )}
 
       {!status.data.enabled ? (
         <Alert>
           <Lock className="h-4 w-4" />
-          <AlertTitle>Tính năng đang tắt</AlertTitle>
-          <AlertDescription>Marketing Autopilot chưa được bật.</AlertDescription>
+          <AlertTitle>{t('autopilot.disabledTitle')}</AlertTitle>
+          <AlertDescription>{t('autopilot.disabledDescription')}</AlertDescription>
         </Alert>
       ) : null}
 
@@ -321,79 +345,83 @@ export default function MarketingAutopilotPage() {
         >
           <div className={cn(isCreateTab && 'h-full min-h-0')}>
             <AutopilotCreateTab
-            form={form}
-            setForm={setForm}
-            defaultForm={defaultForm}
-            formOptions={formOptions.data}
-            snapshot={context.data?.snapshot}
-            enabled={status.data.enabled}
-            createProject={createProject}
-            onCreated={(projectId) => openProjectAnalysis(projectId)}
-          />
+              form={form}
+              setForm={setForm}
+              defaultForm={defaultForm}
+              formOptions={formOptions.data}
+              snapshot={context.data?.snapshot}
+              enabled={status.data.enabled}
+              createProject={createProject}
+              onCreated={(projectId) => openProjectAnalysis(projectId)}
+            />
           </div>
         </TabsContent>
 
         <TabsContent value="analysis" className="mt-4 focus-visible:outline-none">
-          <AutopilotAnalysisTab
-            enabled={status.data.enabled}
-            analysisView={analysisView}
-            onAnalysisViewChange={(view) => patchPageQuery({ tab: 'analysis', view })}
-            currentProject={currentProject}
-            currentAnalysis={currentAnalysis}
-            currentMission={currentMission}
-            createdDraftsByType={createdDraftsByType}
-            contentDraftFallback={contentDraftFallback}
-            contentDraftEditUrl={contentDraftEditUrl}
-            productPriceFallback={form.productPrice}
-            metrics={context.data?.snapshot?.metrics as Record<string, unknown> | undefined}
-            confirmDraft={confirmDraft}
-            approveMission={approveMission}
-            onLocalDraftUpdate={(rows) => {
-              setLocalDraftOverrides((prev) => {
-                const next = { ...prev };
-                for (const row of rows) {
-                  if (!isAutopilotDraftType(row.type)) continue;
-                  next[row.type] = {
-                    draftId: row.draftId,
-                    editUrl: row.editUrl || DRAFT_EDIT_FALLBACK[row.type],
-                    status: row.status || 'DRAFT',
-                  };
-                }
-                return next;
-              });
-            }}
-          />
+          {activeTab === 'analysis' ? (
+            <AutopilotAnalysisTab
+              enabled={status.data.enabled}
+              analysisView={analysisView}
+              onAnalysisViewChange={(view) => patchPageQuery({ tab: 'analysis', view })}
+              currentProject={currentProject}
+              currentAnalysis={currentAnalysis}
+              currentMission={currentMission}
+              createdDraftsByType={createdDraftsByType}
+              contentDraftFallback={contentDraftFallback}
+              contentDraftEditUrl={contentDraftEditUrl}
+              productPriceFallback={form.productPrice}
+              metrics={context.data?.snapshot?.metrics as Record<string, unknown> | undefined}
+              confirmDraft={confirmDraft}
+              approveMission={approveMission}
+              onLocalDraftUpdate={(rows) => {
+                setLocalDraftOverrides((prev) => {
+                  const next = { ...prev };
+                  for (const row of rows) {
+                    if (!isAutopilotDraftType(row.type)) continue;
+                    next[row.type] = {
+                      draftId: row.draftId,
+                      editUrl: row.editUrl || DRAFT_EDIT_FALLBACK[row.type],
+                      status: row.status || 'DRAFT',
+                    };
+                  }
+                  return next;
+                });
+              }}
+            />
+          ) : null}
         </TabsContent>
 
         <TabsContent value="history" className="mt-4 focus-visible:outline-none">
-          <div className="space-y-3 rounded-lg border bg-card p-4">
-            <div>
-              <h2 className="text-lg font-semibold">Lịch sử project</h2>
-              <p className="text-sm text-muted-foreground">
-                Tìm kiếm, lọc và quản lý project đã lưu. Bấm Xem để mở kết quả phân tích.
-              </p>
+          {activeTab === 'history' ? (
+            <div className="space-y-3 rounded-lg border bg-card p-4">
+              <div>
+                <h2 className="text-lg font-semibold">Lịch sử project</h2>
+                <p className="text-sm text-muted-foreground">
+                  Tìm kiếm, lọc và quản lý project đã lưu. Bấm Xem để mở kết quả phân tích.
+                </p>
+              </div>
+              <ProjectHistoryToolbar
+                query={pageQuery}
+                filterOptions={filterOptions.data}
+                onChange={patchPageQuery}
+                onReset={() => router.replace(`${pathname}?tab=history`, { scroll: false })}
+              />
+              <ProjectHistoryPanel
+                items={projects.data?.items ?? []}
+                isLoading={projects.isLoading}
+                isError={projects.isError}
+                onRetry={() => projects.refetch()}
+                selectedProjectId={selectedProjectId}
+                onSelectProject={(id) => patchPageQuery({ projectId: id })}
+                onViewProject={openProjectAnalysis}
+                page={projects.data?.page ?? 1}
+                totalPages={projects.data?.totalPages ?? 1}
+                total={projects.data?.total ?? 0}
+                onPageChange={(page) => patchPageQuery({ page, tab: 'history' })}
+                hasActiveFilters={hasActiveFilters}
+              />
             </div>
-            <ProjectHistoryToolbar
-              query={pageQuery}
-              filterOptions={filterOptions.data}
-              onChange={patchPageQuery}
-              onReset={() => router.replace(`${pathname}?tab=history`, { scroll: false })}
-            />
-            <ProjectHistoryPanel
-              items={projects.data?.items ?? []}
-              isLoading={projects.isLoading}
-              isError={projects.isError}
-              onRetry={() => projects.refetch()}
-              selectedProjectId={selectedProjectId}
-              onSelectProject={(id) => patchPageQuery({ projectId: id })}
-              onViewProject={openProjectAnalysis}
-              page={projects.data?.page ?? 1}
-              totalPages={projects.data?.totalPages ?? 1}
-              total={projects.data?.total ?? 0}
-              onPageChange={(page) => patchPageQuery({ page, tab: 'history' })}
-              hasActiveFilters={hasActiveFilters}
-            />
-          </div>
+          ) : null}
         </TabsContent>
       </Tabs>
 
@@ -402,7 +430,8 @@ export default function MarketingAutopilotPage() {
           <Bot className="h-4 w-4" />
           <AlertTitle>Safety boundary</AlertTitle>
           <AlertDescription>
-            Marketing Autopilot tạo AI Plan + Draft. Không gọi action thật lên Facebook, Email hay Ads.
+            Marketing Autopilot tạo AI Plan + Draft. Không gọi action thật lên Facebook, Email hay
+            Ads.
           </AlertDescription>
         </Alert>
       ) : null}

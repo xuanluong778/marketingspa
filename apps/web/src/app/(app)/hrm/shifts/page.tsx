@@ -40,6 +40,7 @@ import {
 } from '@/hooks/use-hrm-shifts';
 import { ApiError } from '@/lib/api-client';
 import type { HrmShiftAssignment, HrmShiftPolicy, HrmShiftPolicyInput } from '@/types/hrm';
+import { useT } from '@/i18n/i18n-provider';
 
 const WEEKDAYS = [
   { value: 1, label: 'T2' },
@@ -82,6 +83,7 @@ function emptyPolicy(): HrmShiftPolicyInput {
 }
 
 export default function HrmShiftsPage() {
+  const t = useT();
   const { data: user } = useCurrentUser();
   const [tab, setTab] = useState<'policies' | 'assign' | 'calendar'>('policies');
   const [branchId, setBranchId] = useState('');
@@ -411,7 +413,7 @@ export default function HrmShiftsPage() {
           isLoading={policiesLoading}
           isError={policiesError}
           onRetry={() => refetchPolicies()}
-          emptyTitle="Chưa có ca làm việc"
+          emptyTitle={t('hrm.shiftsEmpty')}
           getRowKey={(row) => row.id}
         />
       )}
@@ -564,7 +566,7 @@ export default function HrmShiftsPage() {
           </div>
 
           {calLoading ? (
-            <p className="text-sm text-muted-foreground">Đang tải lịch…</p>
+            <p className="text-sm text-muted-foreground">{t('hrm.loadingCalendar')}</p>
           ) : (
             <div
               className={`grid gap-2 ${calMode === 'week' ? 'md:grid-cols-7' : 'md:grid-cols-7'}`}

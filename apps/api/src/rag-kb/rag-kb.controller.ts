@@ -11,6 +11,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { createUploadMulterOptions } from '../common/uploads/upload-policy';
 import { JwtAuthGuard } from '../common/guards/auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -87,7 +88,7 @@ export class RagKbController {
   }
 
   @Post(':id/import/file')
-  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 2 * 1024 * 1024 } }))
+  @UseInterceptors(FileInterceptor('file', createUploadMulterOptions('kb_text')))
   importFile(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,

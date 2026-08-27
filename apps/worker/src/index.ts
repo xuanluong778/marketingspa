@@ -4,9 +4,14 @@ import path from 'path';
 config({ path: path.resolve(__dirname, '../../../.env') });
 config({ path: path.resolve(__dirname, '../../.env') });
 config();
+process.env.PROCESS_ROLE = process.env.PROCESS_ROLE || 'worker';
+if (!process.env.DATABASE_CONNECTION_LIMIT) {
+  process.env.DATABASE_CONNECTION_LIMIT = '8';
+}
 import { Worker } from 'bullmq';
+import { hostname } from 'os';
 import { prisma } from '@marketingspa/database';
-import { AD_URL_ANALYZE_LIMITS, QUEUE_NAMES } from '@marketingspa/shared';
+import { AD_URL_ANALYZE_LIMITS, BULLMQ_JOB_RETENTION, QUEUE_NAMES } from '@marketingspa/shared';
 import { bullConnection, createRedisPublisher, queuePrefix } from './config';
 import { initSentry, captureException } from './sentry';
 import { registerRepeatableJobs } from './schedulers/register-jobs';
@@ -32,6 +37,10 @@ import { processMessagingSend } from './processors/messaging-send';
 import { processOfflineConversion } from './processors/offline-conversion';
 import { processMarketingAutopilotOutcomeScan } from './processors/marketing-autopilot-outcome-scan';
 import { processMarketingAutopilotMission } from './processors/marketing-autopilot-mission';
+import { processEmailCampaignPlan } from './processors/email-campaign-plan';
+import { processEmailCampaignSend, processEmailNotOpenFollowup } from './processors/email-campaign-send';
+import { processEmailCampaignScheduledScan } from './processors/email-campaign-scheduled-scan';
+import { processZaloOaTokenRefresh } from './processors/zalo-oa-token-refresh';
 
 initSentry();
 
@@ -51,6 +60,9 @@ initSentry();
 const redis = createRedisPublisher();
 const workers: Worker[] = [];
 const WORKER_HEARTBEAT_KEY = 'marketingspa:worker:heartbeat';
+/** Distributed singleton — second worker process must exit. */
+const WORKER_SINGLETON_KEY = 'marketingspa:worker:singleton';
+const SINGLETON_TTL_SEC = 90;
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const VIDEO_TRANSCRIPTION_LOCK_MS = 3 * 60 * 60 * 1000;
 const ADS_SYNC_LOCK_MS = Math.max(
@@ -58,13 +70,19 @@ const ADS_SYNC_LOCK_MS = Math.max(
   Number(process.env.ADS_SYNC_TIMEOUT_MS || 300_000) + 60_000,
 );
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+const singletonToken = `${process.pid}:${hostname()}:${Date.now()}`;
+let singletonHeld = false;
 
 function attachWorkerHandlers(worker: Worker, name: string) {
   worker.on('completed', (job) => {
     console.log(`[worker:${name}] Job ${job.id} completed`);
   });
   worker.on('failed', (job, err) => {
-    console.error(`[worker:${name}] Job ${job?.id} failed:`, err.message);
+    const msg = String(err?.message || err).replace(
+      /postgres(?:ql)?:\/\/[^@\s'"]+@/gi,
+      'postgresql://***@',
+    );
+    console.error(`[worker:${name}] Job ${job?.id} failed:`, msg);
     captureException(err, name);
   });
 }
@@ -77,13 +95,80 @@ async function writeHeartbeat() {
   }
 }
 
+function singletonEnabled(): boolean {
+  const v = (process.env.WORKER_SINGLETON_GUARD || '1').trim().toLowerCase();
+  return v !== '0' && v !== 'false' && v !== 'off';
+}
+
+async function acquireWorkerSingleton(): Promise<void> {
+  if (!singletonEnabled()) {
+    console.warn('[worker] WORKER_SINGLETON_GUARD disabled — dual workers allowed (dev only)');
+    return;
+  }
+  // Retry briefly so PM2 restart can take over after old process releases lock.
+  const attempts = 8;
+  for (let i = 0; i < attempts; i++) {
+    const ok = await redis.set(
+      WORKER_SINGLETON_KEY,
+      singletonToken,
+      'EX',
+      SINGLETON_TTL_SEC,
+      'NX',
+    );
+    if (ok === 'OK') {
+      singletonHeld = true;
+      console.log(`[worker] singleton lock acquired → ${WORKER_SINGLETON_KEY}`);
+      return;
+    }
+    const holder = await redis.get(WORKER_SINGLETON_KEY);
+    console.warn(
+      `[worker] singleton busy (attempt ${i + 1}/${attempts}) holder=${holder ? 'set' : 'empty'}`,
+    );
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  console.error(
+    '[worker] FATAL: another worker already holds marketingspa:worker:singleton — exiting',
+  );
+  process.exit(1);
+}
+
+async function renewWorkerSingleton(): Promise<void> {
+  if (!singletonHeld || !singletonEnabled()) return;
+  try {
+    const cur = await redis.get(WORKER_SINGLETON_KEY);
+    if (cur !== singletonToken) {
+      console.error('[worker] singleton lock lost — exiting');
+      process.exit(1);
+    }
+    await redis.expire(WORKER_SINGLETON_KEY, SINGLETON_TTL_SEC);
+  } catch (err) {
+    console.error('[worker] singleton renew failed:', err instanceof Error ? err.message : err);
+  }
+}
+
+async function releaseWorkerSingleton(): Promise<void> {
+  if (!singletonHeld) return;
+  try {
+    const cur = await redis.get(WORKER_SINGLETON_KEY);
+    if (cur === singletonToken) {
+      await redis.del(WORKER_SINGLETON_KEY);
+    }
+  } catch {
+    /* ignore */
+  }
+  singletonHeld = false;
+}
+
 async function start() {
+  await acquireWorkerSingleton();
   await registerRepeatableJobs();
 
   const opts = {
     connection: bullConnection,
     prefix: queuePrefix,
     concurrency: 2,
+    removeOnComplete: { ...BULLMQ_JOB_RETENTION.complete },
+    removeOnFail: { ...BULLMQ_JOB_RETENTION.fail },
   };
 
   workers.push(
@@ -186,6 +271,39 @@ async function start() {
       (job) => processMarketingAutopilotMission(job),
       { ...opts, concurrency: 2 },
     ),
+    new Worker(
+      QUEUE_NAMES.EMAIL_CAMPAIGN_PLAN,
+      async (job) => {
+        if (job.name === 'scan-due-scheduled-email-campaigns') {
+          return processEmailCampaignScheduledScan(job);
+        }
+        return processEmailCampaignPlan(job);
+      },
+      { ...opts, concurrency: 1 },
+    ),
+    new Worker(
+      QUEUE_NAMES.EMAIL_CAMPAIGN_SEND,
+      (job) => {
+        if (job.name === 'email-not-open-followup') {
+          return processEmailNotOpenFollowup(job, redis);
+        }
+        return processEmailCampaignSend(job, redis);
+      },
+      {
+        ...opts,
+        concurrency: 3,
+        limiter: {
+          max: Math.max(1, Number(process.env.EMAIL_SEND_RATE_PER_SEC || 14) || 14),
+          duration: 1000,
+        },
+      },
+    ),
+    // Zalo OA auto-refresh access token (scan + per-connection refresh)
+    new Worker(
+      QUEUE_NAMES.ZALO_OA_TOKEN_REFRESH,
+      (job) => processZaloOaTokenRefresh(job),
+      { ...opts, concurrency: 2 },
+    ),
   );
 
   for (const w of workers) {
@@ -195,11 +313,13 @@ async function start() {
   await writeHeartbeat();
   heartbeatTimer = setInterval(() => {
     void writeHeartbeat();
+    void renewWorkerSingleton();
   }, HEARTBEAT_INTERVAL_MS);
 
   console.log('🔄 Worker started — queues:');
   Object.values(QUEUE_NAMES).forEach((q) => console.log(`   • ${q}`));
   console.log(`   • heartbeat → ${WORKER_HEARTBEAT_KEY}`);
+  console.log(`   • singleton → ${WORKER_SINGLETON_KEY} (guard=${singletonEnabled() ? 'on' : 'off'})`);
 }
 
 start().catch((err) => {
@@ -213,6 +333,7 @@ async function shutdown() {
     heartbeatTimer = null;
   }
   await Promise.all(workers.map((w) => w.close()));
+  await releaseWorkerSingleton();
   await redis.quit();
   await prisma.$disconnect();
   process.exit(0);

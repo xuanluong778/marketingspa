@@ -42,7 +42,7 @@ export class ChatbotFacebookWebhookController {
       webhookUrl: this.webhook.getWebhookUrl(),
       verifyTokenConfigured: Boolean(this.webhook.getVerifyToken()),
       appSecretConfigured: Boolean(this.webhook.getAppSecret()),
-      signatureMode: this.webhook.getAppSecret() ? 'required' : 'optional',
+      signatureMode: this.webhook.getAppSecret() ? 'required' : 'fail-closed-missing-secret',
       subscribedFields: [
         'messages',
         'messaging_postbacks',

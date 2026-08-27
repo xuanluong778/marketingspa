@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useT } from '@/i18n/i18n-provider';
 
 const GIS_SCRIPT_ID = 'google-gsi-client';
 const GIS_SRC = 'https://accounts.google.com/gsi/client';
@@ -69,6 +70,7 @@ export function GoogleSignInButton({
   label = 'Tiếp tục với Google',
   onCredential,
 }: Props) {
+  const t = useT();
   const hostRef = useRef<HTMLDivElement>(null);
   const onCredentialRef = useRef(onCredential);
   const [error, setError] = useState<string | null>(null);
@@ -81,12 +83,12 @@ export function GoogleSignInButton({
   const handleCredential = useCallback((response: CredentialResponse) => {
     const idToken = response?.credential?.trim();
     if (!idToken) {
-      setError('Google không trả về token. Thử lại.');
+      setError(t('auth.googleNoToken'));
       return;
     }
     setError(null);
     onCredentialRef.current(idToken);
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (!clientId) {

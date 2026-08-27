@@ -41,6 +41,18 @@ export interface BusinessGoalMetrics {
   targetTransactions: number | null;
   targetLeads: number | null;
   targetLeadsInsufficientData: boolean;
+  /** Doanh thu hòa vốn = fixed / (grossMargin/100); null nếu không chia được */
+  breakEvenRevenue: number | null;
+  /** Số đơn để đạt doanh thu kế hoạch A = ceil(A / avg) */
+  ordersForRevenueTarget: number | null;
+  /** Lead cần cho K (ordersForRevenueTarget) */
+  leadsForRevenueTarget: number | null;
+  costPerOrder: number | null;
+  ordersShortToBreakEven: number | null;
+  ordersShortToProfitTarget: number | null;
+  leadsShortToProfitTarget: number | null;
+  /** Số lead user nhập (form) — chỉ để tính khoảng cách, không đổi API */
+  formLeadCount: number;
   marketingPercentOfRevenue: number | null;
   heroMessage: string;
   insights: BusinessGoalInsight[];
@@ -70,6 +82,14 @@ function calculateFromInput(
   | 'insights'
   | 'warnings'
   | 'apiInput'
+  | 'formLeadCount'
+  | 'breakEvenRevenue'
+  | 'ordersForRevenueTarget'
+  | 'leadsForRevenueTarget'
+  | 'costPerOrder'
+  | 'ordersShortToBreakEven'
+  | 'ordersShortToProfitTarget'
+  | 'leadsShortToProfitTarget'
 > {
   const avgRev = safeNumber(input.averageRevenuePerTransaction);
   const txCount = safeNumber(input.currentTransactionCount);
@@ -138,6 +158,68 @@ function calculateFromInput(
     targetTransactions,
     targetLeads,
     targetLeadsInsufficientData,
+  };
+}
+
+/** KPI mở rộng — cùng source với metrics cốt lõi (không công thức tiền thứ 2 cho A/B/C). */
+export function extendBusinessGoalCore(
+  core: ReturnType<typeof calculateFromInput>,
+  input: BusinessGoalInput,
+  formLeadCount = 0,
+): Pick<
+  BusinessGoalMetrics,
+  | 'breakEvenRevenue'
+  | 'ordersForRevenueTarget'
+  | 'leadsForRevenueTarget'
+  | 'costPerOrder'
+  | 'ordersShortToBreakEven'
+  | 'ordersShortToProfitTarget'
+  | 'leadsShortToProfitTarget'
+  | 'formLeadCount'
+> {
+  const fixed = safeNumber(input.fixedCost);
+  const avg = safeNumber(input.averageRevenuePerTransaction);
+  const tx = Math.round(safeNumber(input.currentTransactionCount));
+  const conv = safeNumber(input.leadConversionRate);
+  const leads = Math.max(0, Math.round(formLeadCount));
+
+  const breakEvenRevenue =
+    core.grossProfitMargin != null && core.grossProfitMargin > 0
+      ? roundMoney(fixed / (core.grossProfitMargin / 100))
+      : null;
+
+  const ordersForRevenueTarget =
+    avg > 0 && core.totalRevenue > 0 ? Math.ceil(core.totalRevenue / avg) : null;
+
+  let leadsForRevenueTarget: number | null = null;
+  if (ordersForRevenueTarget != null && conv > 0) {
+    leadsForRevenueTarget = Math.ceil(ordersForRevenueTarget / (conv / 100));
+  }
+
+  const costPerOrder = tx > 0 ? roundMoney((core.variableCost + fixed) / tx) : null;
+
+  const ordersShortToBreakEven =
+    core.breakEvenTransactions != null
+      ? Math.max(0, core.breakEvenTransactions - tx)
+      : null;
+
+  const ordersShortToProfitTarget =
+    core.targetTransactions != null ? Math.max(0, core.targetTransactions - tx) : null;
+
+  let leadsShortToProfitTarget: number | null = null;
+  if (!core.targetLeadsInsufficientData && core.targetLeads != null) {
+    leadsShortToProfitTarget = Math.max(0, core.targetLeads - leads);
+  }
+
+  return {
+    breakEvenRevenue,
+    ordersForRevenueTarget,
+    leadsForRevenueTarget,
+    costPerOrder,
+    ordersShortToBreakEven,
+    ordersShortToProfitTarget,
+    leadsShortToProfitTarget,
+    formLeadCount: leads,
   };
 }
 
@@ -262,14 +344,27 @@ function buildWarnings(
 }
 
 export function calculateBusinessGoalMetrics(state: BusinessGoalFormState): BusinessGoalMetrics {
-  const apiInput = deriveApiInput(state);
+  let apiInput = deriveApiInput(state);
+
+  // Planning mode: user entered mục tiêu doanh thu manual → align tx count so A ≈ target
+  if (state.totalRevenueManualEnabled && state.totalRevenueManual > 0) {
+    const avg = safeNumber(state.avgRevenuePerTransaction) || 1;
+    const tx = Math.max(1, Math.round(state.totalRevenueManual / avg));
+    apiInput = {
+      ...apiInput,
+      averageRevenuePerTransaction: avg,
+      currentTransactionCount: tx,
+    };
+  }
+
   const core = calculateFromInput(apiInput);
+  const extended = extendBusinessGoalCore(core, apiInput, state.leadCount);
   const fixedCostOnly = computeTotalFixedCost(state);
   const marketingCost = computeTotalMarketing(state);
   const totalOperatingCost = roundMoney(fixedCostOnly + marketingCost);
-  const totalRevenue = computeTotalRevenue(state);
+  const marketingBase = core.totalRevenue;
   const marketingPercentOfRevenue =
-    totalRevenue > 0 ? roundPercent((marketingCost / totalRevenue) * 100) : null;
+    marketingBase > 0 ? roundPercent((marketingCost / marketingBase) * 100) : null;
 
   const heroMessage = buildHeroMessage(core.status);
   const insights = buildInsights(core, marketingPercentOfRevenue);
@@ -277,6 +372,7 @@ export function calculateBusinessGoalMetrics(state: BusinessGoalFormState): Busi
 
   return {
     ...core,
+    ...extended,
     fixedCostOnly,
     marketingCost,
     totalOperatingCost,

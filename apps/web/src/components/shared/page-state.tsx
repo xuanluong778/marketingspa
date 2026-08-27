@@ -1,15 +1,21 @@
+'use client';
+
 import { AlertCircle, Inbox, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { useT } from '@/i18n/i18n-provider';
 import { cn } from '@/lib/utils';
 
 export function LoadingState({
-  message = 'Đang tải...',
+  message,
   className,
 }: {
   message?: string;
   className?: string;
 }) {
+  const t = useT();
+  const displayMessage = message ?? t('common.loading');
+
   return (
     <div
       className={cn(
@@ -18,13 +24,13 @@ export function LoadingState({
       )}
     >
       <Loader2 className="mb-3 h-8 w-8 animate-spin" />
-      <p className="text-sm">{message}</p>
+      <p className="text-sm">{displayMessage}</p>
     </div>
   );
 }
 
 export function EmptyState({
-  title = 'Chưa có dữ liệu',
+  title,
   description,
   className,
 }: {
@@ -32,6 +38,9 @@ export function EmptyState({
   description?: string;
   className?: string;
 }) {
+  const t = useT();
+  const displayTitle = title ?? t('common.emptyData');
+
   return (
     <div
       className={cn(
@@ -40,27 +49,30 @@ export function EmptyState({
       )}
     >
       <Inbox className="mb-3 h-10 w-10" />
-      <p className="font-medium text-current">{title}</p>
+      <p className="font-medium text-current">{displayTitle}</p>
       {description && <p className="mt-1 text-sm opacity-90">{description}</p>}
     </div>
   );
 }
 
 export function ErrorState({
-  message = 'Không thể tải dữ liệu',
+  message,
   onRetry,
 }: {
   message?: string;
   onRetry?: () => void;
 }) {
+  const t = useT();
+  const displayMessage = message ?? t('common.errorLoad');
+
   return (
     <Card className="border-destructive/50">
       <CardContent className="flex flex-col items-center justify-center py-12">
         <AlertCircle className="h-10 w-10 text-destructive mb-3" />
-        <p className="font-medium">{message}</p>
+        <p className="font-medium">{displayMessage}</p>
         {onRetry && (
           <Button variant="outline" className="mt-4" onClick={onRetry}>
-            Thử lại
+            {t('common.retry')}
           </Button>
         )}
       </CardContent>

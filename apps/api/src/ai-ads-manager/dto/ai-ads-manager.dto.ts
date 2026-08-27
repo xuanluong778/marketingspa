@@ -108,11 +108,20 @@ export class CampaignActionDto {
 }
 
 export class ConnectGoogleDto {
+  @IsOptional()
   @IsString()
-  refreshToken!: string;
+  refreshToken?: string;
 
   @IsString()
   customerId!: string;
+
+  @IsOptional()
+  @IsString()
+  customerName?: string;
+
+  @IsOptional()
+  @IsString()
+  loginCustomerId?: string;
 
   @IsOptional()
   @IsString()

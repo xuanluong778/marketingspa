@@ -1,4 +1,4 @@
-import { IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, MaxLength, Min, MinLength } from 'class-validator';
+import { IsArray, IsBoolean, IsDateString, IsEmail, IsEnum, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, IsUUID, MaxLength, Min, MinLength } from 'class-validator';
 import { LeadPipelineStatus } from '@marketingspa/database';
 import { PaginationDto } from '../../common/dto/pagination.dto';
 import { Type } from 'class-transformer';
@@ -26,7 +26,20 @@ export class CreateLeadDto {
 
   @IsOptional()
   @IsUUID()
+  stageId?: string;
+
+  /** @deprecated alias for stageId */
+  @IsOptional()
+  @IsUUID()
   funnelStageId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  pipelineId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  funnelRecommendationId?: string;
 
   @IsOptional()
   @IsUUID()
@@ -56,6 +69,11 @@ export class CreateLeadDto {
   @IsOptional()
   @IsArray()
   tags?: any[];
+
+  /** Funnel public-form extras — not a Lead column; stripped before Prisma write. */
+  @IsOptional()
+  @IsObject()
+  captureMeta?: Record<string, unknown>;
 }
 
 export class UpdateLeadDto {
@@ -81,7 +99,16 @@ export class UpdateLeadDto {
 
   @IsOptional()
   @IsUUID()
+  stageId?: string;
+
+  /** @deprecated alias for stageId */
+  @IsOptional()
+  @IsUUID()
   funnelStageId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  pipelineId?: string;
 
   @IsOptional()
   @IsString()
@@ -95,11 +122,27 @@ export class UpdateLeadDto {
   @IsOptional()
   @IsString()
   lostReason?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  score?: number;
 }
 
 export class UpdateLeadStatusDto {
+  /** Legacy status — still accepted; mirrored from stage when stageId provided */
+  @IsOptional()
   @IsEnum(LeadPipelineStatus)
-  pipelineStatus!: LeadPipelineStatus;
+  pipelineStatus?: LeadPipelineStatus;
+
+  @IsOptional()
+  @IsUUID()
+  stageId?: string;
+
+  /** @deprecated alias for stageId */
+  @IsOptional()
+  @IsUUID()
+  funnelStageId?: string;
 
   @IsOptional()
   @IsString()
@@ -135,6 +178,20 @@ export class LeadQueryDto extends PaginationDto {
   @IsOptional()
   @IsDateString()
   createdTo?: string;
+
+  @IsOptional()
+  @IsString()
+  qualification?: string;
+
+  /** Comma-separated qualifications, e.g. MQL,SQL */
+  @IsOptional()
+  @IsString()
+  qualificationIn?: string;
+
+  /** Comma-separated pipeline statuses */
+  @IsOptional()
+  @IsString()
+  pipelineStatusIn?: string;
 
   @IsOptional()
   @IsString()
@@ -205,6 +262,30 @@ export class LeadKanbanColumnQueryDto {
   @IsOptional()
   @IsString()
   search?: string;
+  @IsOptional()
+  @IsString()
+  leadSourceId?: string;
+  @IsOptional()
+  @IsString()
+  assignedToId?: string;
+  @IsOptional()
+  @IsString()
+  branchId?: string;
+  @IsOptional()
+  @IsDateString()
+  createdFrom?: string;
+  @IsOptional()
+  @IsDateString()
+  createdTo?: string;
+  @IsOptional()
+  @IsString()
+  qualification?: string;
+  @IsOptional()
+  @IsString()
+  qualificationIn?: string;
+  @IsOptional()
+  @IsString()
+  pipelineStatusIn?: string;
 }
 
 export class LeadKanbanQueryDto {
@@ -220,6 +301,26 @@ export class LeadKanbanQueryDto {
   @IsOptional()
   @IsString()
   branchId?: string;
+
+  @IsOptional()
+  @IsDateString()
+  createdFrom?: string;
+
+  @IsOptional()
+  @IsDateString()
+  createdTo?: string;
+
+  @IsOptional()
+  @IsString()
+  qualification?: string;
+
+  @IsOptional()
+  @IsString()
+  qualificationIn?: string;
+
+  @IsOptional()
+  @IsString()
+  pipelineStatusIn?: string;
 
   @IsOptional()
   @Type(() => Number)

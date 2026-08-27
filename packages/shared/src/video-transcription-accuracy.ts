@@ -100,22 +100,51 @@ export function buildSttPrompt(params: {
   chunkCount?: number;
 }): string {
   const bits: string[] = [];
-  bits.push('Tiếng Việt. Phiên âm chính xác tên riêng và thương hiệu.');
-  if (params.videoTitle?.trim()) {
-    bits.push(`Video: ${params.videoTitle.trim().slice(0, 120)}`);
-  }
-  if (params.chunkIndex != null && params.chunkCount != null) {
-    bits.push(`Đoạn ${params.chunkIndex + 1}/${params.chunkCount}.`);
-  }
+  // Keep prompt SHORT and free of labels like "Đoạn N" — Whisper often echoes prompt as fake transcript
+  // when guided-text looks like the spoken content.
+  bits.push(
+    'Transcribe the spoken words accurately. Prefer Vietnamese. Do not invent section labels.',
+  );
   if (params.glossary.length) {
-    bits.push(`Tên riêng/thương hiệu cần giữ đúng: ${params.glossary.slice(0, 40).join(', ')}.`);
+    bits.push(`Proper names: ${params.glossary.slice(0, 25).join(', ')}.`);
   }
-  const tail = (params.previousTail || '').trim().slice(-400);
+  const tail = (params.previousTail || '').trim().slice(-200);
   if (tail) {
-    bits.push(`Ngữ cảnh câu trước: ${tail}`);
+    // Only previous speech context — never meta like chunk counters
+    bits.push(`Context: ${tail}`);
   }
-  // OpenAI prompt limit ~224 tokens for whisper — keep short
-  return bits.join(' ').slice(0, 800);
+  // Intentionally omit videoTitle + "Đoạn i/n" (caused echo: "Đoạn 2. Đoạn 3.")
+  void params.videoTitle;
+  void params.chunkIndex;
+  void params.chunkCount;
+  return bits.join(' ').slice(0, 400);
+}
+
+/**
+ * Drop STT hallucinations that are just prompt echoes (e.g. "Đoạn 2. Đoạn 3.").
+ */
+export function stripPromptEchoArtifacts(text: string): string {
+  let t = (text || '').trim();
+  if (!t) return t;
+  // Whole-transcript is only "Đoạn N" labels
+  if (/^(?:đoạn\s*\d+(?:\s*\/\s*\d+)?\s*[.,;:]?\s*)+$/iu.test(t)) {
+    return '';
+  }
+  // Leading label spam
+  t = t.replace(/^(?:đoạn\s*\d+(?:\s*\/\s*\d+)?\s*[.,;:]?\s*)+/iu, '').trim();
+  return t;
+}
+
+/** Minimum expected transcript size (chars) for non-silent audio. */
+export function minTranscriptCharsForDuration(durationSec: number): number {
+  if (!(durationSec > 20)) return 1;
+  // User gate: >20s and <50 chars is always failure; scale gently after that
+  return Math.max(50, Math.min(400, Math.floor(durationSec * 2)));
+}
+
+export function isTranscriptTooShortForDuration(text: string, durationSec: number): boolean {
+  const t = (text || '').trim();
+  return t.length < minTranscriptCharsForDuration(durationSec);
 }
 
 /**
@@ -370,14 +399,16 @@ export function correctVietnameseTranscript(raw: string, opts?: { glossary?: str
     text = `${text}.`;
   }
 
-  // Light paragraphing
-  const units = text.split(/(?<=[.!?])\s+/).filter(Boolean);
-  if (units.length > 4) {
+  // Light paragraphing — group ~3–4 sentences; avoid one sentence per line
+  const units = text.split(/(?<=[.!?…])\s+/).filter(Boolean);
+  if (units.length > 3) {
     const paras: string[] = [];
-    for (let i = 0; i < units.length; i += 3) {
-      paras.push(units.slice(i, i + 3).join(' '));
+    for (let i = 0; i < units.length; i += 4) {
+      paras.push(units.slice(i, i + 4).join(' '));
     }
     text = paras.join('\n\n');
+  } else if (units.length > 1 && !text.includes('\n\n')) {
+    text = units.join(' ');
   }
 
   return text
@@ -404,4 +435,108 @@ export function spliceSegmentText(
   void plain;
   // Fall back: append nothing, return glossary-corrected full text only
   return fullText;
+}
+
+function polishWordCount(input: string, output: string): number {
+  const a = input.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').split(/\s+/).filter(Boolean).length;
+  const b = output.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, '').split(/\s+/).filter(Boolean).length;
+  if (!a) return b ? 999 : 1;
+  return b / a;
+}
+
+/** Prompt for conservative transcript polish — spelling/punctuation/paragraphs only. */
+export function buildTranscriptPolishPrompt(text: string, glossary: string[] = []): string {
+  const glossaryLine = glossary.length
+    ? `Tên riêng / thuật ngữ phải giữ đúng: ${glossary.slice(0, 40).join(', ')}.`
+    : '';
+  return `Biên tập transcript tiếng Việt. Chỉ được:
+- Sửa chính tả, dấu thanh tiếng Việt, tên riêng, dấu câu (. , ? !), viết hoa đầu câu.
+- Chia thành các đoạn văn tự nhiên (cách nhau một dòng trống), mỗi đoạn khoảng 3–5 câu.
+- Sửa lỗi nhận dạng phổ biến dựa trên ngữ cảnh câu (không đổi ý).
+${glossaryLine}
+
+TUYỆT ĐỐI KHÔNG: dịch, paraphrase, tóm tắt, thêm/bớt câu, thêm tiêu đề/ghi chú/timestamp/markdown.
+
+Chỉ trả văn bản đã chỉnh sửa.
+
+Transcript gốc:
+"""
+${text.slice(0, 14000)}
+"""`;
+}
+
+/**
+ * AI polish — spelling, punctuation, paragraphs only. Falls back to input on failure or drift.
+ */
+export async function polishVietnameseTranscriptWithAi(
+  raw: string,
+  opts?: {
+    glossary?: string[];
+    apiKey?: string;
+    baseUrl?: string;
+    model?: string;
+    timeoutMs?: number;
+  },
+): Promise<{ text: string; applied: boolean; reason?: string }> {
+  const input = (raw || '').trim();
+  if (!input || input.length < 20) return { text: input, applied: false, reason: 'too_short' };
+  const apiKey = opts?.apiKey?.trim() || process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey) return { text: input, applied: false, reason: 'no_api_key' };
+
+  const baseUrl = (opts?.baseUrl || process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(
+    /\/$/,
+    '',
+  );
+  const model =
+    opts?.model?.trim() ||
+    process.env.OPENAI_TRANSCRIPT_POLISH_MODEL?.trim() ||
+    process.env.OPENAI_MODEL?.trim() ||
+    'gpt-4o-mini';
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), opts?.timeoutMs ?? 90_000);
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.1,
+        max_tokens: Math.min(8000, Math.max(900, Math.ceil(input.length * 1.25))),
+        messages: [
+          {
+            role: 'system',
+            content:
+              'Biên tập transcript tiếng Việt: chỉ sửa chính tả, dấu câu, viết hoa, chia đoạn. Không dịch, không paraphrase, không thêm/bớt ý.',
+          },
+          { role: 'user', content: buildTranscriptPolishPrompt(input, opts?.glossary || []) },
+        ],
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    if (!res.ok) {
+      return { text: input, applied: false, reason: `http_${res.status}` };
+    }
+    const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+    let out = (data.choices?.[0]?.message?.content || '').trim();
+    out = out.replace(/^```[\w]*\n?/gm, '').replace(/```$/gm, '').trim();
+    if (!out || out.length < Math.floor(input.length * 0.5)) {
+      return { text: input, applied: false, reason: 'too_short_output' };
+    }
+    const wcRatio = polishWordCount(input, out);
+    if (wcRatio < 0.82 || wcRatio > 1.06) {
+      return { text: input, applied: false, reason: `word_ratio_${wcRatio.toFixed(2)}` };
+    }
+    return { text: out, applied: true };
+  } catch (err) {
+    return {
+      text: input,
+      applied: false,
+      reason: err instanceof Error ? err.message.slice(0, 80) : 'error',
+    };
+  }
 }

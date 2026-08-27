@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { LoadingState, ErrorState } from '@/components/shared/page-state';
 import { apiClient } from '@/lib/api-client';
+import { useT } from '@/i18n/i18n-provider';
 
 type Policy = {
   timezone: string;
@@ -25,6 +26,7 @@ type Policy = {
 };
 
 export function MessagingPolicyPanel() {
+  const t = useT();
   const qc = useQueryClient();
   const q = useQuery({
     queryKey: ['automation', 'messaging-policy'],
@@ -51,13 +53,13 @@ export function MessagingPolicyPanel() {
     setKeywords(kw);
   }, [q.data]);
 
-  if (q.isLoading) return <LoadingState message="Đang tải chính sách nhắn tin…" />;
+  if (q.isLoading) return <LoadingState message={t('automation.loadingPolicy')} />;
   if (q.isError) return <ErrorState onRetry={q.refetch} />;
 
   return (
     <div className="space-y-4 rounded-lg border p-4">
       <div>
-        <h3 className="font-semibold">Chính sách chống spam</h3>
+        <h3 className="font-semibold">{t('automation.antiSpam')}</h3>
         <p className="text-sm text-muted-foreground">
           Quiet hours, giới hạn gửi/ngày, dừng khi trả lời / opt-out
         </p>
@@ -149,14 +151,14 @@ export function MessagingPolicyPanel() {
                 .filter(Boolean),
             },
             {
-              onSuccess: () => window.alert('Đã lưu chính sách'),
+              onSuccess: () => window.alert(t('automation.policySaved')),
               onError: (e) => window.alert(e.message),
             },
           )
         }
         disabled={save.isPending}
       >
-        {save.isPending ? 'Đang lưu…' : 'Lưu chính sách'}
+        {save.isPending ? t('automation.saving') : t('automation.savePolicy')}
       </Button>
     </div>
   );

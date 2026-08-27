@@ -241,6 +241,21 @@ export class AdConnectionFacade {
     return id || null;
   }
 
+  async getGoogleRefreshToken(organizationId: string): Promise<string> {
+    const { plaintext } = await this.getDecryptedPayload(
+      organizationId,
+      AdConnectionProvider.GOOGLE,
+    );
+    try {
+      const parsed = JSON.parse(plaintext) as { refreshToken?: string };
+      if (parsed.refreshToken?.trim()) return parsed.refreshToken.trim();
+    } catch {
+      /* plain refresh token legacy */
+    }
+    if (plaintext.trim()) return plaintext.trim();
+    throw new BadRequestException('Chưa có Google refresh token');
+  }
+
   /** Safe audit helper */
   redact(payload: unknown) {
     return redactForAudit(payload);

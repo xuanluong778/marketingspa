@@ -6,8 +6,10 @@ import { Badge } from '@/components/ui/badge';
 import { ErrorState, LoadingState } from '@/components/shared/page-state';
 import { formatDateTime } from '@/lib/format';
 import { useAdminOrganizations, useAdminOrgStatus } from '@/hooks/use-platform-admin';
+import { useT } from '@/i18n/i18n-provider';
 
 export default function AdminOrganizationsPage() {
+  const t = useT();
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('');
   const [page, setPage] = useState(1);
@@ -92,7 +94,7 @@ export default function AdminOrganizationsPage() {
                         </div>
                       </>
                     ) : (
-                      'Chưa có gói'
+                      t('admin.noPlan')
                     )}
                   </td>
                   <td className="px-3 py-2">{o.userCount}</td>

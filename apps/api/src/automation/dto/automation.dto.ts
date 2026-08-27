@@ -102,6 +102,11 @@ export class CreateAutomationFlowDto {
   @IsEnum(AutomationTriggerType)
   triggerType!: AutomationTriggerType;
 
+  /** FunnelRecommendation.id — bắt buộc cho flow mới (Prompt 9) */
+  @IsOptional()
+  @IsUUID()
+  funnelId?: string;
+
   @IsOptional()
   @IsUUID()
   messageTemplateId?: string;

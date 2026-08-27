@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { useT } from '@/i18n/i18n-provider';
 import {
   ATTENDANCE_DAY_STATUS_OPTIONS,
   type AttendanceDayStatus,
@@ -56,6 +57,7 @@ export function HrmAttendanceCorrectDialog({
   isPending,
   onSubmit,
 }: HrmAttendanceCorrectDialogProps) {
+  const t = useT();
   const [checkInAt, setCheckInAt] = useState('');
   const [checkOutAt, setCheckOutAt] = useState('');
   const [status, setStatus] = useState<AttendanceDayStatus>('PRESENT');
@@ -75,11 +77,11 @@ export function HrmAttendanceCorrectDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Sửa ngày công</DialogTitle>
+          <DialogTitle>{t('hrm.correctAttendance')}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1">
-            <Label>Giờ vào</Label>
+            <Label>{t('hrm.checkIn')}</Label>
             <Input
               type="datetime-local"
               value={checkInAt}
@@ -87,7 +89,7 @@ export function HrmAttendanceCorrectDialog({
             />
           </div>
           <div className="space-y-1">
-            <Label>Giờ ra</Label>
+            <Label>{t('hrm.checkOut')}</Label>
             <Input
               type="datetime-local"
               value={checkOutAt}
@@ -95,7 +97,7 @@ export function HrmAttendanceCorrectDialog({
             />
           </div>
           <div className="space-y-1">
-            <Label>Trạng thái</Label>
+            <Label>{t('hrm.status')}</Label>
             <Select value={status} onValueChange={(v) => setStatus(v as AttendanceDayStatus)}>
               <SelectTrigger>
                 <SelectValue />
@@ -110,11 +112,11 @@ export function HrmAttendanceCorrectDialog({
             </Select>
           </div>
           <div className="space-y-1">
-            <Label>Lý do (bắt buộc)</Label>
+            <Label>{t('hrm.reasonRequired')}</Label>
             <Input
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="Ví dụ: quên chấm công"
+              placeholder={t('hrm.forgotPunchExample')}
               minLength={3}
               required
             />
@@ -122,7 +124,7 @@ export function HrmAttendanceCorrectDialog({
         </div>
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-            Hủy
+            {t('common.cancel')}
           </Button>
           <Button
             type="button"
@@ -137,7 +139,7 @@ export function HrmAttendanceCorrectDialog({
               })
             }
           >
-            {isPending ? 'Đang lưu...' : 'Lưu'}
+            {isPending ? t('common.saving') : t('common.save')}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -13,6 +13,7 @@ import {
 import { LoadingState, EmptyState, ErrorState } from '@/components/shared/page-state';
 import type { AdsSyncJobPublic } from '@marketingspa/shared';
 import { platformLabel, syncStatusLabel } from '../ads-format';
+import { useT } from '@/i18n/i18n-provider';
 
 function asDate(v: string | Date) {
   return typeof v === 'string' ? new Date(v) : v;
@@ -29,12 +30,13 @@ export function AdsSyncHistoryTab({
   isError: boolean;
   onRetry: () => void;
 }) {
-  if (isLoading) return <LoadingState message="Đang tải lịch sử đồng bộ..." />;
+  const t = useT();
+  if (isLoading) return <LoadingState message={t('aiAds.loadingSyncHistory')} />;
   if (isError) return <ErrorState onRetry={onRetry} />;
   if (!jobs.length) {
     return (
       <EmptyState
-        title="Chưa có job đồng bộ"
+        title={t('aiAds.emptySyncJobs')}
         description="Bấm Đồng bộ để enqueue BullMQ. Tiến độ cập nhật qua Socket.IO hoặc polling."
       />
     );

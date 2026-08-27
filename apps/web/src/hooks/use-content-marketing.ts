@@ -1,5 +1,6 @@
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient, apiUpload } from '@/lib/api-client';
+import { invalidateCredits } from '@/hooks/use-credit';
 import { buildAdGeneratePayload } from '@/lib/content-marketing-form';
 import { sanitizeFacebookPolicyCheckPayload } from '@/lib/facebook-policy-ui';
 import type {
@@ -133,12 +134,20 @@ function advancedFormToPayload(form: AdvancedFormState) {
 }
 
 export function useContentMarketingMutations() {
+  const qc = useQueryClient();
+  const refreshCredits = {
+    onSettled: () => {
+      void invalidateCredits(qc);
+    },
+  };
+
   const generate = useMutation({
     mutationFn: ({ form, mode }: { form: ContentFormState; mode: ContentStudioTab }) =>
       apiClient<GenerateContentResult>(`${BASE}/generate`, {
         method: 'POST',
         body: JSON.stringify(formToPayload(form, mode)),
       }),
+    ...refreshCredits,
   });
 
   const generatePersonal = useMutation({
@@ -147,6 +156,7 @@ export function useContentMarketingMutations() {
         method: 'POST',
         body: JSON.stringify(personalFormToPayload(form)),
       }),
+    ...refreshCredits,
   });
 
   const analyzeVideo = useMutation({
@@ -155,6 +165,7 @@ export function useContentMarketingMutations() {
         method: 'POST',
         body: JSON.stringify(body),
       }),
+    ...refreshCredits,
   });
 
 type IndustryBody = {
@@ -190,6 +201,7 @@ type IndustryBody = {
         method: 'POST',
         body: JSON.stringify(body),
       }),
+    ...refreshCredits,
   });
 
   const scorePersonal = useMutation({
@@ -206,6 +218,7 @@ type IndustryBody = {
         method: 'POST',
         body: JSON.stringify({ ...body, studioMode: 'personal' }),
       }),
+    ...refreshCredits,
   });
 
   const suggestInsights = useMutation({
@@ -219,6 +232,7 @@ type IndustryBody = {
         method: 'POST',
         body: JSON.stringify(body),
       }),
+    ...refreshCredits,
   });
 
   const suggestCta = useMutation({
@@ -234,6 +248,7 @@ type IndustryBody = {
         method: 'POST',
         body: JSON.stringify(body),
       }),
+    ...refreshCredits,
   });
 
   const suggestPersonalIdeas = useMutation({
@@ -250,6 +265,7 @@ type IndustryBody = {
         method: 'POST',
         body: JSON.stringify(body),
       }),
+    ...refreshCredits,
   });
 
   const suggestPersonalTitles = useMutation({
@@ -268,6 +284,7 @@ type IndustryBody = {
         method: 'POST',
         body: JSON.stringify(body),
       }),
+    ...refreshCredits,
   });
 
   const analyzeOpinionStory = useMutation({
@@ -307,6 +324,7 @@ type IndustryBody = {
         });
       }
     },
+    ...refreshCredits,
   });
 
   const generateOpinion = useMutation({
@@ -335,6 +353,7 @@ type IndustryBody = {
         method: 'POST',
         body: JSON.stringify(body),
       }),
+    ...refreshCredits,
   });
 
   const rewriteOpinion = useMutation({
@@ -367,6 +386,7 @@ type IndustryBody = {
         method: 'POST',
         body: JSON.stringify(body),
       }),
+    ...refreshCredits,
   });
 
   const scoreOpinionNaturalness = useMutation({
@@ -378,6 +398,7 @@ type IndustryBody = {
         method: 'POST',
         body: JSON.stringify(body),
       }),
+    ...refreshCredits,
   });
 
   const suggestOpinionField = useMutation({
@@ -395,6 +416,7 @@ type IndustryBody = {
         `${BASE}/opinion/suggest-field`,
         { method: 'POST', body: JSON.stringify(body) },
       ),
+    ...refreshCredits,
   });
 
   const getOpinionVoiceProfile = useMutation({
@@ -426,6 +448,7 @@ type IndustryBody = {
         method: 'POST',
         body: JSON.stringify(sanitizeFacebookPolicyCheckPayload(body)),
       }),
+    ...refreshCredits,
   });
 
   const rewriteFacebookPolicy = useMutation({
@@ -434,6 +457,7 @@ type IndustryBody = {
         method: 'POST',
         body: JSON.stringify(sanitizeFacebookPolicyCheckPayload(body)),
       }),
+    ...refreshCredits,
   });
 
   const importFacebookPolicyUrl = useMutation({
@@ -446,6 +470,7 @@ type IndustryBody = {
         method: 'POST',
         body: JSON.stringify(body),
       }),
+    ...refreshCredits,
   });
 
   const analyzeFacebookPolicyMedia = useMutation({
@@ -467,6 +492,7 @@ type IndustryBody = {
         fd,
       );
     },
+    ...refreshCredits,
   });
 
   const generateAdvanced = useMutation({
@@ -475,14 +501,19 @@ type IndustryBody = {
         method: 'POST',
         body: JSON.stringify(advancedFormToPayload(form)),
       }),
+    ...refreshCredits,
   });
 
   const rewriteAdvanced = useMutation({
-    mutationFn: (body: AdvancedFormState & { previousArticle?: string }) =>
+    mutationFn: (body: AdvancedFormState & {
+      previousArticle?: string;
+      channel?: 'main' | 'facebook' | 'website' | 'ads';
+    }) =>
       apiClient<AdvancedArticleResult>(`${BASE}/advanced/rewrite`, {
         method: 'POST',
         body: JSON.stringify(body),
       }),
+    ...refreshCredits,
   });
 
   const optimizeAdvancedCta = useMutation({
@@ -496,6 +527,7 @@ type IndustryBody = {
         `${BASE}/advanced/optimize-cta`,
         { method: 'POST', body: JSON.stringify(body) },
       ),
+    ...refreshCredits,
   });
 
   const generateAdvancedTitles = useMutation({
@@ -506,6 +538,7 @@ type IndustryBody = {
         method: 'POST',
         body: JSON.stringify(body),
       }),
+    ...refreshCredits,
   });
 
   const suggestAdvancedField = useMutation({
@@ -522,6 +555,7 @@ type IndustryBody = {
         `${BASE}/advanced/suggest-field`,
         { method: 'POST', body: JSON.stringify(body) },
       ),
+    ...refreshCredits,
   });
 
   const rewriteTeleprompterScript = useMutation({
@@ -530,6 +564,7 @@ type IndustryBody = {
         method: 'POST',
         body: JSON.stringify(body),
       }),
+    ...refreshCredits,
   });
 
   return {

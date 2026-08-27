@@ -61,23 +61,23 @@ export function safeNumber(value: number): number {
 export const defaultBusinessGoalFormState: BusinessGoalFormState = {
   revenueType: 'SKIN_CARE',
   revenueTypeNote: '',
-  transactionCount: 100,
+  transactionCount: 200,
   avgRevenuePerTransaction: 1_500_000,
-  totalRevenueManual: 0,
-  totalRevenueManualEnabled: false,
+  totalRevenueManual: 300_000_000,
+  totalRevenueManualEnabled: true,
 
   variableCostPerTransaction: 500_000,
   avgSellingPrice: 1_500_000,
-  totalVariableCostManual: 0,
-  totalVariableCostManualEnabled: false,
+  totalVariableCostManual: 100_000_000,
+  totalVariableCostManualEnabled: true,
   variableCostLines: [],
 
   fixedCostLines: [],
-  totalFixedCostManual: 80_000_000,
+  totalFixedCostManual: 90_000_000,
   totalFixedCostManualEnabled: true,
 
   marketingLines: [],
-  totalMarketingManual: 30_000_000,
+  totalMarketingManual: 0,
   totalMarketingManualEnabled: true,
 
   leadCount: 500,
@@ -86,13 +86,26 @@ export const defaultBusinessGoalFormState: BusinessGoalFormState = {
   leadSourceNote: '',
 
   targetRevenue: 300_000_000,
-  targetProfit: 100_000_000,
+  targetProfit: 80_000_000,
   goalType: 'GROWTH',
   goalTypeNote: '',
 };
 
 export const sampleBusinessGoalFormState: BusinessGoalFormState = {
   ...defaultBusinessGoalFormState,
+  totalRevenueManual: 600_000_000,
+  targetRevenue: 600_000_000,
+  avgRevenuePerTransaction: 25_000,
+  avgSellingPrice: 25_000,
+  transactionCount: 24_000,
+  variableCostPerTransaction: Math.round(25_000 * 0.6667),
+  totalVariableCostManual: 400_000_000,
+  totalVariableCostManualEnabled: true,
+  totalFixedCostManual: 17_000_000,
+  totalMarketingManual: 0,
+  leadConversionRate: 15,
+  targetProfit: 183_000_000,
+  leadCount: 160_000,
 };
 
 const DRAFT_KEY = 'ms_business_goal_draft';
@@ -182,20 +195,30 @@ export function deriveApiInput(state: BusinessGoalFormState): BusinessGoalInput 
 }
 
 export function formStateFromApiInput(input: BusinessGoalInput): BusinessGoalFormState {
+  const avg = Number(input.averageRevenuePerTransaction);
+  const tx = input.currentTransactionCount;
+  const rev = avg * tx;
+  const varRate = Number(input.variableCostRate);
   return {
     ...defaultBusinessGoalFormState,
-    transactionCount: input.currentTransactionCount,
-    avgRevenuePerTransaction: Number(input.averageRevenuePerTransaction),
-    avgSellingPrice: Number(input.averageRevenuePerTransaction),
+    transactionCount: tx,
+    avgRevenuePerTransaction: avg,
+    avgSellingPrice: avg,
+    totalRevenueManual: rev,
+    totalRevenueManualEnabled: true,
+    targetRevenue: rev,
     variableCostPerTransaction:
-      input.averageRevenuePerTransaction > 0
-        ? Math.round(
-            (Number(input.variableCostRate) / 100) * Number(input.averageRevenuePerTransaction),
-          )
-        : defaultBusinessGoalFormState.variableCostPerTransaction,
+      avg > 0 ? Math.round((varRate / 100) * avg) : defaultBusinessGoalFormState.variableCostPerTransaction,
+    totalVariableCostManual: Math.round((rev * varRate) / 100),
+    totalVariableCostManualEnabled: true,
+    variableCostLines: [],
     targetProfit: Number(input.targetProfit),
     leadConversionRate: Number(input.leadConversionRate),
-    fixedCostLines: [createCostLine('OTHER', Number(input.fixedCost))],
+    fixedCostLines: [],
+    totalFixedCostManual: Number(input.fixedCost),
+    totalFixedCostManualEnabled: true,
     marketingLines: [],
+    totalMarketingManual: 0,
+    totalMarketingManualEnabled: true,
   };
 }

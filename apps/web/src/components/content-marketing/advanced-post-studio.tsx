@@ -9,6 +9,9 @@ import {
   RefreshCw,
   Save,
   Sparkles,
+  Type,
+  Megaphone,
+  PencilLine,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -66,6 +69,7 @@ import {
   ADVANCED_WRITING_STYLE_OPTIONS,
   PRODUCT_SERVICE_OPTIONS,
 } from '@/types/content-marketing';
+import { useT } from '@/i18n/i18n-provider';
 
 type VariantTab = 'main' | 'facebook' | 'website' | 'ads';
 
@@ -80,9 +84,11 @@ export function AdvancedPostStudio({
   onHistoryEditApplied,
   onHistoryChange,
 }: AdvancedPostStudioProps) {
+  const t = useT();
   const { data: user } = useCurrentUser();
   const { data: aiStatus } = useContentMarketingStatus();
-  const { generateAdvanced, suggestAdvancedField } = useContentMarketingMutations();
+  const { generateAdvanced, suggestAdvancedField, rewriteAdvanced, optimizeAdvancedCta, generateAdvancedTitles } =
+    useContentMarketingMutations();
 
   const [suggestingField, setSuggestingField] = useState<AdvancedSuggestField | null>(null);
 
@@ -226,6 +232,118 @@ export function AdvancedPostStudio({
     }
   };
 
+  const handleRewriteChannel = async () => {
+    if (!result) return;
+    setErrorMsg('');
+    const previousArticle = displayContent();
+    try {
+      const data = await rewriteAdvanced.mutateAsync({
+        ...form,
+        previousArticle,
+        channel: variantTab,
+      });
+      setResult((prev) => {
+        if (!prev) return data;
+        if (variantTab === 'main') {
+          return {
+            ...prev,
+            title: data.title || prev.title,
+            hook: data.hook || prev.hook,
+            final_article: data.final_article || prev.final_article,
+            cta: data.cta || prev.cta,
+            hashtags: data.hashtags?.length ? data.hashtags : prev.hashtags,
+            analysis_16_steps: data.analysis_16_steps?.length
+              ? data.analysis_16_steps
+              : prev.analysis_16_steps,
+            source: data.source,
+          };
+        }
+        if (variantTab === 'facebook') {
+          return {
+            ...prev,
+            hook: data.hook || prev.hook,
+            cta: data.cta || prev.cta,
+            variants: {
+              ...prev.variants,
+              facebook: data.variants.facebook || prev.variants.facebook,
+            },
+            source: data.source,
+          };
+        }
+        if (variantTab === 'website') {
+          return {
+            ...prev,
+            variants: {
+              ...prev.variants,
+              website: data.variants.website || prev.variants.website,
+            },
+            source: data.source,
+          };
+        }
+        return {
+          ...prev,
+          suggested_ads_angle: data.suggested_ads_angle || prev.suggested_ads_angle,
+          variants: {
+            ...prev.variants,
+            ads: data.variants.ads || prev.variants.ads,
+          },
+          source: data.source,
+        };
+      });
+    } catch (e) {
+      setErrorMsg(formatMutationError(e));
+    }
+  };
+
+  const handleOptimizeCta = async () => {
+    if (!result) return;
+    setErrorMsg('');
+    try {
+      const data = await optimizeAdvancedCta.mutateAsync({
+        finalArticle: displayContent(),
+        ctaType: form.ctaType,
+        productService: form.productService,
+        articleGoal: form.articleGoal,
+        industryId: form.industryId || undefined,
+        industryName: form.industryName || undefined,
+        customIndustry: form.customIndustry || undefined,
+      });
+      setResult((prev) => {
+        if (!prev) return prev;
+        const next = { ...prev, cta: data.cta || prev.cta };
+        if (variantTab === 'main') next.final_article = data.updated_article;
+        else if (variantTab === 'facebook') {
+          next.variants = { ...prev.variants, facebook: data.updated_article };
+        } else if (variantTab === 'website') {
+          next.variants = { ...prev.variants, website: data.updated_article };
+        } else {
+          next.variants = { ...prev.variants, ads: data.updated_article };
+        }
+        return next;
+      });
+    } catch (e) {
+      setErrorMsg(formatMutationError(e));
+    }
+  };
+
+  const handleSuggestTitles = async () => {
+    if (!result) return;
+    setErrorMsg('');
+    try {
+      const data = await generateAdvancedTitles.mutateAsync({
+        finalArticle: result.final_article || displayContent(),
+        productService: form.productService,
+        demographic: form.demographic,
+        industryId: form.industryId || undefined,
+        industryName: form.industryName || undefined,
+        customIndustry: form.customIndustry || undefined,
+      });
+      setTitleOptions(data.titles || []);
+    } catch (e) {
+      setErrorMsg(formatMutationError(e));
+    }
+  };
+
   const handleCopy = async () => {
     if (!result) return;
     let text = displayContent();
@@ -308,7 +426,11 @@ export function AdvancedPostStudio({
   };
 
   const isGeneratingResult = isCreatingLoading || generateAdvanced.isPending;
-  const busy = isGeneratingResult;
+  const channelBusy =
+    rewriteAdvanced.isPending ||
+    optimizeAdvancedCta.isPending ||
+    generateAdvancedTitles.isPending;
+  const busy = isGeneratingResult || channelBusy;
 
   return (
     <div className="advanced-write-tab space-y-4 pb-24">
@@ -547,15 +669,60 @@ export function AdvancedPostStudio({
           )}
 
           {!result && !isGeneratingResult && (
-            <EmptyState title="Chưa có bài viết" description="Điền form và bấm Tạo bài viết" />
+            <EmptyState title={t('content.emptyPosts')} description={t('content.emptyPostsHint')} />
           )}
 
           {result && !isGeneratingResult && (
             <>
               <div className="space-y-3 rounded-xl border border-white/20 bg-[#0A3D30] p-0 text-white md:p-0 overflow-hidden">
-                <div className="advanced-result-actions flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 text-slate-900">
+                <div className="advanced-result-actions flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white px-4 py-3 text-slate-900">
                   <h3 className="font-semibold text-slate-900">Kết quả content</h3>
-                  <div className="flex items-center gap-1 text-slate-800">
+                  <div className="flex flex-wrap items-center gap-1 text-slate-800">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-slate-800 hover:text-slate-900"
+                      onClick={() => void handleRewriteChannel()}
+                      disabled={busy || !displayContent().trim()}
+                      title="Viết lại đúng tab đang chọn"
+                    >
+                      {rewriteAdvanced.isPending ? (
+                        <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                      ) : (
+                        <PencilLine className="mr-1 h-4 w-4" />
+                      )}
+                      Viết lại
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-slate-800 hover:text-slate-900"
+                      onClick={() => void handleOptimizeCta()}
+                      disabled={busy || !displayContent().trim()}
+                      title="Tối ưu CTA cho nội dung đang xem"
+                    >
+                      {optimizeAdvancedCta.isPending ? (
+                        <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Megaphone className="mr-1 h-4 w-4" />
+                      )}
+                      Tối ưu CTA
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-slate-800 hover:text-slate-900"
+                      onClick={() => void handleSuggestTitles()}
+                      disabled={busy || !result.final_article.trim()}
+                      title="Gợi ý tiêu đề"
+                    >
+                      {generateAdvancedTitles.isPending ? (
+                        <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Type className="mr-1 h-4 w-4" />
+                      )}
+                      Gợi ý tiêu đề
+                    </Button>
                     <Button
                       variant="ghost"
                       size="sm"

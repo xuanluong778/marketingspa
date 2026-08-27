@@ -3,6 +3,7 @@
 import { FacebookPostContent } from '@/components/content-marketing/facebook-post-content';
 import { cn } from '@/lib/utils';
 import { ExternalLink } from 'lucide-react';
+import { useT } from '@/i18n/i18n-provider';
 
 export function FacebookFanpagePreview({
   pageName,
@@ -21,6 +22,7 @@ export function FacebookFanpagePreview({
   cta?: string | null;
   className?: string;
 }) {
+  const t = useT();
   return (
     <div
       className={cn(
@@ -40,8 +42,10 @@ export function FacebookFanpagePreview({
           )}
         </div>
         <div>
-          <p className="font-semibold text-sm text-slate-900">{pageName || 'Fanpage spa'}</p>
-          <p className="text-xs text-muted-foreground">Vừa xong · 🌐</p>
+          <p className="font-semibold text-sm text-slate-900">
+            {pageName || t('facebookFlow.defaultPageName')}
+          </p>
+          <p className="text-xs text-muted-foreground">{t('facebookFlow.justNow')} · 🌐</p>
         </div>
       </div>
 
@@ -49,7 +53,9 @@ export function FacebookFanpagePreview({
         {caption.trim() ? (
           <FacebookPostContent content={caption} />
         ) : (
-          <p className="text-sm text-muted-foreground italic">Nội dung bài đăng sẽ hiển thị ở đây...</p>
+          <p className="text-sm text-muted-foreground italic">
+            {t('facebookFlow.previewPlaceholder')}
+          </p>
         )}
 
         {imageUrl?.trim() && (
@@ -73,7 +79,7 @@ export function FacebookFanpagePreview({
 
         {cta?.trim() && (
           <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-sm font-medium text-emerald-800">
-            CTA: {cta}
+            {t('facebookFlow.ctaLabel', { cta })}
           </div>
         )}
       </div>

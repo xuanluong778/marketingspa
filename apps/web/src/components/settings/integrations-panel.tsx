@@ -28,6 +28,7 @@ import {
   type IntegrationProvider,
 } from '@/types/automation-messaging';
 import { cn } from '@/lib/utils';
+import { useT } from '@/i18n/i18n-provider';
 
 function statusVariant(status: IntegrationItem['status']): 'default' | 'secondary' | 'outline' {
   if (status === 'CONNECTED' || status === 'ACTIVE') return 'default';
@@ -36,6 +37,7 @@ function statusVariant(status: IntegrationItem['status']): 'default' | 'secondar
 }
 
 export function IntegrationsPanel() {
+  const t = useT();
   const { data, isLoading, isError, refetch } = useIntegrations();
   const connect = useConnectIntegration();
   const test = useTestIntegration();
@@ -43,7 +45,7 @@ export function IntegrationsPanel() {
   const [connecting, setConnecting] = useState<IntegrationProvider | null>(null);
   const [credentials, setCredentials] = useState<Record<string, string>>({});
 
-  if (isLoading) return <LoadingState message="Đang tải tích hợp..." />;
+  if (isLoading) return <LoadingState message={t('common.loading')} />;
   if (isError) return <ErrorState onRetry={refetch} />;
 
   const items = data ?? [];

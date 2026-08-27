@@ -1,7 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Queue } from 'bullmq';
-import { QUEUE_NAMES } from '@marketingspa/shared';
+import { BULLMQ_JOB_RETENTION, QUEUE_NAMES } from '@marketingspa/shared';
 import {
   AUTOMATION_MESSAGE_QUEUE,
   APPOINTMENT_REMINDER_QUEUE,
@@ -18,11 +18,16 @@ import {
   MESSAGING_SEND_QUEUE,
   ADS_SYNC_QUEUE,
   ADS_ACTION_QUEUE,
+  ADS_CAMPAIGN_DEPLOY_QUEUE,
+  ADS_AUTOPILOT_QUEUE,
   AFFILIATE_HOLD_QUEUE,
   VIDEO_TRANSCRIPTION_QUEUE,
   AD_URL_ANALYZE_QUEUE,
   MARKETING_AUTOPILOT_OUTCOME_EVAL_QUEUE,
   MARKETING_AUTOPILOT_MISSION_QUEUE,
+  EMAIL_CAMPAIGN_PLAN_QUEUE,
+  EMAIL_CAMPAIGN_SEND_QUEUE,
+  CUSTOMER_360_QUEUE,
 } from './queue.constants';
 
 function createQueueProvider(token: string, queueName: string) {
@@ -35,6 +40,12 @@ function createQueueProvider(token: string, queueName: string) {
       return new Queue(queueName, {
         connection: { url: redisUrl, maxRetriesPerRequest: null },
         prefix,
+        defaultJobOptions: {
+          attempts: 3,
+          backoff: { type: 'exponential', delay: 2000 },
+          removeOnComplete: { ...BULLMQ_JOB_RETENTION.complete },
+          removeOnFail: { ...BULLMQ_JOB_RETENTION.fail },
+        },
       });
     },
   };
@@ -61,6 +72,8 @@ function createQueueProvider(token: string, queueName: string) {
     createQueueProvider(MESSAGING_SEND_QUEUE, QUEUE_NAMES.MESSAGING_SEND),
     createQueueProvider(ADS_SYNC_QUEUE, QUEUE_NAMES.ADS_SYNC),
     createQueueProvider(ADS_ACTION_QUEUE, QUEUE_NAMES.ADS_ACTION),
+    createQueueProvider(ADS_CAMPAIGN_DEPLOY_QUEUE, QUEUE_NAMES.ADS_CAMPAIGN_DEPLOY),
+    createQueueProvider(ADS_AUTOPILOT_QUEUE, QUEUE_NAMES.ADS_AUTOPILOT),
     createQueueProvider(AFFILIATE_HOLD_QUEUE, QUEUE_NAMES.AFFILIATE_HOLD),
     createQueueProvider(VIDEO_TRANSCRIPTION_QUEUE, QUEUE_NAMES.VIDEO_TRANSCRIPTION),
     createQueueProvider(AD_URL_ANALYZE_QUEUE, QUEUE_NAMES.AD_URL_ANALYZE),
@@ -72,6 +85,9 @@ function createQueueProvider(token: string, queueName: string) {
       MARKETING_AUTOPILOT_MISSION_QUEUE,
       QUEUE_NAMES.MARKETING_AUTOPILOT_MISSION,
     ),
+    createQueueProvider(EMAIL_CAMPAIGN_PLAN_QUEUE, QUEUE_NAMES.EMAIL_CAMPAIGN_PLAN),
+    createQueueProvider(EMAIL_CAMPAIGN_SEND_QUEUE, QUEUE_NAMES.EMAIL_CAMPAIGN_SEND),
+    createQueueProvider(CUSTOMER_360_QUEUE, QUEUE_NAMES.CUSTOMER_360_SYNC),
   ],
   exports: [
     CAMPAIGN_QUEUE,
@@ -89,11 +105,16 @@ function createQueueProvider(token: string, queueName: string) {
     MESSAGING_SEND_QUEUE,
     ADS_SYNC_QUEUE,
     ADS_ACTION_QUEUE,
+    ADS_CAMPAIGN_DEPLOY_QUEUE,
+    ADS_AUTOPILOT_QUEUE,
     AFFILIATE_HOLD_QUEUE,
     VIDEO_TRANSCRIPTION_QUEUE,
     AD_URL_ANALYZE_QUEUE,
     MARKETING_AUTOPILOT_OUTCOME_EVAL_QUEUE,
     MARKETING_AUTOPILOT_MISSION_QUEUE,
+    EMAIL_CAMPAIGN_PLAN_QUEUE,
+    EMAIL_CAMPAIGN_SEND_QUEUE,
+    CUSTOMER_360_QUEUE,
   ],
 })
 export class QueueModule {}

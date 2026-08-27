@@ -46,10 +46,33 @@ import { assertMetaAppSecretMatchesAppId } from './assert-auto-post-meta-oauth';
 import { MetaGraphUsageService } from './meta-graph-usage.service';
 import { withRedisSingleFlight } from './meta-redis-cache';
 import { AutoPostFacebookPageDetailsService } from './auto-post-facebook-page-details.service';
+import { formatHoChiMinhDateTime } from './auto-post-facebook-page-details.logic';
 import { MetaGraphMetricsService } from './meta-graph-metrics.service';
 import { redactMetaSecrets } from './meta-graph-http';
 
 const STATE_TTL_MS = 10 * 60 * 1000;
+
+function toPublicFanpagePage(p: {
+  id: string;
+  pageId: string;
+  pageName: string;
+  pagePictureUrl: string | null;
+  lastSyncedAt?: Date | null;
+  lastPostCreatedAt?: Date | null;
+  lastSyncError?: string | null;
+}) {
+  return {
+    id: p.id,
+    pageId: p.pageId,
+    pageName: p.pageName,
+    pagePictureUrl: p.pagePictureUrl,
+    lastSyncedAt: p.lastSyncedAt?.toISOString() ?? null,
+    lastPostCreatedAt: p.lastPostCreatedAt?.toISOString() ?? null,
+    lastSyncedAtDisplay: formatHoChiMinhDateTime(p.lastSyncedAt),
+    lastPostCreatedAtDisplay: formatHoChiMinhDateTime(p.lastPostCreatedAt),
+    lastSyncError: p.lastSyncError ?? null,
+  };
+}
 
 @Injectable()
 export class AutoPostFacebookService {
@@ -644,7 +667,7 @@ export class AutoPostFacebookService {
     }
 
     const publicPayload = {
-      connected: status === AutoPostFacebookConnectionStatus.CONNECTED,
+      connected: conn.pages.length > 0,
       status,
       needsReconnect: status === 'NEEDS_RECONNECT',
       facebookUserName: conn.facebookUserName,
@@ -654,12 +677,7 @@ export class AutoPostFacebookService {
       connectionMode: conn.scopes?.includes('env_page_token')
         ? ('env' as const)
         : ('oauth' as const),
-      pages: conn.pages.map((p) => ({
-        id: p.id,
-        pageId: p.pageId,
-        pageName: p.pageName,
-        pagePictureUrl: p.pagePictureUrl,
-      })),
+      pages: conn.pages.map((p) => toPublicFanpagePage(p)),
     };
 
     if (!advanced) {

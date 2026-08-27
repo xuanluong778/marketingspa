@@ -15,6 +15,7 @@ import { buildPaginatedResult, getPaginationParams } from '../common/utils/pagin
 import { redactForAudit, maskExternalId, maskPhone } from '../common/utils/token-security.util';
 import { MessagingCampaignSegmentService } from './messaging-campaign-segment.service';
 import { MessagingCampaignQueueService } from './messaging-campaign-queue.service';
+import { TenantKpiCacheService } from '../common/services/tenant-kpi-cache.service';
 import { isCampaignContentEditable, type MessagingSegmentConfig } from './messaging-campaign.types';
 import type {
   CreateMessagingCampaignDto,
@@ -32,6 +33,13 @@ const campaignInclude = {
   createdBy: { select: { id: true, name: true, email: true } },
 } satisfies Prisma.MessagingCampaignInclude;
 
+const campaignListInclude = {
+  channelConnection: { select: { id: true, displayName: true, accountRef: true, status: true } },
+  messageTemplate: { select: { id: true, name: true, channel: true } },
+  integration: { select: { id: true, provider: true, status: true } },
+  createdBy: { select: { id: true, name: true } },
+} satisfies Prisma.MessagingCampaignInclude;
+
 @Injectable()
 export class MessagingCampaignService {
   constructor(
@@ -40,6 +48,7 @@ export class MessagingCampaignService {
     private readonly eligibility: MessagingEligibilityService,
     private readonly audit: AuditService,
     private readonly campaignQueue: MessagingCampaignQueueService,
+    private readonly kpiCache?: TenantKpiCacheService,
   ) {}
 
   async create(organizationId: string, dto: CreateMessagingCampaignDto, userId: string) {
@@ -126,6 +135,13 @@ export class MessagingCampaignService {
 
   async list(organizationId: string, query: MessagingCampaignQueryDto) {
     const { page, pageSize, skip, take } = getPaginationParams(query);
+    const cacheName = `list:msg:${page}:${pageSize}:${JSON.stringify({
+      st: query.status,
+      ch: query.channel,
+      s: query.search,
+    })}`;
+    const cached = await this.kpiCache?.getJson<any>(organizationId, cacheName);
+    if (cached) return cached;
     const where: Prisma.MessagingCampaignWhereInput = {
       organizationId,
       ...(query.status && { status: query.status }),
@@ -141,12 +157,14 @@ export class MessagingCampaignService {
         orderBy: { createdAt: 'desc' },
         skip,
         take,
-        include: campaignInclude,
+        include: campaignListInclude,
       }),
       this.prisma.messagingCampaign.count({ where }),
     ]);
 
-    return buildPaginatedResult(items, total, page, pageSize);
+    const payload = buildPaginatedResult(items, total, page, pageSize);
+    await this.kpiCache?.setJson(organizationId, cacheName, payload, 8);
+    return payload;
   }
 
   async findOne(organizationId: string, id: string) {

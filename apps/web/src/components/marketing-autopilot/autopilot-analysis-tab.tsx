@@ -50,6 +50,7 @@ import type {
   MarketingMission,
 } from '@/types/marketing-autopilot';
 import type { UseMutationResult } from '@tanstack/react-query';
+import { useT } from '@/i18n/i18n-provider';
 
 const AUTOPILOT_DRAFT_TYPES = [
   'CONTENT_DRAFT',
@@ -67,10 +68,10 @@ const DRAFT_EDIT_FALLBACK: Record<AutopilotDraftType, string> = {
   CAMPAIGN_DRAFT: '/automation?tab=campaigns',
 };
 
-const SUB_TABS: Array<{ id: AutopilotAnalysisView; label: string }> = [
-  { id: 'overview', label: 'Tổng quan' },
-  { id: 'todos', label: 'Kế hoạch hành động' },
-  { id: 'budget', label: 'Mô phỏng ngân sách' },
+const SUB_TABS: Array<{ id: AutopilotAnalysisView; labelKey: string }> = [
+  { id: 'overview', labelKey: 'autopilot.overview' },
+  { id: 'todos', labelKey: 'autopilot.actionPlan' },
+  { id: 'budget', labelKey: 'autopilot.budgetSim' },
 ];
 
 const BUDGET_COLORS = ['#22c55e', '#3b82f6', '#a855f7', '#f59e0b', '#ef4444', '#06b6d4'];
@@ -473,6 +474,7 @@ export function AutopilotAnalysisTab({
   approveMission,
   onLocalDraftUpdate,
 }: Props) {
+  const t = useT();
   const [pendingDraftType, setPendingDraftType] = useState<AutopilotDraftType | null>(null);
   const [planOpen, setPlanOpen] = useState(false);
 
@@ -659,7 +661,7 @@ export function AutopilotAnalysisTab({
     return (
       <div className="rounded-2xl border border-white/10 bg-[#0f2a24]/60 p-6">
         <EmptyState
-          title="Chưa có kết quả phân tích"
+          title={t('autopilot.emptyAnalysis')}
           description="Tạo project mới hoặc bấm Xem từ Lịch sử project để mở kết quả tại đây."
         />
       </div>
@@ -788,7 +790,7 @@ export function AutopilotAnalysisTab({
         <div className="rounded-2xl border border-white/10 bg-[#0f2a24]/60 p-4">
           <div className="mb-2 flex items-center gap-2">
             <Users className="h-4 w-4 text-sky-400" />
-            <h3 className="text-sm font-semibold">Khách hàng mục tiêu</h3>
+            <h3 className="text-sm font-semibold">{t('autopilot.targetCustomers')}</h3>
           </div>
           <p className="text-xs leading-5 text-white/65">{shortText(audienceText, 120)}</p>
           <button type="button" className="mt-2 text-[10px] text-sky-300 hover:underline">
@@ -857,7 +859,7 @@ export function AutopilotAnalysisTab({
             )}
             onClick={() => onAnalysisViewChange(tab.id)}
           >
-            {tab.label}
+            {t(tab.labelKey)}
           </button>
         ))}
       </div>
@@ -866,7 +868,7 @@ export function AutopilotAnalysisTab({
       {analysisView === 'overview' ? (
         <div className="space-y-4">
           <div className="grid gap-4 xl:grid-cols-2">
-          <Panel title="Tổng quan chiến lược">
+          <Panel title={t('autopilot.strategyOverview')}>
             <p className="mb-3 text-xs font-medium text-white/50">Tóm tắt bởi AI</p>
             <p className="mb-4 text-sm leading-6 text-white/75">
               {currentAnalysis.summary || strategyText}
@@ -953,7 +955,7 @@ export function AutopilotAnalysisTab({
                 <BudgetDonut split={budgetSplit} totalBudget={monthlyBudget} />
               </>
             ) : (
-              <p className="text-xs text-white/50">Chưa có phân bổ ngân sách chi tiết.</p>
+              <p className="text-xs text-white/50">{t('autopilot.emptyBudgetDetail')}</p>
             )}
 
             <button

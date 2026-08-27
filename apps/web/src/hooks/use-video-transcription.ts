@@ -21,6 +21,7 @@ export type VideoTranscriptionDto = {
   originalFilename: string | null;
   language: string;
   ownershipConfirmed: boolean;
+  keepVideo?: boolean;
   cancelRequested?: boolean;
   rawTranscript: string | null;
   cleanedTranscript: string | null;
@@ -32,6 +33,7 @@ export type VideoTranscriptionDto = {
   processedDurationSeconds: number | null;
   chunkCount: number | null;
   chunksCompleted: number | null;
+  currentChunkIndex?: number | null;
   firstTimestamp: number | null;
   lastTimestamp: number | null;
   resultCharCount: number | null;
@@ -42,6 +44,7 @@ export type VideoTranscriptionDto = {
     status: string;
     charCount: number;
     error: string | null;
+    asrEndSec?: number | null;
   }>;
   fileSizeBytes: number | null;
   detectedLanguage: string | null;
@@ -100,10 +103,12 @@ export function useProbeVideoTranscriptionUrl() {
 export function useCreateVideoTranscription() {
   const qc = useQueryClient();
   return useMutation({
+    retry: false,
     mutationFn: async (input: {
       sourceUrl?: string;
       language: string;
       ownershipConfirmed: boolean;
+      keepVideo?: boolean;
       glossary?: string;
       file?: File | null;
       sourceTitle?: string;
@@ -114,6 +119,7 @@ export function useCreateVideoTranscription() {
       if (input.sourceUrl?.trim()) fd.append('sourceUrl', input.sourceUrl.trim());
       fd.append('language', input.language);
       fd.append('ownershipConfirmed', input.ownershipConfirmed ? 'true' : 'false');
+      fd.append('keepVideo', input.keepVideo === true ? 'true' : 'false');
       if (input.glossary?.trim()) fd.append('glossary', input.glossary.trim());
       if (input.sourceTitle?.trim()) fd.append('sourceTitle', input.sourceTitle.trim());
       if (input.thumbnailUrl?.trim()) fd.append('thumbnailUrl', input.thumbnailUrl.trim());
@@ -135,6 +141,7 @@ export function useCreateVideoTranscription() {
 export function useRetryVideoTranscription() {
   const qc = useQueryClient();
   return useMutation({
+    retry: false,
     mutationFn: (id: string) =>
       apiClient<VideoTranscriptionDto>(`${BASE}/${id}/retry`, { method: 'POST' }),
     onSuccess: (data) => {
@@ -213,10 +220,19 @@ export function takeTranscriptSeed(): string | null {
   }
 }
 
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 export function loadPersistedJobId(): string | null {
   if (typeof window === 'undefined') return null;
   try {
-    return localStorage.getItem(VIDEO_TRANSCRIPT_JOB_KEY);
+    const id = localStorage.getItem(VIDEO_TRANSCRIPT_JOB_KEY);
+    if (!id) return null;
+    if (!UUID_RE.test(id)) {
+      localStorage.removeItem(VIDEO_TRANSCRIPT_JOB_KEY);
+      return null;
+    }
+    return id;
   } catch {
     return null;
   }

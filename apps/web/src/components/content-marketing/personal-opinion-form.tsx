@@ -201,8 +201,9 @@ export function PersonalOpinionForm({
                 size="sm"
                 variant="outline"
                 onClick={() => rerollSubtopics(suggestedSubtopics)}
+                className="border-[#0A3D31] bg-[#0A3D31] text-white hover:bg-[#0C4A3B] hover:text-white"
               >
-                <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                <RefreshCw className="mr-1.5 h-3.5 w-3.5 text-white" />
                 Gợi ý chủ đề khác
               </Button>
             ) : null}

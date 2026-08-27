@@ -7,6 +7,7 @@ import type { AdConnectionItem, AdManagerDashboard } from '@/types/ai-ads-manage
 import { CONNECTION_STATUS_LABEL } from '@/types/ai-ads-manager';
 import { formatMoney, formatNum, platformLabel, syncStatusLabel } from '../ads-format';
 import type { AdsSyncJobPublic } from '@marketingspa/shared';
+import { useT } from '@/i18n/i18n-provider';
 
 function KpiCard({ title, value, sub }: { title: string; value: string; sub?: string }) {
   return (
@@ -35,12 +36,13 @@ export function AdsOverviewTab({
   isError: boolean;
   onRetry: () => void;
 }) {
-  if (isLoading) return <LoadingState message="Đang tải tổng quan từ database..." />;
+  const t = useT();
+  if (isLoading) return <LoadingState message={t('aiAds.loadingOverviewDb')} />;
   if (isError) return <ErrorState message="Không tải được dashboard" onRetry={onRetry} />;
   if (!dashboard) {
     return (
       <EmptyState
-        title="Chưa có dữ liệu Ads"
+        title={t('aiAds.emptyAdsData')}
         description="Kết nối tài khoản Meta/Google rồi đồng bộ. Dashboard chỉ đọc dữ liệu đã lưu trong PostgreSQL."
       />
     );
@@ -112,7 +114,7 @@ export function AdsOverviewTab({
           </CardHeader>
           <CardContent className="space-y-2 text-sm">
             {syncJobs.slice(0, 5).length === 0 ? (
-              <p className="text-muted-foreground">Chưa có lịch sử đồng bộ.</p>
+              <p className="text-muted-foreground">{t('aiAds.noSyncHistory')}</p>
             ) : (
               syncJobs.slice(0, 5).map((j) => (
                 <div key={j.id} className="flex items-center justify-between gap-2">

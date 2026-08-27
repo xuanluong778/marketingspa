@@ -22,6 +22,7 @@ import {
   type AutomationRule,
 } from '@/types/ai-ads-manager';
 import { platformLabel } from '../ads-format';
+import { useT } from '@/i18n/i18n-provider';
 
 export function AdsAiTab({
   settings,
@@ -56,6 +57,7 @@ export function AdsAiTab({
   onOptimize: (id: string) => void;
   generatePending: boolean;
 }) {
+  const t = useT();
   const [draftObjective, setDraftObjective] = useState('lead_form');
   const [draftBudget, setDraftBudget] = useState('500000');
   const [draftPlatform, setDraftPlatform] = useState('META');
@@ -63,7 +65,7 @@ export function AdsAiTab({
   const [ruleType, setRuleType] = useState<string>(RULE_TYPE_OPTIONS[0].value);
   const [ruleThreshold, setRuleThreshold] = useState('500000');
 
-  if (isLoading) return <LoadingState message="Đang tải AI phân tích..." />;
+  if (isLoading) return <LoadingState message={t('aiAds.loadingAiAnalysis')} />;
   if (isError) return <ErrorState onRetry={onRetry} />;
 
   return (
@@ -89,7 +91,7 @@ export function AdsAiTab({
                     {platformLabel(c.platform)} · {c.name}
                   </p>
                   <p className="text-xs text-muted-foreground line-clamp-2">
-                    Điểm {c.efficiencyScore ?? '—'} — {c.aiSuggestion ?? 'Chưa có gợi ý'}
+                    Điểm {c.efficiencyScore ?? '—'} — {c.aiSuggestion ?? t('aiAds.noSuggestion')}
                   </p>
                 </div>
                 {canAnalyze && (
@@ -153,7 +155,7 @@ export function AdsAiTab({
           )}
           <div className="grid gap-3 md:grid-cols-2">
             {drafts.length === 0 ? (
-              <p className="text-sm text-muted-foreground col-span-2">Chưa có bản nháp</p>
+              <p className="text-sm text-muted-foreground col-span-2">{t('aiAds.emptyDraft')}</p>
             ) : (
               drafts.map((draft) => (
                 <Card key={draft.id}>

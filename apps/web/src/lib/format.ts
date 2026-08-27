@@ -17,3 +17,9 @@ export function formatDateTime(iso: string): string {
     timeStyle: 'short',
   }).format(new Date(iso));
 }
+
+export function formatCredit(amount: number): string {
+  return new Intl.NumberFormat('vi-VN', {
+    maximumFractionDigits: 2,
+  }).format(amount);
+}

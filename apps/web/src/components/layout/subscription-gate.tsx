@@ -5,9 +5,10 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useCurrentUser } from '@/hooks/use-auth';
 import { useCurrentSubscription } from '@/hooks/use-billing';
 import { LoadingState } from '@/components/shared/page-state';
+import { useT } from '@/i18n/i18n-provider';
 
 /** Routes luôn mở dù chưa có gói / hết trial */
-const ALLOW = ['/pricing', '/settings', '/login', '/register'];
+const ALLOW = ['/pricing', '/settings', '/credits', '/login', '/register'];
 
 /**
  * Khóa khu vực app khi chưa ACTIVE/TRIALING.
@@ -15,6 +16,7 @@ const ALLOW = ['/pricing', '/settings', '/login', '/register'];
  * Khôi phục từ runtime 20260802_2028 (SubscriptionGate).
  */
 export function SubscriptionGate({ children }: { children: React.ReactNode }) {
+  const t = useT();
   const pathname = usePathname();
   const router = useRouter();
   const { data: user } = useCurrentUser();
@@ -55,7 +57,7 @@ export function SubscriptionGate({ children }: { children: React.ReactNode }) {
   if (sub.isLoading && !sub.data) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center">
-        <LoadingState message="Đang kiểm tra gói đăng ký..." />
+        <LoadingState message={t('billing.checkingSubscription')} />
       </div>
     );
   }
@@ -64,7 +66,7 @@ export function SubscriptionGate({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-[50vh] items-center justify-center">
-      <LoadingState message="Đang chuyển đến trang thanh toán..." />
+      <LoadingState message={t('billing.redirectingToPricing')} />
     </div>
   );
 }

@@ -12,6 +12,7 @@ import { ContentIndustriesAdminPanel } from '@/components/settings/content-indus
 import { KnowledgeBasePage } from '@/components/knowledge-base/knowledge-base-page';
 import { useOrganization } from '@/hooks/use-queries';
 import { useCurrentUser } from '@/hooks/use-auth';
+import { useT } from '@/i18n/i18n-provider';
 
 type SettingsTab = 'general' | 'knowledge-base' | 'integrations' | 'content-industries';
 
@@ -23,6 +24,7 @@ function parseTab(raw: string | null): SettingsTab {
 }
 
 export default function SettingsPageInner() {
+  const t = useT();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [tab, setTab] = useState<SettingsTab>(() => parseTab(searchParams.get('tab')));
@@ -47,7 +49,7 @@ export default function SettingsPageInner() {
 
   return (
     <div>
-      <PageHeader title="Cài đặt" description="Thông tin doanh nghiệp, kho kiến thức và kết nối dịch vụ" />
+      <PageHeader title={t('settings.title')} description={t('settings.pageDescription')} />
 
       <Tabs value={tab} onValueChange={onTabChange} className="space-y-4">
         <TabsList className="flex flex-wrap h-auto gap-1">

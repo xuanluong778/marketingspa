@@ -34,6 +34,7 @@ export const CORE_PERMISSION_DEFS = [
   { code: 'lead.write', name: 'Sửa lead', module: 'crm' },
   { code: 'campaign.send', name: 'Gửi chiến dịch', module: 'marketing' },
   { code: 'order.read', name: 'Xem đơn hàng', module: 'finance' },
+  { code: 'order.write', name: 'Tạo / sửa đơn hàng bán', module: 'sales' },
   { code: 'expense.write', name: 'Ghi chi phí', module: 'finance' },
   { code: 'report.view', name: 'Xem báo cáo', module: 'analytics' },
   { code: 'settings.manage', name: 'Quản lý cài đặt', module: 'admin' },
@@ -82,7 +83,7 @@ export function defaultPermissionCodesForRole(roleCode: string): string[] {
   const workAll = WORK_PERMISSION_DEFS.map((p) => p.code);
   const workStaff = ['work.project.read', 'work.project.write', 'work.task.read', 'work.task.write'];
   const crmRead = ['customer.read', 'lead.read', 'order.read', 'report.view'];
-  const crmWrite = ['customer.write', 'lead.write'];
+  const crmWrite = ['customer.write', 'lead.write', 'order.write'];
 
   switch (canonicalizeRoleCode(roleCode)) {
     case SYSTEM_ROLES.OWNER:

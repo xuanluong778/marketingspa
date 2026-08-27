@@ -2,14 +2,10 @@
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  AUTO_POST_STATUS_LABELS,
-  autoPostTypeLabel,
-  type AutoPostItem,
-  type AutoPostStatus,
-} from '@/types/auto-post';
+import { type AutoPostItem, type AutoPostStatus } from '@/types/auto-post';
 import { cn } from '@/lib/utils';
 import { ExternalLink, RotateCcw, Trash2, XCircle } from 'lucide-react';
+import { useI18n, useT } from '@/i18n/i18n-provider';
 
 const STATUS_VARIANT: Record<AutoPostStatus, string> = {
   DRAFT: 'bg-slate-100 text-slate-700',
@@ -21,10 +17,20 @@ const STATUS_VARIANT: Record<AutoPostStatus, string> = {
   CANCELLED: 'bg-slate-100 text-slate-500',
 };
 
-function formatDt(iso: string | null) {
+const STATUS_I18N: Record<AutoPostStatus, string> = {
+  DRAFT: 'facebookFlow.statusDraft',
+  PENDING: 'facebookFlow.statusPending',
+  SCHEDULED: 'facebookFlow.statusScheduled',
+  PUBLISHING: 'facebookFlow.statusPublishing',
+  PUBLISHED: 'facebookFlow.statusPublished',
+  FAILED: 'facebookFlow.statusFailed',
+  CANCELLED: 'facebookFlow.statusCancelled',
+};
+
+function formatDt(iso: string | null, dateLocale: string) {
   if (!iso) return '—';
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString('vi-VN');
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString(dateLocale);
 }
 
 function resolvePostUrl(item: AutoPostItem): string | null {
@@ -53,10 +59,13 @@ export function AutoPostHistoryTable({
   onDelete: (id: string) => void;
   busy?: boolean;
 }) {
+  const t = useT();
+  const { locale } = useI18n();
+  const dateLocale = locale === 'en' ? 'en-US' : 'vi-VN';
   if (items.length === 0) {
     return (
       <p className="text-sm text-muted-foreground py-6 text-center">
-        Chưa có bài đăng nào. Tạo bài và lưu nháp hoặc đăng để xem lịch sử.
+        {t('autoPost.emptyHistory')}
       </p>
     );
   }
@@ -66,12 +75,24 @@ export function AutoPostHistoryTable({
       <table className="w-full text-sm text-slate-900">
         <thead className="border-b bg-slate-100">
           <tr>
-            <th className="px-4 py-3 text-left font-semibold text-black">Chủ đề</th>
-            <th className="px-4 py-3 text-left font-semibold text-black">Loại</th>
-            <th className="px-4 py-3 text-left font-semibold text-black">Fanpage</th>
-            <th className="px-4 py-3 text-left font-semibold text-black">Trạng thái</th>
-            <th className="px-4 py-3 text-left font-semibold text-black">Lịch / Đăng</th>
-            <th className="px-4 py-3 text-right font-semibold text-black">Thao tác</th>
+            <th className="px-4 py-3 text-left font-semibold text-black">
+              {t('facebookFlow.colTopic')}
+            </th>
+            <th className="px-4 py-3 text-left font-semibold text-black">
+              {t('facebookFlow.colType')}
+            </th>
+            <th className="px-4 py-3 text-left font-semibold text-black">
+              {t('facebookFlow.colFanpage')}
+            </th>
+            <th className="px-4 py-3 text-left font-semibold text-black">
+              {t('facebookFlow.colStatus')}
+            </th>
+            <th className="px-4 py-3 text-left font-semibold text-black">
+              {t('facebookFlow.colSchedule')}
+            </th>
+            <th className="px-4 py-3 text-right font-semibold text-black">
+              {t('facebookFlow.colActions')}
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -86,20 +107,20 @@ export function AutoPostHistoryTable({
                   )}
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-slate-800">
-                  {autoPostTypeLabel(item.postType)}
+                  {t(`facebookFlow.postType.${item.postType}`)}
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-slate-800">
                   {item.fanpageName ?? '—'}
                 </td>
                 <td className="px-4 py-3">
                   <Badge className={cn('font-normal', STATUS_VARIANT[item.status])}>
-                    {AUTO_POST_STATUS_LABELS[item.status]}
+                    {t(STATUS_I18N[item.status])}
                   </Badge>
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-slate-600">
                   {item.status === 'SCHEDULED'
-                    ? formatDt(item.scheduledAt)
-                    : formatDt(item.publishedAt ?? item.createdAt)}
+                    ? formatDt(item.scheduledAt, dateLocale)
+                    : formatDt(item.publishedAt ?? item.createdAt, dateLocale)}
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex flex-wrap justify-end gap-1">
@@ -112,7 +133,7 @@ export function AutoPostHistoryTable({
                       >
                         <a href={viewUrl} target="_blank" rel="noopener noreferrer">
                           <ExternalLink className="mr-1 h-3.5 w-3.5" />
-                          Xem bài viết
+                          {t('facebookFlow.viewPost')}
                         </a>
                       </Button>
                     ) : null}
@@ -125,7 +146,7 @@ export function AutoPostHistoryTable({
                         onClick={() => onRetry(item.id)}
                       >
                         <RotateCcw className="mr-1 h-3.5 w-3.5" />
-                        Thử lại
+                        {t('common.retry')}
                       </Button>
                     )}
                     {item.status === 'SCHEDULED' && (
@@ -137,22 +158,19 @@ export function AutoPostHistoryTable({
                         onClick={() => onCancel(item.id)}
                       >
                         <XCircle className="mr-1 h-3.5 w-3.5" />
-                        Hủy lịch
+                        {t('facebookFlow.cancelSchedule')}
                       </Button>
                     )}
-                    {(item.status === 'DRAFT' ||
-                      item.status === 'FAILED' ||
-                      item.status === 'CANCELLED') && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-slate-700 hover:text-slate-900"
-                        disabled={busy}
-                        onClick={() => onDelete(item.id)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-red-200 bg-white text-red-700 hover:bg-red-50 hover:text-red-800"
+                      disabled={busy}
+                      onClick={() => onDelete(item.id)}
+                    >
+                      <Trash2 className="mr-1 h-3.5 w-3.5" />
+                      {t('common.delete')}
+                    </Button>
                   </div>
                 </td>
               </tr>

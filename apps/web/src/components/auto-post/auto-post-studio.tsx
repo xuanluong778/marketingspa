@@ -44,8 +44,10 @@ import {
 } from '@/lib/auto-post-ai-marketing-bridge';
 import type { ContentStudioTab } from '@/types/content-marketing';
 import { formatMutationError } from '@/lib/format-mutation-error';
+import { useT } from '@/i18n/i18n-provider';
 
 export function AutoPostStudio() {
+  const t = useT();
   const searchParams = useSearchParams();
   const { data: user } = useCurrentUser();
   const { data: fbStatus, isLoading: fbLoading } = useAutoPostFacebookStatus();
@@ -74,11 +76,11 @@ export function AutoPostStudio() {
 
   useEffect(() => {
     const fb = searchParams.get('facebook');
-    if (fb === 'connected') setMsg('Đã kết nối Facebook thành công!');
+    if (fb === 'connected') setMsg(t('facebookFlow.connectedFacebookOk'));
     if (fb === 'error') {
-      setErrorMsg(searchParams.get('message') ?? 'Kết nối Facebook thất bại');
+      setErrorMsg(searchParams.get('message') ? t('facebookFlow.connectFailed') : t('facebookFlow.connectFailed'));
     }
-  }, [searchParams]);
+  }, [searchParams, t]);
 
   useEffect(() => {
     const fromId = searchParams.get('from');
@@ -105,10 +107,10 @@ export function AutoPostStudio() {
 
   const emptyFilterMessage =
     tabFilter === 'ad'
-      ? 'Chưa có bài quảng cáo bán hàng đã lưu'
+      ? t('content.emptySavedSales')
       : tabFilter === 'personal'
-        ? 'Chưa có bài xây dựng thương hiệu đã lưu'
-        : 'Chưa có bài viết nâng cao đã lưu';
+        ? t('content.emptySavedBrand')
+        : t('content.emptySavedAdvanced');
 
   const handleTabFilterChange = useCallback(
     (value: ContentStudioTab) => {
@@ -133,7 +135,7 @@ export function AutoPostStudio() {
     mutations.schedule.isPending;
 
   const buildDraftPayload = () => {
-    if (!selected) throw new Error('Chưa chọn bài từ AI Marketing');
+    if (!selected) throw new Error(t('facebookFlow.pickAiPost'));
     return {
       id: draftId,
       postType: mapAiTabToAutoPostType(selected.tab),
@@ -147,14 +149,14 @@ export function AutoPostStudio() {
 
   const handleSaveDraft = async () => {
     if (!selected || !caption.trim()) {
-      setErrorMsg('Chọn bài từ AI Marketing và kiểm tra nội dung trước khi lưu');
+      setErrorMsg(t('facebookFlow.pickAiPostBeforeSave'));
       return;
     }
     setErrorMsg('');
     try {
       const saved = await mutations.saveDraft.mutateAsync(buildDraftPayload());
       setDraftId(saved.id);
-      setMsg('Đã lưu nháp đăng bài!');
+      setMsg(t('facebookFlow.draftSaved'));
       setTimeout(() => setMsg(''), 3000);
     } catch (e) {
       setErrorMsg(formatMutationError(e));
@@ -170,24 +172,24 @@ export function AutoPostStudio() {
 
   const handlePublishNow = async () => {
     if (!selected) {
-      setErrorMsg('Vui lòng chọn bài từ AI Marketing');
+      setErrorMsg(t('facebookFlow.pickAiPost'));
       return;
     }
     if (!fanpageId) {
-      setErrorMsg('Vui lòng chọn Fanpage');
+      setErrorMsg(t('facebookFlow.pickFanpage'));
       return;
     }
     if (!caption.trim()) {
-      setErrorMsg('Nội dung bài đăng không được trống');
+      setErrorMsg(t('facebookFlow.emptyCaption'));
       return;
     }
-    if (!window.confirm('Bạn đã duyệt nội dung và muốn đăng ngay lên Fanpage?')) return;
+    if (!window.confirm(t('facebookFlow.confirmPublish'))) return;
 
     setErrorMsg('');
     try {
       const postId = await ensureDraft();
       await mutations.publishNow.mutateAsync(postId);
-      setMsg('Đã đăng bài thành công!');
+      setMsg(t('facebookFlow.publishedOk'));
       setTimeout(() => setMsg(''), 3000);
     } catch (e) {
       setErrorMsg(formatMutationError(e));
@@ -196,23 +198,23 @@ export function AutoPostStudio() {
 
   const handleSchedule = async () => {
     if (!selected) {
-      setErrorMsg('Vui lòng chọn bài từ AI Marketing');
+      setErrorMsg(t('facebookFlow.pickAiPost'));
       return;
     }
     if (!fanpageId) {
-      setErrorMsg('Vui lòng chọn Fanpage');
+      setErrorMsg(t('facebookFlow.pickFanpage'));
       return;
     }
     if (!caption.trim()) {
-      setErrorMsg('Nội dung bài đăng không được trống');
+      setErrorMsg(t('facebookFlow.emptyCaption'));
       return;
     }
     if (!scheduledAt) {
-      setErrorMsg('Vui lòng chọn thời gian lên lịch');
+      setErrorMsg(t('facebookFlow.pickScheduleTime'));
       return;
     }
     if (new Date(scheduledAt).getTime() <= Date.now()) {
-      setErrorMsg('Không thể lên lịch ở thời gian quá khứ');
+      setErrorMsg(t('facebookFlow.cannotSchedulePast'));
       return;
     }
     if (
@@ -230,7 +232,7 @@ export function AutoPostStudio() {
         postId,
         scheduledAt: new Date(scheduledAt).toISOString(),
       });
-      setMsg('Đã lên lịch đăng bài!');
+      setMsg(t('facebookFlow.scheduledShort'));
       setTimeout(() => setMsg(''), 3000);
     } catch (e) {
       setErrorMsg(formatMutationError(e));
@@ -241,7 +243,7 @@ export function AutoPostStudio() {
     <div className="space-y-6 pb-10">
       <PageHeader
         title="Auto Post"
-        description="Chọn bài đã tạo từ AI Marketing, duyệt nội dung và đăng hoặc lên lịch lên Facebook Fanpage."
+        description={t('facebookFlow.studioDescription')}
       >
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="outline" size="sm">
@@ -262,13 +264,13 @@ export function AutoPostStudio() {
                 onClick={() => mutations.disconnectFacebook.mutate()}
               >
                 <Unplug className="mr-1.5 h-4 w-4" />
-                Ngắt kết nối
+                {t('facebookFlow.disconnect')}
               </Button>
             </>
           ) : (
             <Button size="sm" onClick={() => mutations.connectFacebook.mutate()}>
               <Facebook className="mr-1.5 h-4 w-4" />
-              Kết nối Facebook Fanpage
+              {t('facebookFlow.connectTitle')}
             </Button>
           )}
         </div>
@@ -336,48 +338,48 @@ export function AutoPostStudio() {
         </div>
 
         <div className="space-y-4">
-          <h2 className="font-semibold text-lg">Preview bài đăng Facebook</h2>
+          <h2 className="font-semibold text-lg">{t('facebookFlow.previewPost')}</h2>
           {selected ? (
             <>
               <div className="rounded-lg bg-slate-50 border px-3 py-2 text-sm">
-                <span className="text-muted-foreground">Nguồn: </span>
+                <span className="text-muted-foreground">{t('facebookFlow.source')}</span>
                 <span className="font-medium">{selected.sourceLabel}</span>
                 <span className="text-muted-foreground"> · </span>
                 <span className="font-medium">{selected.title}</span>
               </div>
               <FacebookFanpagePreview
-                pageName={selectedPage?.pageName ?? 'Fanpage spa của bạn'}
+                pageName={selectedPage?.pageName ?? t('facebookFlow.yourFanpage')}
                 pagePictureUrl={selectedPage?.pagePictureUrl}
                 caption={caption}
                 imageUrl={imageUrl}
                 linkUrl={linkUrl}
               />
               <div className="space-y-1.5">
-                <Label>Chỉnh sửa caption trước khi đăng</Label>
+                <Label>{t('facebookFlow.captionReview')}</Label>
                 <Textarea
                   value={caption}
                   onChange={(e) => setCaption(e.target.value)}
                   rows={10}
-                  placeholder="Nội dung từ AI Marketing..."
+                  placeholder={t('facebookFlow.captionFromAi')}
                 />
               </div>
             </>
           ) : (
             <div className="rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">
-              Chọn một bài bên trái để xem preview và thiết lập đăng bài.
+              {t('facebookFlow.pickToPreview')}
             </div>
           )}
         </div>
       </div>
 
       <div className="rounded-xl border bg-card p-5 space-y-4 shadow-sm">
-        <h2 className="font-semibold text-lg">Thiết lập đăng bài</h2>
+        <h2 className="font-semibold text-lg">{t('facebookFlow.publishSettingsLong')}</h2>
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <div className="space-y-1.5 lg:col-span-2">
-            <Label>Fanpage *</Label>
+            <Label>{t('facebookFlow.fanpageRequired')}</Label>
             {fbLoading ? (
-              <LoadingState message="Đang tải Fanpage..." />
+              <LoadingState message={t('autoPost.loadingFanpages')} />
             ) : (
               <Select
                 value={fanpageId || undefined}
@@ -385,7 +387,7 @@ export function AutoPostStudio() {
                 disabled={!fbStatus?.connected || fbStatus.pages.length === 0}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Chọn Fanpage cần đăng" />
+                  <SelectValue placeholder={t('facebookFlow.selectFanpageToPost')} />
                 </SelectTrigger>
                 <SelectContent>
                   {fbStatus?.pages.map((p) => (
@@ -399,7 +401,7 @@ export function AutoPostStudio() {
           </div>
 
           <div className="space-y-1.5 lg:col-span-2">
-            <Label>URL ảnh đính kèm</Label>
+            <Label>{t('facebookFlow.imageUrl')}</Label>
             <Input
               value={imageUrl}
               onChange={(e) => setImageUrl(e.target.value)}
@@ -408,7 +410,7 @@ export function AutoPostStudio() {
           </div>
 
           <div className="space-y-1.5 lg:col-span-2">
-            <Label>Link website/landing</Label>
+            <Label>{t('facebookFlow.landingLink')}</Label>
             <Input
               value={linkUrl}
               onChange={(e) => setLinkUrl(e.target.value)}
@@ -458,15 +460,14 @@ export function AutoPostStudio() {
         </div>
 
         <p className="text-xs text-muted-foreground">
-          Nội dung được tạo tại AI Marketing. Auto Post chỉ dùng để duyệt, đăng và lên lịch — không
-          tự động đăng khi chưa xác nhận.
+          {t('facebookFlow.libraryHint')}
         </p>
       </div>
 
       <div className="rounded-xl border bg-card p-5 shadow-sm space-y-4">
-        <h2 className="font-semibold text-lg">Lịch sử đăng Fanpage</h2>
+        <h2 className="font-semibold text-lg">{t('facebookFlow.historyFanpage')}</h2>
         {postsLoading ? (
-          <LoadingState message="Đang tải danh sách bài..." />
+          <LoadingState message={t('autoPost.loadingPosts')} />
         ) : (
           <AutoPostHistoryTable
             items={postsData?.items ?? []}
@@ -474,7 +475,13 @@ export function AutoPostStudio() {
             onRetry={(id) => mutations.retry.mutate(id)}
             onCancel={(id) => mutations.cancelSchedule.mutate(id)}
             onDelete={(id) => {
-              if (window.confirm('Xóa bài này?')) mutations.deletePost.mutate(id);
+              if (
+                window.confirm(
+                  t('facebookFlow.confirmDeleteSchedule'),
+                )
+              ) {
+                mutations.deletePost.mutate(id);
+              }
             }}
           />
         )}

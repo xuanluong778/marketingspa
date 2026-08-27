@@ -1,8 +1,10 @@
 import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
-import type { Customer, Prisma } from '@marketingspa/database';
+import { CUSTOMER_360_TEST_TAG, type Customer, type Prisma } from '@marketingspa/database';
+import { listCustomerSources, normalizeCustomerSource } from '@marketingspa/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { TenantOwnershipService } from '../common/services/tenant-ownership.service';
+import { TenantKpiCacheService } from '../common/services/tenant-kpi-cache.service';
 import { CreateCustomerDto, UpdateCustomerDto, CustomerQueryDto } from './dto/customer.dto';
 import { buildPaginatedResult, getPaginationParams } from '../common/utils/pagination.util';
 
@@ -12,23 +14,71 @@ export class CustomersService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly tenant: TenantOwnershipService,
+    private readonly kpiCache?: TenantKpiCacheService,
   ) {}
+
+  async listSources() {
+    return listCustomerSources();
+  }
 
   async findAll(organizationId: string, query: CustomerQueryDto) {
     const { page, pageSize, skip, take } = getPaginationParams(query);
-    const where: Prisma.CustomerWhereInput = {
-      organizationId,
-      isActive: query.isActive !== undefined ? query.isActive : true,
-      ...(query.branchId && { branchId: query.branchId }),
-      ...(query.leadSourceId && { leadSourceId: query.leadSourceId }),
-      ...(query.tag && { tags: { has: query.tag } }),
-      ...(query.search && {
+    const cacheName = `list:cust:${page}:${pageSize}:${JSON.stringify({
+      s: query.search,
+      src: query.source,
+      br: query.branchId,
+      tag: query.tag,
+      ls: query.leadSourceId,
+      act: query.isActive,
+    })}`;
+    const cached = await this.kpiCache?.getJson<any>(organizationId, cacheName);
+    if (cached) return cached;
+    const canonicalSource = query.source ? normalizeCustomerSource(query.source) : null;
+    const andFilters: Prisma.CustomerWhereInput[] = [];
+
+    if (query.source) {
+      if (canonicalSource) {
+        andFilters.push({
+          OR: [
+            { latestSource: canonicalSource },
+            { firstSource: canonicalSource },
+            { source: canonicalSource },
+          ],
+        });
+      } else {
+        andFilters.push({ id: '00000000-0000-0000-0000-000000000000' });
+      }
+    }
+
+    if (query.search) {
+      andFilters.push({
         OR: [
           { name: { contains: query.search, mode: 'insensitive' } },
           { phone: { contains: query.search } },
           { email: { contains: query.search, mode: 'insensitive' } },
         ],
-      }),
+      });
+    }
+
+    if (!query.includeTest && query.tag !== CUSTOMER_360_TEST_TAG && query.tag !== '__test__') {
+      andFilters.push({
+        NOT: {
+          OR: [
+            { tags: { has: CUSTOMER_360_TEST_TAG } },
+            { tags: { has: '__test__' } },
+          ],
+        },
+      });
+    }
+
+    const where: Prisma.CustomerWhereInput = {
+      organizationId,
+      isActive: query.isActive !== undefined ? query.isActive : true,
+      mergedIntoId: null,
+      ...(query.branchId && { branchId: query.branchId }),
+      ...(query.leadSourceId && { leadSourceId: query.leadSourceId }),
+      ...(query.tag && { tags: { has: query.tag } }),
+      ...(andFilters.length ? { AND: andFilters } : {}),
     };
 
     const [items, total] = await Promise.all([
@@ -37,12 +87,14 @@ export class CustomersService {
         skip,
         take,
         orderBy: { createdAt: 'desc' },
-        include: { leadSource: true, branch: true },
+        include: { leadSource: { select: { id: true, name: true } }, branch: { select: { id: true, name: true } } },
       }),
       this.prisma.customer.count({ where }),
     ]);
 
-    return buildPaginatedResult(items, total, page, pageSize);
+    const payload = buildPaginatedResult(items, total, page, pageSize);
+    await this.kpiCache?.setJson(organizationId, cacheName, payload, 8);
+    return payload;
   }
 
   findAllLegacy(organizationId: string): Promise<Customer[]> {
@@ -143,7 +195,7 @@ export class CustomersService {
       if (dup) return dup;
     }
 
-    return this.prisma.customer.create({
+    const row = await this.prisma.customer.create({
       data: {
         organizationId,
         name: dto.name,
@@ -159,6 +211,8 @@ export class CustomersService {
       },
       include: { leadSource: true, branch: true },
     });
+    await this.kpiCache?.bump(organizationId);
+    return row;
   }
 
   async update(organizationId: string, id: string, dto: UpdateCustomerDto) {
@@ -167,7 +221,7 @@ export class CustomersService {
       branchId: dto.branchId,
       leadSourceId: dto.leadSourceId,
     });
-    return this.prisma.customer.update({
+    const row = await this.prisma.customer.update({
       where: { id },
       data: {
         ...dto,
@@ -175,13 +229,17 @@ export class CustomersService {
       },
       include: { leadSource: true, branch: true },
     });
+    await this.kpiCache?.bump(organizationId);
+    return row;
   }
 
   async remove(organizationId: string, id: string) {
     await this.findOne(organizationId, id);
-    return this.prisma.customer.update({
+    const row = await this.prisma.customer.update({
       where: { id },
       data: { isActive: false },
     });
+    await this.kpiCache?.bump(organizationId);
+    return row;
   }
 }

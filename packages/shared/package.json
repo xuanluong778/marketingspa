@@ -10,11 +10,14 @@
     "lint": "eslint src --ext .ts"
   },
   "dependencies": {
+    "@aws-sdk/client-sesv2": "^3.1111.0",
+    "nodemailer": "^9.0.3",
     "zod": "^3.24.1"
   },
   "devDependencies": {
     "@marketingspa/config": "workspace:*",
     "@types/node": "^22.10.2",
+    "@types/nodemailer": "^8.0.1",
     "typescript": "^5.7.2"
   }
 }

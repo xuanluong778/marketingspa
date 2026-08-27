@@ -3,6 +3,17 @@ const nextConfig = {
   transpilePackages: ['@marketingspa/shared'],
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: true },
+  experimental: {
+    optimizePackageImports: [
+      'lucide-react',
+      'date-fns',
+      '@radix-ui/react-dialog',
+      '@radix-ui/react-select',
+    ],
+  },
+  images: {
+    formats: ['image/avif', 'image/webp'],
+  },
   // standalone dùng khi build Docker trên Linux; tắt trên Windows dev (symlink EPERM)
   ...(process.env.DOCKER_BUILD === 'true' ? { output: 'standalone' } : {}),
   async headers() {

@@ -24,21 +24,23 @@ import {
   type BillingPlan,
   type PaymentOrder,
 } from '@/hooks/use-billing';
+import { useSubscriptionDisplay } from '@/hooks/use-subscription-display';
 import { LoadingState, ErrorState } from '@/components/shared/page-state';
 import { useCurrentUser } from '@/hooks/use-auth';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { authStorage } from '@/lib/auth-storage';
 import { getDeviceFingerprint } from '@/lib/device-fingerprint';
+import { useT } from '@/i18n/i18n-provider';
 
-const FEATURE_ROWS: { label: string; included: boolean }[] = [
-  { label: 'CRM & Lead & Phễu marketing', included: true },
-  { label: 'Quảng cáo (Ads) & Attribution', included: true },
-  { label: 'Chatbot CSKH & Nhắn tin hàng loạt', included: true },
-  { label: 'Content & Auto Post Fanpage', included: true },
-  { label: 'Quản lý nhân sự (HRM)', included: true },
-  { label: 'Báo cáo & Mục tiêu kinh doanh', included: true },
-  { label: 'Hỗ trợ kích hoạt tự động qua SePay', included: true },
-];
+const FEATURE_ROW_KEYS = [
+  'pricingPage.benefitCrm',
+  'pricingPage.benefitAds',
+  'pricingPage.benefitChatbot',
+  'content.autoPost',
+  'pricingPage.benefitHrm',
+  'pricingPage.benefitReports',
+  'pricingPage.sepayHint',
+] as const;
 
 const STATUS_CLASS: Record<string, string> = {
   PENDING: 'bg-amber-100 text-amber-900',
@@ -75,7 +77,7 @@ function PaymentSuccessDialog({
             Thanh toán thành công!
           </DialogTitle>
           <DialogDescription className="text-center text-base text-foreground/80">
-            Cảm ơn {name} đã tin tưởng và đồng hành cùng Marketing SPA.
+            Cảm ơn {name} đã tin tưởng và đồng hành cùng Marketing Auto.
             <br />
             Gói của bạn đã được kích hoạt tự động.
           </DialogDescription>
@@ -122,6 +124,7 @@ function PaymentModal({
   onOpenChange: (v: boolean) => void;
   userName?: string;
 }) {
+  const t = useT();
   const qc = useQueryClient();
   const { data: order, isLoading } = usePaymentOrder(orderId, { poll: true });
   const cancelMut = useCancelPaymentOrder();
@@ -175,7 +178,7 @@ function PaymentModal({
 
           {isLoading || !order ? (
             <div className="flex items-center justify-center py-8 text-muted-foreground">
-              <Loader2 className="h-5 w-5 animate-spin mr-2" /> Đang tải đơn...
+              <Loader2 className="h-5 w-5 animate-spin mr-2" /> {t('pricing.loadingOrder')}
             </div>
           ) : (
             <PaymentOrderBody
@@ -357,6 +360,7 @@ function TrialCard({
   onActivate: () => void;
   activating: boolean;
 }) {
+  const t = useT();
   const trial = sub.trial;
   const status = sub.subscriptionStatus ?? sub.status;
 
@@ -367,19 +371,19 @@ function TrialCard({
   if (status === 'TRIALING' && trial) {
     return (
       <section className="rounded-2xl border border-teal-400/50 bg-[#0A3D31] p-6 text-white shadow-md">
-        <h2 className="text-lg font-semibold text-heading">Đang dùng thử miễn phí 3 ngày</h2>
+        <h2 className="text-lg font-semibold text-heading">{t('pricingPage.usingTrial3')}</h2>
         <p className="mt-1 text-sm text-white/80">
           Bạn đang được dùng Content cơ bản trong thời gian dùng thử.
         </p>
         <dl className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
           <div className="flex justify-between gap-2 sm:block">
-            <dt className="text-white/65">Bắt đầu</dt>
+            <dt className="text-white/65">{t('pricingPage.start')}</dt>
             <dd className="font-medium text-white">
               {trial.trialStartedAt ? formatDateTime(trial.trialStartedAt) : '—'}
             </dd>
           </div>
           <div className="flex justify-between gap-2 sm:block">
-            <dt className="text-white/65">Kết thúc</dt>
+            <dt className="text-white/65">{t('pricingPage.end')}</dt>
             <dd className="font-medium text-white">
               {trial.trialEndsAt ? formatDateTime(trial.trialEndsAt) : '—'}
             </dd>
@@ -471,7 +475,7 @@ function TrialCard({
               <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Đang kích hoạt...
             </>
           ) : (
-            'Kích hoạt dùng thử 3 ngày'
+            t('pricingPage.activateTrial3')
           )}
         </Button>
       </div>
@@ -480,11 +484,13 @@ function TrialCard({
 }
 
 function PricingPageInner() {
+  const t = useT();
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: user, isLoading: authLoading } = useCurrentUser();
   const { data: plans, isLoading, isError, refetch } = useBillingPlans();
   const { data: sub } = useCurrentSubscription();
+  const { display } = useSubscriptionDisplay();
   const createOrder = useCreatePaymentOrder();
   const activateTrial = useActivateTrial();
   const [activeOrderId, setActiveOrderId] = useState<string | null>(null);
@@ -510,7 +516,7 @@ function PricingPageInner() {
       setActiveOrderId(order.id);
       setModalOpen(true);
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : 'Không tạo được đơn');
+      window.alert(e instanceof Error ? e.message : t('pricingPage.createOrderFailed'));
     }
   }
 
@@ -539,19 +545,16 @@ function PricingPageInner() {
     try {
       await activateTrial.mutateAsync(getDeviceFingerprint());
     } catch (e) {
-      window.alert(e instanceof Error ? e.message : 'Không kích hoạt được dùng thử');
+      window.alert(e instanceof Error ? e.message : t('pricingPage.activateTrialFailed'));
     }
   }
 
   return (
     <div className="mx-auto max-w-5xl space-y-10 pb-12">
       <header className="space-y-3 text-center">
-        <p className="text-sm font-medium tracking-wide text-teal-700">Marketing SPA Pro</p>
-        <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">Bảng giá</h1>
-        <p className="mx-auto max-w-2xl text-muted-foreground">
-          Một gói Pro — chọn chu kỳ 6 hoặc 12 tháng. Thanh toán chuyển khoản VietQR, kích hoạt tự
-          động qua SePay.
-        </p>
+        <p className="text-sm font-medium tracking-wide text-teal-700">Marketing Auto Pro</p>
+        <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{t('pricing.title')}</h1>
+        <p className="mx-auto max-w-2xl text-muted-foreground">{t('pricing.subtitle')}</p>
         {reason === 'trial_expired' && (
           <p className="mx-auto max-w-2xl rounded-md bg-red-50 px-3 py-2 text-sm text-red-800">
             Thời gian dùng thử đã kết thúc. Vui lòng thanh toán để tiếp tục sử dụng MarketingAutoAZ.
@@ -562,10 +565,10 @@ function PricingPageInner() {
             Vui lòng thanh toán hoặc kích hoạt dùng thử 3 ngày để sử dụng tính năng.
           </p>
         )}
-        {sub?.hasPlan && !sub.isExpired && sub.expiresAt && sub.status !== 'TRIALING' && (
+        {display && display.tier !== 'FREE' && display.tier !== 'TRIAL' && display.expiresAt && (
           <p className="text-sm text-emerald-700">
-            Gói hiện tại: {sub.planName ?? sub.plan?.name ?? 'Pro'} — còn {sub.remainingDays} ngày
-            (đến {formatDateTime(sub.expiresAt)})
+            {display.planLabel} — còn {display.remainingDays} ngày (đến{' '}
+            {formatDateTime(display.expiresAt)})
           </p>
         )}
       </header>
@@ -608,11 +611,16 @@ function PricingPageInner() {
                   Tiết kiệm {formatCurrency(savings)} so với mua 2 gói 6 tháng
                 </p>
               )}
+              {Number(plan.creditGrant) > 0 && (
+                <p className="mt-2 text-sm text-heading">
+                  Tặng {Number(plan.creditGrant).toLocaleString('vi-VN')} AI Credit
+                </p>
+              )}
               <ul className="mt-5 flex-1 space-y-2 text-sm text-white/95">
-                {FEATURE_ROWS.map((f) => (
-                  <li key={f.label} className="flex gap-2">
+                {FEATURE_ROW_KEYS.map((key) => (
+                  <li key={key} className="flex gap-2">
                     <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
-                    <span>{f.label}</span>
+                    <span>{t(key)}</span>
                   </li>
                 ))}
               </ul>
@@ -627,10 +635,10 @@ function PricingPageInner() {
               >
                 {createOrder.isPending ? (
                   <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Đang tạo đơn...
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" /> …
                   </>
                 ) : (
-                  'Đăng ký ngay'
+                  t('pricingPage.registerNow')
                 )}
               </Button>
             </div>
@@ -639,31 +647,35 @@ function PricingPageInner() {
       </div>
 
       <section className="space-y-4">
-        <h2 className="text-lg font-semibold">So sánh quyền lợi</h2>
+        <h2 className="text-lg font-semibold">{t('pricingPage.compareBenefits')}</h2>
         <div className="overflow-x-auto rounded-xl border">
           <table className="w-full text-sm">
             <thead className="bg-muted/50">
               <tr>
-                <th className="px-4 py-3 text-left font-medium">Quyền lợi</th>
-                <th className="px-4 py-3 text-center font-medium">6 tháng</th>
-                <th className="px-4 py-3 text-center font-medium">12 tháng</th>
+                <th className="px-4 py-3 text-left font-medium">{t('pricingPage.benefits')}</th>
+                <th className="px-4 py-3 text-center font-medium">{t('pricingPage.months6')}</th>
+                <th className="px-4 py-3 text-center font-medium">{t('pricingPage.months12')}</th>
               </tr>
             </thead>
             <tbody>
-              {FEATURE_ROWS.map((row) => (
-                <tr key={row.label} className="border-t">
-                  <td className="px-4 py-2.5">{row.label}</td>
+              {FEATURE_ROW_KEYS.map((key) => (
+                <tr key={key} className="border-t">
+                  <td className="px-4 py-2.5">{t(key)}</td>
                   <td className="px-4 py-2.5 text-center text-teal-700">✓</td>
                   <td className="px-4 py-2.5 text-center text-teal-700">✓</td>
                 </tr>
               ))}
               <tr className="border-t bg-muted/30">
-                <td className="px-4 py-2.5 font-medium">Giá</td>
+                <td className="px-4 py-2.5 font-medium">{t('pricingPage.price')}</td>
                 <td className="px-4 py-2.5 text-center font-medium">
-                  {formatCurrency(sorted.find((p) => p.durationMonths === 6)?.priceVnd as number || 3900000)}
+                  {sorted.find((p) => p.durationMonths === 6)
+                    ? formatCurrency(Number(sorted.find((p) => p.durationMonths === 6)!.priceVnd))
+                    : '—'}
                 </td>
                 <td className="px-4 py-2.5 text-center font-medium">
-                  {formatCurrency(sorted.find((p) => p.durationMonths === 12)?.priceVnd as number || 5500000)}
+                  {sorted.find((p) => p.durationMonths === 12)
+                    ? formatCurrency(Number(sorted.find((p) => p.durationMonths === 12)!.priceVnd))
+                    : '—'}
                 </td>
               </tr>
             </tbody>

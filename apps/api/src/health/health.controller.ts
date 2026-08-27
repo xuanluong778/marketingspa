@@ -1,67 +1,29 @@
-import { Controller, Get, Inject } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
-import { REDIS_CLIENT } from '../redis/redis.constants';
-import type Redis from 'ioredis';
-
-const WORKER_HEARTBEAT_KEY = 'marketingspa:worker:heartbeat';
-
-async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  return Promise.race([
-    promise,
-    new Promise<T>((_, reject) => {
-      setTimeout(() => reject(new Error('timeout')), ms);
-    }),
-  ]);
-}
+import { Controller, Get, HttpStatus, Res } from '@nestjs/common';
+import type { Response } from 'express';
+import { HealthService } from './health.service';
 
 @Controller('health')
 export class HealthController {
-  constructor(
-    private readonly prisma: PrismaService,
-    @Inject(REDIS_CLIENT) private readonly redis: Redis,
-  ) {}
+  constructor(private readonly health: HealthService) {}
 
+  /** Process liveness — does not probe dependencies. */
   @Get()
-  async check() {
-    let dbOk = false;
-    let redisOk = false;
-    let workerOk = false;
+  live() {
+    return this.health.liveness();
+  }
+}
 
-    try {
-      await withTimeout(this.prisma.$queryRaw`SELECT 1`, 2_000);
-      dbOk = true;
-    } catch {
-      dbOk = false;
+@Controller('ready')
+export class ReadyController {
+  constructor(private readonly health: HealthService) {}
+
+  /** PostgreSQL + Redis must be up. Worker is reported but not required for 200. */
+  @Get()
+  async ready(@Res({ passthrough: true }) res: Response) {
+    const result = await this.health.readiness();
+    if (!result.ok) {
+      res.status(HttpStatus.SERVICE_UNAVAILABLE);
     }
-
-    try {
-      const pong = await withTimeout(this.redis.ping(), 2_000);
-      redisOk = pong === 'PONG';
-    } catch {
-      redisOk = false;
-    }
-
-    if (redisOk) {
-      try {
-        const heartbeat = await this.redis.get(WORKER_HEARTBEAT_KEY);
-        if (heartbeat) {
-          const ageMs = Date.now() - parseInt(heartbeat, 10);
-          workerOk = !Number.isNaN(ageMs) && ageMs < 120_000;
-        }
-      } catch {
-        workerOk = false;
-      }
-    }
-
-    const coreOk = dbOk && redisOk;
-    return {
-      status: coreOk && workerOk ? 'ok' : coreOk ? 'degraded' : 'degraded',
-      timestamp: new Date().toISOString(),
-      services: {
-        database: dbOk,
-        redis: redisOk,
-        worker: workerOk,
-      },
-    };
+    return result.body;
   }
 }

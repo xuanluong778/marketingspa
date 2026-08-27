@@ -118,4 +118,14 @@ export class CustomerQueryDto extends PaginationDto {
   @IsOptional()
   @Transform(({ value }) => value === 'true' || value === true)
   isActive?: boolean;
+
+  /** Canonical ingress source (crm_manual / funnel_form / zalo / …). */
+  @IsOptional()
+  @IsString()
+  source?: string;
+
+  /** Include E2E/test-tagged customers. Default hides them from live CRM. */
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  includeTest?: boolean;
 }

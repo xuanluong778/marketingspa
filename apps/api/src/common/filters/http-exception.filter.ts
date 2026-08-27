@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { captureException } from '../../sentry';
+import { redactLogText } from '../utils/redact-log.util';
 
 function isInfrastructureError(exception: unknown): boolean {
   if (!(exception instanceof Error)) return false;
@@ -73,15 +74,15 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       message =
         'Không kết nối được database. Chạy `pnpm dev:infra` (Docker Postgres/Redis) rồi thử lại.';
       this.logger.error(
-        exception instanceof Error ? exception.message : String(exception),
-        exception instanceof Error ? exception.stack : undefined,
+        redactLogText(exception instanceof Error ? exception.message : String(exception)),
+        exception instanceof Error ? redactLogText(exception.stack) : undefined,
       );
       captureException(exception, 'GlobalExceptionFilter');
     } else if (exception instanceof Error) {
-      this.logger.error(exception.message, exception.stack);
+      this.logger.error(redactLogText(exception.message), redactLogText(exception.stack));
       captureException(exception, 'GlobalExceptionFilter');
     } else {
-      this.logger.error('Unknown exception', String(exception));
+      this.logger.error('Unknown exception', redactLogText(String(exception)));
       captureException(exception, 'GlobalExceptionFilter');
     }
 

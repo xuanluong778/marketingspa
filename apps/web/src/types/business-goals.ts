@@ -27,6 +27,12 @@ export interface BusinessGoalCalculationResult {
   netProfit: number;
   profitMargin: number | null;
   status: ProfitStatus;
+  breakEvenRevenue?: number | null;
+  ordersForRevenueTarget?: number | null;
+  leadsForRevenueTarget?: number | null;
+  costPerOrder?: number | null;
+  ordersShortToBreakEven?: number | null;
+  ordersShortToProfitTarget?: number | null;
 }
 
 export interface BusinessGoalScenario extends BusinessGoalInput {

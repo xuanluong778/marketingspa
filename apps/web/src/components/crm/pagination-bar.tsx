@@ -2,6 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useT } from '@/i18n/i18n-provider';
 
 interface PaginationBarProps {
   page: number;
@@ -11,13 +12,13 @@ interface PaginationBarProps {
 }
 
 export function PaginationBar({ page, totalPages, total, onPageChange }: PaginationBarProps) {
+  const t = useT();
+
   if (totalPages <= 1) return null;
 
   return (
     <div className="flex items-center justify-between mt-4 text-sm text-muted-foreground">
-      <span>
-        Trang {page}/{totalPages} · {total} kết quả
-      </span>
+      <span>{t('crm.pagination', { page, totalPages, total })}</span>
       <div className="flex gap-2">
         <Button
           variant="outline"

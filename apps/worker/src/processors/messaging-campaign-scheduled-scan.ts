@@ -46,7 +46,8 @@ export async function processMessagingCampaignScheduledScan(_job?: Job) {
         'plan-campaign',
         { organizationId: campaign.organizationId, campaignId: campaign.id },
         {
-          jobId: `mc-plan-scheduled-${campaign.id}-${Date.now()}`,
+          // Stable jobId — claim above prevents re-enqueue; Date.now() would duplicate on retry.
+          jobId: `mc-plan-scheduled-${campaign.id}`,
           removeOnComplete: 100,
           removeOnFail: 50,
         },

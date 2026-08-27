@@ -9,6 +9,10 @@ export function useCurrentUser() {
     queryFn: () => apiClient<AuthUser>('/auth/me'),
     enabled: authStorage.isAuthenticated(),
     retry: false,
+    staleTime: 5 * 60 * 1000,
+    // Avoid focus refetch thrashing /auth/me while Teleprompter RAF is running
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
 }
 

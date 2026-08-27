@@ -18,6 +18,7 @@ import { RequirePermissions } from '../common/decorators/require-permissions.dec
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ClientIp } from '../common/decorators/client-ip.decorator';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
+import { createUploadMulterOptions } from '../common/uploads/upload-policy';
 import { HrmEmployeesService } from './hrm-employees.service';
 import { HrmContractsService } from './hrm-contracts.service';
 import { HrmDocumentsService } from './hrm-documents.service';
@@ -131,9 +132,7 @@ export class HrmEmployeesController {
   @Post(':id/documents/upload')
   @RequirePermissions('hrm.document.write')
   @UseInterceptors(
-    FileInterceptor('file', {
-      limits: { fileSize: 15 * 1024 * 1024 },
-    }),
+    FileInterceptor('file', createUploadMulterOptions('document')),
   )
   uploadDocument(
     @CurrentUser() user: AuthUser,

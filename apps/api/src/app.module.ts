@@ -37,10 +37,16 @@ import { MessagingIdentityModule } from './messaging-identity/messaging-identity
 import { MessagingModule } from './messaging/messaging.module';
 import { MessagingCampaignModule } from './messaging-campaign/messaging-campaign.module';
 import { BillingModule } from './billing/billing.module';
+import { CreditModule } from './credit/credit.module';
 import { PlatformAdminModule } from './platform-admin/platform-admin.module';
 import { AffiliateModule } from './affiliate/affiliate.module';
 import { VideoTranscriptionModule } from './video-transcription/video-transcription.module';
 import { MarketingAutopilotModule } from './marketing-autopilot/marketing-autopilot.module';
+import { FunnelBuilderModule } from './funnel-builder/funnel-builder.module';
+import { EmailMarketingModule } from './email-marketing/email-marketing.module';
+import { ZaloMarketingModule } from './zalo-marketing/zalo-marketing.module';
+import { ZaloModule } from './zalo/zalo.module';
+import { SalesModule } from './sales/sales.module';
 
 @Module({
   imports: [
@@ -80,14 +86,20 @@ import { MarketingAutopilotModule } from './marketing-autopilot/marketing-autopi
     RagKbModule,
     AttributionModule,
     CrmModule,
+    FunnelBuilderModule,
     MessagingIdentityModule,
     MessagingModule,
     MessagingCampaignModule,
+    EmailMarketingModule,
+    ZaloMarketingModule,
+    ZaloModule,
+    SalesModule,
+    MarketingAutopilotModule,
+    CreditModule,
     BillingModule,
     PlatformAdminModule,
     AffiliateModule,
     VideoTranscriptionModule,
-    MarketingAutopilotModule,
   ],
 })
 export class AppModule {}

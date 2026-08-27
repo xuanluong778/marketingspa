@@ -5,7 +5,6 @@ import { apiClient } from '@/lib/api-client';
 import type {
   AdConnectionItem,
   AdDraft,
-  AdManagerCampaignRow,
   AdManagerCampaignsPage,
   AdManagerDashboard,
   AdManagerSettings,
@@ -15,18 +14,25 @@ import type {
   EmailReportConfig,
 } from '@/types/ai-ads-manager';
 
-function defaultDateRange() {
+function defaultDateRange(days = 7) {
   const to = new Date();
   const from = new Date();
-  from.setDate(from.getDate() - 7);
+  from.setDate(from.getDate() - days);
   return {
     dateFrom: from.toISOString().slice(0, 10),
     dateTo: to.toISOString().slice(0, 10),
   };
 }
 
+export const ADS_DATE_PRESETS = [
+  { label: '1 ngày', days: 1 },
+  { label: '7 ngày', days: 7 },
+  { label: '30 ngày', days: 30 },
+  { label: '90 ngày', days: 90 },
+] as const;
+
 export function useAdsDateRange() {
-  return defaultDateRange();
+  return defaultDateRange(7);
 }
 
 export function useAiAdsDashboard(dateFrom: string, dateTo: string, enabled = true) {
@@ -37,6 +43,7 @@ export function useAiAdsDashboard(dateFrom: string, dateTo: string, enabled = tr
         `/ai-ads-manager/dashboard?dateFrom=${dateFrom}&dateTo=${dateTo}`,
       ),
     enabled,
+    staleTime: 60_000,
   });
 }
 
@@ -48,10 +55,118 @@ export function useAiAdsConnections(enabled = true) {
   });
 }
 
-export function useAiAdsCampaigns(
-  filters: AdsCampaignFilters,
-  enabled = true,
-) {
+export function useGoogleAdsLinkedAccounts(enabled = true) {
+  return useQuery({
+    queryKey: ['ai-ads-manager', 'google-accounts'],
+    queryFn: () =>
+      apiClient<{
+        items: Array<{
+          customerId: string;
+          name: string;
+          loginCustomerId: string | null;
+          isSelected: boolean;
+        }>;
+      }>('/ai-ads-manager/google/accounts'),
+    enabled,
+  });
+}
+
+export type GoogleAdsCampaignBuilderDraft = {
+  id: string;
+  customerId: string;
+  loginCustomerId: string | null;
+  status: string;
+  brief: Record<string, unknown>;
+  structuredDraft: Record<string, unknown>;
+  validation: Record<string, unknown>;
+  dailyBudget: number;
+  monthlyEstimate: number;
+  currency: string;
+  approvedAt: string | null;
+  previewedAt: string | null;
+  lastError: string | null;
+  latestDeployment: {
+    id: string;
+    status: string;
+    lastError: string | null;
+    createdResources: Record<string, unknown>;
+  } | null;
+};
+
+export function useGoogleAdsCampaignBuilderDrafts(enabled = true) {
+  return useQuery({
+    queryKey: ['ai-ads-manager', 'gads-campaign-builder'],
+    queryFn: () =>
+      apiClient<{ items: GoogleAdsCampaignBuilderDraft[] }>(
+        '/ai-ads-manager/google/campaign-builder/drafts',
+      ),
+    enabled,
+  });
+}
+
+export function useGoogleAdsCampaignBuilderMutations() {
+  const qc = useQueryClient();
+  const invalidate = () =>
+    void qc.invalidateQueries({ queryKey: ['ai-ads-manager', 'gads-campaign-builder'] });
+  return {
+    create: useMutation({
+      mutationFn: (body: Record<string, unknown>) =>
+        apiClient<GoogleAdsCampaignBuilderDraft>('/ai-ads-manager/google/campaign-builder/drafts', {
+          method: 'POST',
+          body: JSON.stringify(body),
+        }),
+      onSuccess: invalidate,
+    }),
+    preview: useMutation({
+      mutationFn: (id: string) =>
+        apiClient(`/ai-ads-manager/google/campaign-builder/drafts/${id}/preview`, {
+          method: 'POST',
+        }),
+      onSuccess: invalidate,
+    }),
+    preflight: useMutation({
+      mutationFn: (id: string) =>
+        apiClient(`/ai-ads-manager/google/campaign-builder/drafts/${id}/preflight`, {
+          method: 'POST',
+        }),
+      onSuccess: invalidate,
+    }),
+    approve: useMutation({
+      mutationFn: (body: { id: string; confirm: boolean }) =>
+        apiClient(`/ai-ads-manager/google/campaign-builder/drafts/${body.id}/approve`, {
+          method: 'POST',
+          body: JSON.stringify({ confirm: body.confirm }),
+        }),
+      onSuccess: invalidate,
+    }),
+    deploy: useMutation({
+      mutationFn: (id: string) =>
+        apiClient(`/ai-ads-manager/google/campaign-builder/drafts/${id}/deploy`, {
+          method: 'POST',
+        }),
+      onSuccess: invalidate,
+    }),
+  };
+}
+
+export function useGoogleAdsCustomers(enabled = false) {
+  return useQuery({
+    queryKey: ['ai-ads-manager', 'google-customers'],
+    queryFn: () =>
+      apiClient<{
+        items: Array<{
+          customerId: string;
+          name: string;
+          currency: string;
+          timezone: string;
+          loginCustomerId: string | null;
+        }>;
+      }>('/ai-ads-manager/google/customers'),
+    enabled,
+  });
+}
+
+export function useAiAdsCampaigns(filters: AdsCampaignFilters, enabled = true) {
   const { dateFrom, dateTo, platform, page = 1, pageSize = 50 } = filters;
   const params = new URLSearchParams({
     dateFrom,
@@ -233,14 +348,70 @@ export function useAiAdsMutations() {
   });
 
   const deleteRule = useMutation({
-    mutationFn: (id: string) =>
-      apiClient(`/ai-ads-manager/rules/${id}`, { method: 'DELETE' }),
+    mutationFn: (id: string) => apiClient(`/ai-ads-manager/rules/${id}`, { method: 'DELETE' }),
     onSuccess: invalidate,
   });
 
   const connectGoogle = useMutation({
-    mutationFn: async (_body?: { customerId: string; refreshToken: string }) => {
-      throw new Error('Dùng OAuth — không paste refresh token');
+    mutationFn: (body: { customerId: string; customerName?: string; loginCustomerId?: string }) =>
+      apiClient<{ message?: string; customerId?: string }>('/ai-ads-manager/google/customer', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+    onSuccess: (res) => {
+      window.alert(res?.message ?? 'Đã chọn tài khoản Google Ads — hệ thống đang đồng bộ dữ liệu.');
+      invalidate();
+      void qc.invalidateQueries({ queryKey: ['ai-ads-manager', 'sync-jobs'] });
+      void qc.invalidateQueries({ queryKey: ['ai-ads-manager', 'google-customers'] });
+    },
+    onError: (e) => {
+      const msg =
+        e &&
+        typeof e === 'object' &&
+        'guidance' in e &&
+        typeof (e as { guidance?: string }).guidance === 'string'
+          ? `${(e as Error).message}\n\nCách xử lý: ${(e as { guidance: string }).guidance}`
+          : e instanceof Error
+            ? e.message
+            : 'Không chọn được tài khoản Google Ads';
+      window.alert(msg);
+    },
+  });
+
+  const syncGoogle = useMutation({
+    mutationFn: (body?: { dateFrom?: string; dateTo?: string }) =>
+      apiClient<{
+        jobId?: string;
+        message?: string;
+        reused?: boolean;
+        status?: string;
+      }>('/ai-ads-manager/google/sync', {
+        method: 'POST',
+        body: JSON.stringify(body ?? {}),
+      }),
+    onSuccess: (res) => {
+      const msg =
+        res?.message ||
+        (res?.reused
+          ? 'Đã đồng bộ gần đây (idempotent) — dùng dữ liệu hiện có.'
+          : res?.jobId
+            ? `Đã xếp hàng đồng bộ (job ${res.jobId.slice(0, 8)}…).`
+            : 'Đã gửi yêu cầu đồng bộ Google Ads.');
+      window.alert(msg);
+      void qc.invalidateQueries({ queryKey: ['ai-ads-manager', 'sync-jobs'] });
+      invalidate();
+    },
+    onError: (e) => {
+      const msg =
+        e &&
+        typeof e === 'object' &&
+        'guidance' in e &&
+        typeof (e as { guidance?: string }).guidance === 'string'
+          ? `${(e as Error).message}\n\nCách xử lý: ${(e as { guidance: string }).guidance}`
+          : e instanceof Error
+            ? e.message
+            : 'Đồng bộ Google Ads thất bại';
+      window.alert(msg);
     },
   });
 
@@ -314,6 +485,7 @@ export function useAiAdsMutations() {
     createRule,
     deleteRule,
     connectGoogle,
+    syncGoogle,
     connectGmail,
     disconnect,
     generateDraft,
@@ -322,5 +494,118 @@ export function useAiAdsMutations() {
     sendReport,
     startMetaOAuth,
     startGoogleOAuth,
+  };
+}
+
+export type GoogleAdsAutopilotConfig = {
+  id: string;
+  customerId: string;
+  enabled: boolean;
+  mode: 'RECOMMEND_ONLY' | 'AUTO_APPLY' | 'MANUAL' | 'GUARDED_AUTO';
+  maxDailyBudget: number | null;
+  targetCpa: number | null;
+  targetRoas: number | null;
+  stopLossDailySpend: number | null;
+  maxActionsPerDay: number;
+  actionsToday: number;
+  cooldownMinutes: number;
+  allowAutoPause: boolean;
+  minRoas: number | null;
+  emergencyStop: boolean;
+  lastScanAt: string | null;
+};
+
+export type GoogleAdsAutopilotProposal = {
+  id: string;
+  actionType: string;
+  status: string;
+  riskLevel: string;
+  reason: string | null;
+  autoEligible: boolean;
+};
+
+export type GoogleAdsAutopilotAction = {
+  id: string;
+  actionType: string;
+  status: string;
+  providerWriteEnabled: boolean;
+  createdAt: string;
+  outcomes: Array<{ horizon: string; verdict: string }>;
+};
+
+export function useGoogleAdsAutopilot(customerId?: string) {
+  const enabled = Boolean(customerId);
+  const q = customerId ? encodeURIComponent(customerId) : '';
+  return {
+    config: useQuery({
+      queryKey: ['ai-ads-manager', 'autopilot-config', customerId],
+      queryFn: () =>
+        apiClient<{ config: GoogleAdsAutopilotConfig | null }>(
+          `/ai-ads-manager/google/autopilot/config?customerId=${q}`,
+        ),
+      enabled,
+    }),
+    proposals: useQuery({
+      queryKey: ['ai-ads-manager', 'autopilot-proposals', customerId],
+      queryFn: () =>
+        apiClient<{ items: GoogleAdsAutopilotProposal[] }>(
+          `/ai-ads-manager/google/autopilot/proposals?customerId=${q}`,
+        ),
+      enabled,
+    }),
+    actions: useQuery({
+      queryKey: ['ai-ads-manager', 'autopilot-actions', customerId],
+      queryFn: () =>
+        apiClient<{ items: GoogleAdsAutopilotAction[] }>(
+          `/ai-ads-manager/google/autopilot/actions?customerId=${q}`,
+        ),
+      enabled,
+    }),
+  };
+}
+
+export function useGoogleAdsAutopilotMutations(customerId?: string) {
+  const qc = useQueryClient();
+  const invalidate = () => {
+    void qc.invalidateQueries({ queryKey: ['ai-ads-manager', 'autopilot-config', customerId] });
+    void qc.invalidateQueries({ queryKey: ['ai-ads-manager', 'autopilot-proposals', customerId] });
+    void qc.invalidateQueries({ queryKey: ['ai-ads-manager', 'autopilot-actions', customerId] });
+  };
+
+  return {
+    upsertConfig: useMutation({
+      mutationFn: (body: Record<string, unknown>) =>
+        apiClient('/ai-ads-manager/google/autopilot/config', {
+          method: 'POST',
+          body: JSON.stringify({ customerId, ...body }),
+        }),
+      onSuccess: invalidate,
+    }),
+    approveProposal: useMutation({
+      mutationFn: (id: string) =>
+        apiClient(`/ai-ads-manager/google/autopilot/proposals/${id}/approve`, {
+          method: 'POST',
+          body: JSON.stringify({}),
+        }),
+      onSuccess: invalidate,
+    }),
+    rejectProposal: useMutation({
+      mutationFn: (body: { id: string; reason: string }) =>
+        apiClient(`/ai-ads-manager/google/autopilot/proposals/${body.id}/reject`, {
+          method: 'POST',
+          body: JSON.stringify({ reason: body.reason }),
+        }),
+      onSuccess: invalidate,
+    }),
+    triggerScan: useMutation({
+      mutationFn: () =>
+        apiClient(
+          `/ai-ads-manager/google/autopilot/scan?customerId=${encodeURIComponent(customerId ?? '')}`,
+          {
+            method: 'POST',
+          },
+        ),
+      onSuccess: invalidate,
+    }),
   };
 }

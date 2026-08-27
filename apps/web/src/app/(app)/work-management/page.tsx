@@ -1,7 +1,21 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { Archive, Copy, GripVertical, MoreHorizontal, Plus, Search, Trash2 } from 'lucide-react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import {
+  Archive,
+  Copy,
+  GripVertical,
+  LayoutGrid,
+  ListTodo,
+  BarChart3,
+  CalendarDays,
+  MoreHorizontal,
+  Plus,
+  Search,
+  Trash2,
+} from 'lucide-react';
 import { PageHeader } from '@/components/shared/page-header';
 import { LoadingState, ErrorState, EmptyState } from '@/components/shared/page-state';
 import { Button } from '@/components/ui/button';
@@ -44,6 +58,7 @@ import { useHrmEmployees } from '@/hooks/use-hrm';
 import { PRIORITY_LABELS, type WorkTask } from '@/types/work-management';
 import { cn } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format';
+import { useT } from '@/i18n/i18n-provider';
 import {
   WorkDocumentsPanel,
   WorkNotificationsBell,
@@ -51,6 +66,21 @@ import {
 } from '@/components/work-management/work-task-collab';
 
 export default function WorkManagementPage() {
+  const t = useT();
+  return (
+    <Suspense fallback={<LoadingState message={t('work.loadingWork')} />}>
+      <WorkManagementBoard />
+    </Suspense>
+  );
+}
+
+function WorkManagementBoard() {
+  const t = useT();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const taskIdParam = searchParams.get('taskId');
+
   const projectsQ = useWorkProjects();
   const createProject = useCreateWorkProject();
   const createTask = useCreateWorkTask();
@@ -74,8 +104,8 @@ export default function WorkManagementPage() {
 
   const [taskDialog, setTaskDialog] = useState(false);
   const [editTask, setEditTask] = useState<WorkTask | null>(null);
-  const [detailTask, setDetailTask] = useState<WorkTask | null>(null);
-  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
+  const [detailSnapshot, setDetailSnapshot] = useState<WorkTask | null>(null);
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -97,6 +127,59 @@ export default function WorkManagementPage() {
   useEffect(() => {
     if (!projectId && firstProjectId) setProjectId(firstProjectId);
   }, [firstProjectId, projectId]);
+
+  const setTaskIdInUrl = useCallback(
+    (id: string | null) => {
+      const params = new URLSearchParams(searchParams.toString());
+      if (id) params.set('taskId', id);
+      else params.delete('taskId');
+      const qs = params.toString();
+      router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams],
+  );
+
+  const openTaskDetail = useCallback(
+    (task: WorkTask) => {
+      setDetailSnapshot(task);
+      setDetailTaskId(task.id);
+      if (task.projectId) setProjectId(task.projectId);
+      setTaskIdInUrl(task.id);
+    },
+    [setTaskIdInUrl],
+  );
+
+  const openTaskDetailById = useCallback(
+    (id: string, nextProjectId?: string | null) => {
+      setDetailTaskId(id);
+      if (nextProjectId) setProjectId(nextProjectId);
+      const found = (projectQ.data?.tasks ?? []).find((t) => t.id === id);
+      setDetailSnapshot(found ?? null);
+      setTaskIdInUrl(id);
+    },
+    [projectQ.data?.tasks, setTaskIdInUrl],
+  );
+
+  const closeTaskDetail = useCallback(() => {
+    setDetailTaskId(null);
+    setDetailSnapshot(null);
+    setTaskIdInUrl(null);
+  }, [setTaskIdInUrl]);
+
+  // Deep link ?taskId= + browser back/forward
+  useEffect(() => {
+    if (taskIdParam) {
+      setDetailTaskId(taskIdParam);
+      const found = (projectQ.data?.tasks ?? []).find((t) => t.id === taskIdParam);
+      if (found) {
+        setDetailSnapshot(found);
+        if (found.projectId) setProjectId(found.projectId);
+      }
+    } else {
+      setDetailTaskId(null);
+      setDetailSnapshot(null);
+    }
+  }, [taskIdParam, projectQ.data?.tasks]);
 
   const columns = useMemo(() => projectQ.data?.columns ?? [], [projectQ.data?.columns]);
   const tasks = useMemo(() => {
@@ -247,15 +330,38 @@ export default function WorkManagementPage() {
     setDropCol(null);
   }
 
-  if (projectsQ.isLoading) return <LoadingState message="Đang tải dự án…" />;
+  if (projectsQ.isLoading) return <LoadingState message={t('work.loadingProjects')} />;
   if (projectsQ.isError) return <ErrorState onRetry={projectsQ.refetch} />;
 
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Công việc & Dự án"
-        description="Quản lý dự án và bảng Kanban công việc theo tổ chức"
+        title={t('work.title')}
+        description={t('work.description')}
       />
+
+      <div className="flex flex-wrap gap-2">
+        <Button variant="default" size="sm" asChild>
+          <Link href="/work-management">
+            <LayoutGrid className="h-3.5 w-3.5 mr-1" /> Kanban
+          </Link>
+        </Button>
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/work-management/my">
+            <ListTodo className="h-3.5 w-3.5 mr-1" /> Việc của tôi
+          </Link>
+        </Button>
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/work-management/dashboard">
+            <BarChart3 className="h-3.5 w-3.5 mr-1" /> Dashboard
+          </Link>
+        </Button>
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/work-management/calendar">
+            <CalendarDays className="h-3.5 w-3.5 mr-1" /> Lịch
+          </Link>
+        </Button>
+      </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
         <div className="space-y-1 min-w-[200px] flex-1">
@@ -274,7 +380,7 @@ export default function WorkManagementPage() {
             </SelectContent>
           </Select>
         </div>
-        <WorkNotificationsBell />
+        <WorkNotificationsBell onOpenTask={openTaskDetailById} />
         <Button
           variant="outline"
           onClick={() => {
@@ -283,10 +389,10 @@ export default function WorkManagementPage() {
             setProjectDialog(true);
           }}
         >
-          <Plus className="h-4 w-4 mr-1" /> Tạo dự án
+          <Plus className="h-4 w-4 mr-1" /> {t('work.createProject')}
         </Button>
         <Button disabled={!projectId} onClick={() => openCreateTask()}>
-          <Plus className="h-4 w-4 mr-1" /> Công việc
+          <Plus className="h-4 w-4 mr-1" /> {t('work.createTaskTitle')}
         </Button>
       </div>
 
@@ -297,17 +403,17 @@ export default function WorkManagementPage() {
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
             className="pl-9"
-            placeholder="Lọc tiêu đề, mô tả, nhãn…"
+            placeholder={t('work.filterPlaceholder')}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
         <Select value={priorityFilter} onValueChange={setPriorityFilter}>
           <SelectTrigger className="w-[160px]">
-            <SelectValue placeholder="Ưu tiên" />
+            <SelectValue placeholder={t('work.priority')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">Mọi mức ưu tiên</SelectItem>
+            <SelectItem value="all">{t('work.allPriorities')}</SelectItem>
             {Object.entries(PRIORITY_LABELS).map(([k, v]) => (
               <SelectItem key={k} value={k}>
                 {v}
@@ -318,7 +424,7 @@ export default function WorkManagementPage() {
       </div>
 
       {!projectId && (
-        <EmptyState title="Chưa chọn dự án" description="Tạo dự án mới để bắt đầu bảng Kanban." />
+        <EmptyState title={t('work.noProjectSelected')} description={t('work.noProjectSelectedDesc')} />
       )}
 
       {projectId && projectQ.isLoading && <LoadingState />}
@@ -398,10 +504,7 @@ export default function WorkManagementPage() {
                         <GripVertical className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
                         <div
                           className="min-w-0 flex-1 cursor-pointer"
-                          onClick={() => {
-                            setDetailTask(task);
-                            setDetailOpen(true);
-                          }}
+                          onClick={() => openTaskDetail(task)}
                         >
                           <p className="text-sm font-medium leading-snug">{task.title}</p>
                           <div className="mt-1.5 flex flex-wrap gap-1">
@@ -436,12 +539,7 @@ export default function WorkManagementPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => {
-                                setDetailTask(task);
-                                setDetailOpen(true);
-                              }}
-                            >
+                            <DropdownMenuItem onClick={() => openTaskDetail(task)}>
                               Chi tiết
                             </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => openEditTask(task)}>
@@ -479,7 +577,7 @@ export default function WorkManagementPage() {
       <Dialog open={projectDialog} onOpenChange={setProjectDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Tạo dự án</DialogTitle>
+            <DialogTitle>{t('work.createProjectTitle')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1">
@@ -684,9 +782,12 @@ export default function WorkManagementPage() {
       </Dialog>
 
       <WorkTaskDetailDialog
-        task={detailTask}
-        open={detailOpen}
-        onOpenChange={setDetailOpen}
+        taskId={detailTaskId}
+        initialTask={detailSnapshot}
+        open={!!detailTaskId}
+        onOpenChange={(v) => {
+          if (!v) closeTaskDetail();
+        }}
         employees={employees}
       />
     </div>

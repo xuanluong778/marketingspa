@@ -4,6 +4,12 @@ import dynamic from 'next/dynamic';
 import { Suspense, useEffect, useState } from 'react';
 import { LoadingState, ErrorState } from '@/components/shared/page-state';
 import { Button } from '@/components/ui/button';
+import { useT } from '@/i18n/i18n-provider';
+
+function ContentAutoPostShellLoader() {
+  const t = useT();
+  return <LoadingState message={t('content.loadingAutoPost')} />;
+}
 
 const ContentAutoPostShell = dynamic(
   () =>
@@ -12,7 +18,7 @@ const ContentAutoPostShell = dynamic(
     ),
   {
     ssr: false,
-    loading: () => <LoadingState message="Đang tải Content & Auto post..." />,
+    loading: () => <ContentAutoPostShellLoader />,
   },
 );
 
@@ -59,8 +65,9 @@ function ContentPageBody() {
 }
 
 export default function ContentAutoPostPage() {
+  const t = useT();
   return (
-    <Suspense fallback={<LoadingState message="Đang tải..." />}>
+    <Suspense fallback={<LoadingState message={t('common.loading')} />}>
       <ContentPageBody />
     </Suspense>
   );

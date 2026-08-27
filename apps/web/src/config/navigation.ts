@@ -22,149 +22,199 @@ import {
   User,
   BookOpen,
   KeyRound,
+  Languages,
+  ListTodo,
+  BarChart3,
+  Mail,
   Sparkles,
+  Coins,
+  Link2,
+  ShoppingCart,
+  Package,
+  Warehouse,
+  ArrowLeftRight,
+  ClipboardList,
   type LucideIcon,
 } from 'lucide-react';
 import { CONTENT_AUTO_POST_BASE } from '@/lib/content-auto-post-routes';
 
 export interface NavItem {
+  /** i18n dictionary key (e.g. `nav.overview`) */
   title: string;
   href: string;
   icon: LucideIcon;
 }
 
 export interface NavGroup {
+  /** i18n dictionary key */
   title: string;
   icon: LucideIcon;
   href?: string;
   items?: NavItem[];
 }
 
-export const SETTINGS_TABS = ['account', 'knowledge', 'api', 'system'] as const;
+export const SETTINGS_TABS = [
+  'account',
+  'language',
+  'knowledge',
+  'connections',
+  'api',
+  'system',
+  'assignment',
+] as const;
 export type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 export const settingsNavItems: NavItem[] = [
-  { title: 'Account', href: '/settings?tab=account', icon: User },
-  { title: 'AI Knowledge Base', href: '/settings?tab=knowledge', icon: BookOpen },
-  { title: 'API', href: '/settings?tab=api', icon: KeyRound },
-  { title: 'System', href: '/settings?tab=system', icon: Settings },
+  { title: 'nav.settingsAccount', href: '/settings?tab=account', icon: User },
+  { title: 'nav.settingsLanguage', href: '/settings?tab=language', icon: Languages },
+  { title: 'nav.settingsKnowledge', href: '/settings?tab=knowledge', icon: BookOpen },
+  { title: 'nav.settingsConnections', href: '/settings?tab=connections', icon: Link2 },
+  { title: 'nav.settingsApi', href: '/settings?tab=api', icon: KeyRound },
+  { title: 'nav.settingsSystem', href: '/settings?tab=system', icon: Settings },
+  { title: 'nav.settingsAssignment', href: '/settings?tab=assignment', icon: UserPlus },
 ];
 
 export const mainNav: NavItem[] = [
-  { title: 'Tổng quan', href: '/overview', icon: LayoutDashboard },
-  { title: 'Khách hàng', href: '/customers', icon: Users },
-  { title: 'Lead', href: '/leads', icon: UserPlus },
-  { title: 'Phễu Marketing', href: '/funnel', icon: Filter },
-  { title: 'Lịch hẹn', href: '/appointments', icon: CalendarDays },
-  { title: 'Ads', href: '/ads', icon: Megaphone },
-  { title: 'Marketing Autopilot', href: '/marketing-autopilot', icon: Sparkles },
-  { title: 'Tin nhắn tự động', href: '/automation?tab=flows', icon: Bot },
-  { title: 'Nhắn tin hàng loạt', href: '/automation?tab=campaigns', icon: Megaphone },
-  { title: 'Quản Lý Nhân Sự', href: '/hrm/employees', icon: UserCog },
-  { title: 'Doanh thu & Lãi lỗ', href: '/finance', icon: TrendingUp },
-  { title: 'Mục tiêu kinh doanh', href: '/business-goals', icon: Target },
-  { title: 'Chatbot CSKH', href: '/chatbot-cskh', icon: MessageCircle },
-  { title: 'Content Studio', href: CONTENT_AUTO_POST_BASE, icon: Layers },
-  { title: 'Bảng giá', href: '/pricing', icon: CreditCard },
-  { title: 'Báo cáo', href: '/reports', icon: FileBarChart },
-  { title: 'Cài đặt', href: '/settings', icon: Settings },
+  { title: 'nav.overview', href: '/overview', icon: LayoutDashboard },
+  { title: 'nav.customers', href: '/customers', icon: Users },
+  { title: 'nav.leads', href: '/leads', icon: UserPlus },
+  { title: 'nav.funnel', href: '/funnel', icon: Filter },
+  { title: 'nav.appointments', href: '/appointments', icon: CalendarDays },
+  { title: 'nav.ads', href: '/ads', icon: Megaphone },
+  { title: 'nav.marketingAutopilot', href: '/marketing-autopilot', icon: Sparkles },
+  { title: 'nav.autoMessages', href: '/automation?tab=flows', icon: Bot },
+  { title: 'nav.bulkMessaging', href: '/automation?tab=campaigns', icon: Megaphone },
+  { title: 'nav.hrm', href: '/hrm/employees', icon: UserCog },
+  { title: 'nav.revenuePnl', href: '/finance', icon: TrendingUp },
+  { title: 'nav.businessGoals', href: '/business-goals', icon: Target },
+  { title: 'nav.chatbotCskh', href: '/chatbot-cskh', icon: MessageCircle },
+  { title: 'nav.emailMarketing', href: '/email-marketing', icon: Mail },
+  { title: 'nav.contentStudio', href: CONTENT_AUTO_POST_BASE, icon: Layers },
+  { title: 'nav.pricing', href: '/pricing', icon: CreditCard },
+  { title: 'nav.aiCredit', href: '/credits', icon: Coins },
+  { title: 'nav.reports', href: '/reports', icon: FileBarChart },
+  { title: 'nav.settings', href: '/settings', icon: Settings },
 ];
 
 export const sidebarNavGroups: NavGroup[] = [
-  { title: 'Tổng quan', href: '/overview', icon: LayoutDashboard },
-  { title: 'Marketing Autopilot', href: '/marketing-autopilot', icon: Sparkles },
+  { title: 'nav.overview', href: '/overview', icon: LayoutDashboard },
+  { title: 'nav.marketingAutopilot', href: '/marketing-autopilot', icon: Sparkles },
   {
-    title: 'CRM & Khách hàng',
+    title: 'nav.crmCustomers',
+    href: '/crm',
     icon: Users,
     items: [
-      { title: 'Khách hàng', href: '/customers', icon: Users },
-      { title: 'Lead', href: '/leads', icon: UserPlus },
-      { title: 'Phễu Marketing', href: '/funnel', icon: Filter },
+      { title: 'nav.customers', href: '/customers', icon: Users },
+      { title: 'nav.leads', href: '/leads', icon: UserPlus },
+      { title: 'nav.funnel', href: '/funnel', icon: Filter },
     ],
   },
-  { title: 'Lịch hẹn & Dịch vụ', href: '/appointments', icon: CalendarRange },
+  { title: 'nav.appointmentsServices', href: '/appointments', icon: CalendarRange },
   {
-    title: 'Content Marketing',
-    href: CONTENT_AUTO_POST_BASE,
+    title: 'nav.contentMarketing',
+    href: '/content-marketing',
     icon: Layers,
     items: [
       {
-        title: 'Tạo content',
+        title: 'nav.createContent',
         href: `${CONTENT_AUTO_POST_BASE}?tab=create&section=ad`,
         icon: ChevronRight,
       },
       {
-        title: 'Xây dựng thương hiệu',
+        title: 'nav.brandBuilding',
         href: `${CONTENT_AUTO_POST_BASE}?tab=create&section=personal`,
         icon: ChevronRight,
       },
       {
-        title: 'Check Content Ads',
+        title: 'nav.checkContentAds',
         href: `${CONTENT_AUTO_POST_BASE}?tab=create&section=facebook-check`,
         icon: ChevronRight,
       },
       {
-        title: 'Lấy văn bản từ video',
+        title: 'nav.videoTranscript',
         href: `${CONTENT_AUTO_POST_BASE}?tab=create&section=video-transcript`,
         icon: ChevronRight,
       },
       {
-        title: 'Thư viện bài viết',
+        title: 'nav.contentLibrary',
         href: `${CONTENT_AUTO_POST_BASE}?tab=library`,
         icon: ChevronRight,
       },
-      { title: 'Auto Post', href: `${CONTENT_AUTO_POST_BASE}?tab=auto-post`, icon: ChevronRight },
-      { title: 'Lịch đăng', href: `${CONTENT_AUTO_POST_BASE}?tab=schedule`, icon: ChevronRight },
+      { title: 'nav.autoPost', href: `${CONTENT_AUTO_POST_BASE}?tab=auto-post`, icon: ChevronRight },
+      { title: 'nav.schedule', href: `${CONTENT_AUTO_POST_BASE}?tab=schedule`, icon: ChevronRight },
       {
-        title: 'Kết nối Fanpage',
+        title: 'nav.connectFanpage',
         href: `${CONTENT_AUTO_POST_BASE}?tab=channels`,
         icon: ChevronRight,
       },
-      { title: 'Kịch bản quay video', href: '/teleprompter', icon: ChevronRight },
+      { title: 'nav.teleprompter', href: '/teleprompter', icon: ChevronRight },
     ],
   },
   {
-    title: 'Quảng cáo',
+    title: 'nav.adsGroup',
+    href: '/advertising',
     icon: Megaphone,
     items: [
-      { title: 'Ads', href: '/ads', icon: Megaphone },
-      { title: 'Attribution & ROAS', href: '/attribution', icon: FileBarChart },
+      { title: 'nav.ads', href: '/ads', icon: Megaphone },
+      { title: 'nav.attributionRoas', href: '/attribution', icon: FileBarChart },
     ],
   },
   {
-    title: 'Tin nhắn & Chatbot',
+    title: 'nav.messagesChatbot',
+    href: '/messaging',
     icon: MessageCircle,
     items: [
-      { title: 'Nhắn tin hàng loạt', href: '/automation?tab=campaigns', icon: Megaphone },
-      { title: 'Tệp khách hàng', href: '/automation?tab=audience', icon: Users },
-      { title: 'Tin nhắn tự động', href: '/automation?tab=flows', icon: Bot },
-      { title: 'Chatbot CSKH', href: '/chatbot-cskh', icon: MessageCircle },
+      { title: 'nav.bulkMessaging', href: '/automation?tab=campaigns', icon: Megaphone },
+      { title: 'nav.audienceFiles', href: '/automation?tab=audience', icon: Users },
+      { title: 'nav.autoMessages', href: '/automation?tab=flows', icon: Bot },
+      { title: 'nav.chatbotCskh', href: '/chatbot-cskh', icon: MessageCircle },
+      { title: 'nav.emailMarketing', href: '/email-marketing', icon: Mail },
+      { title: 'nav.zaloMarketing', href: '/zalo-marketing', icon: MessageCircle },
     ],
   },
   {
-    title: 'Quản Lý Nhân Sự',
+    title: 'nav.hrm',
+    href: '/hrm',
     icon: UserCog,
     items: [
-      { title: 'Danh sách nhân viên', href: '/hrm/employees', icon: UserCog },
-      { title: 'Ca làm việc', href: '/hrm/shifts', icon: Clock },
-      { title: 'Bảng công', href: '/hrm/attendance', icon: CalendarRange },
-      { title: 'Phép & OT', href: '/hrm/leave', icon: CalendarDays },
-      { title: 'Công việc & Dự án', href: '/work-management', icon: Target },
+      { title: 'nav.employees', href: '/hrm/employees', icon: UserCog },
+      { title: 'nav.shifts', href: '/hrm/shifts', icon: Clock },
+      { title: 'nav.attendance', href: '/hrm/attendance', icon: CalendarRange },
+      { title: 'nav.leaveOt', href: '/hrm/leave', icon: CalendarDays },
+      { title: 'nav.workProjects', href: '/work-management', icon: Target },
+      { title: 'nav.myWork', href: '/work-management/my', icon: ListTodo },
+      { title: 'nav.workDashboard', href: '/work-management/dashboard', icon: BarChart3 },
+      { title: 'nav.workCalendar', href: '/work-management/calendar', icon: CalendarDays },
     ],
   },
   {
-    title: 'Tài chính Spa',
+    title: 'nav.sales',
+    href: '/sales',
+    icon: ShoppingCart,
+    items: [
+      { title: 'nav.salesOrders', href: '/sales/orders', icon: ClipboardList },
+      { title: 'nav.salesProducts', href: '/sales/products', icon: Package },
+      { title: 'nav.salesInventory', href: '/sales/inventory', icon: Warehouse },
+      { title: 'nav.salesStockIo', href: '/sales/stock-movements', icon: ArrowLeftRight },
+      { title: 'nav.salesStocktake', href: '/sales/stocktake', icon: ClipboardList },
+      { title: 'nav.salesPurchases', href: '/sales/purchases', icon: Package },
+      { title: 'nav.salesReports', href: '/sales/reports', icon: BarChart3 },
+    ],
+  },
+  {
+    title: 'nav.financeBilling',
+    href: '/finance-billing',
     icon: Wallet,
     items: [
-      { title: 'Doanh thu & Lãi lỗ', href: '/finance', icon: TrendingUp },
-      { title: 'Mục tiêu kinh doanh', href: '/business-goals', icon: Target },
-      { title: 'Affiliate', href: '/affiliate', icon: Handshake },
-      { title: 'Bảng giá', href: '/pricing', icon: CreditCard },
+      { title: 'nav.revenuePnl', href: '/finance', icon: TrendingUp },
+      { title: 'nav.businessGoals', href: '/business-goals', icon: Target },
+      { title: 'nav.affiliate', href: '/affiliate', icon: Handshake },
+      { title: 'nav.aiCredit', href: '/credits', icon: Coins },
     ],
   },
-  { title: 'Báo cáo', href: '/reports', icon: FileBarChart },
+  { title: 'nav.reports', href: '/reports', icon: FileBarChart },
   {
-    title: 'Cài đặt',
+    title: 'nav.settings',
     href: '/settings',
     icon: Settings,
     items: settingsNavItems,
@@ -173,45 +223,116 @@ export const sidebarNavGroups: NavGroup[] = [
 
 export function parseSettingsTab(raw: string | null | undefined): SettingsTab {
   const v = (raw || '').trim().toLowerCase();
+  if (v === 'language' || v === 'locale' || v === 'ui-language' || v === 'ngon-ngu') {
+    return 'language';
+  }
   if (v === 'knowledge' || v === 'knowledge-base' || v === 'kb') return 'knowledge';
+  if (v === 'connections' || v === 'connect' || v === 'zalo' || v === 'zalo-oa') {
+    return 'connections';
+  }
   if (v === 'api' || v === 'integrations') return 'api';
   if (v === 'system' || v === 'general') return 'system';
+  if (v === 'assignment' || v === 'sla' || v === 'assign') return 'assignment';
   return 'account';
 }
 
-export function getPageTitle(pathname: string): string {
+/** Returns an i18n dictionary key for the current pathname. */
+export function getPageTitleKey(pathname: string): string {
   if (pathname === '/marketing-autopilot' || pathname.startsWith('/marketing-autopilot/')) {
-    return 'Marketing Autopilot';
+    return 'nav.marketingAutopilot';
+  }
+  if (pathname === '/email-marketing' || pathname.startsWith('/email-marketing/')) {
+    return 'nav.emailMarketing';
+  }
+  if (pathname === '/zalo-marketing' || pathname.startsWith('/zalo-marketing/')) {
+    return 'nav.zaloMarketing';
+  }
+  if (pathname === '/messages' || pathname.startsWith('/messages/')) {
+    return 'nav.messages';
   }
   if (pathname === '/teleprompter' || pathname.startsWith('/teleprompter/')) {
-    return 'Kịch bản quay video';
+    return 'nav.teleprompter';
   }
   if (pathname === '/pricing' || pathname.startsWith('/pricing/')) {
-    return 'Bảng giá';
+    return 'nav.pricing';
+  }
+  if (pathname === '/credits' || pathname.startsWith('/credits/')) {
+    return 'nav.aiCredit';
   }
   if (pathname === '/admin' || pathname.startsWith('/admin/')) {
-    return 'Quản trị viên';
+    return 'nav.admin';
   }
   if (pathname === '/work-management' || pathname.startsWith('/work-management/')) {
-    return 'Công việc & Dự án';
+    if (pathname.includes('/my')) return 'nav.myWork';
+    if (pathname.includes('/dashboard')) return 'nav.workDashboard';
+    if (pathname.includes('/calendar')) return 'nav.workCalendar';
+    return 'nav.workProjects';
   }
   if (pathname === '/hrm/employees' || pathname.startsWith('/hrm/employees/')) {
-    return 'Quản Lý Nhân Sự';
+    return 'nav.hrm';
   }
   if (pathname === '/hrm/attendance' || pathname.startsWith('/hrm/attendance/')) {
-    return 'Bảng công';
+    return 'nav.attendance';
   }
   if (pathname === '/hrm/leave' || pathname.startsWith('/hrm/leave/')) {
-    return 'Phép & OT';
+    return 'nav.leaveOt';
   }
   if (pathname === '/hrm/shifts' || pathname.startsWith('/hrm/shifts/')) {
-    return 'Ca làm việc';
+    return 'nav.shifts';
   }
   if (pathname === '/knowledge-base' || pathname.startsWith('/knowledge-base/')) {
-    return 'Cài đặt';
+    return 'nav.settings';
   }
   if (pathname === '/settings' || pathname.startsWith('/settings/')) {
-    return 'Cài đặt';
+    return 'nav.settings';
+  }
+  if (pathname === '/sales/orders' || pathname.startsWith('/sales/orders/')) {
+    return 'nav.salesOrders';
+  }
+  if (pathname === '/sales/products' || pathname.startsWith('/sales/products/')) {
+    return 'nav.salesProducts';
+  }
+  if (pathname === '/sales/inventory' || pathname.startsWith('/sales/inventory/')) {
+    return 'nav.salesInventory';
+  }
+  if (pathname === '/sales/stock-movements' || pathname.startsWith('/sales/stock-movements/')) {
+    return 'nav.salesStockIo';
+  }
+  if (pathname === '/sales/stocktake' || pathname.startsWith('/sales/stocktake/')) {
+    return 'nav.salesStocktake';
+  }
+  if (pathname === '/sales/purchases' || pathname.startsWith('/sales/purchases/')) {
+    return 'nav.salesPurchases';
+  }
+  if (pathname === '/sales/reports' || pathname.startsWith('/sales/reports/')) {
+    return 'nav.salesReports';
+  }
+  if (pathname === '/sales' || pathname === '/sales/') {
+    return 'nav.sales';
+  }
+  if (pathname.startsWith('/sales/')) {
+    return 'nav.sales';
+  }
+  if (pathname === '/crm' || pathname.startsWith('/crm/')) {
+    return 'nav.crmCustomers';
+  }
+  if (pathname === '/content-marketing' || pathname.startsWith('/content-marketing/')) {
+    return 'nav.contentMarketing';
+  }
+  if (pathname === '/advertising' || pathname.startsWith('/advertising/')) {
+    return 'nav.adsGroup';
+  }
+  if (pathname === '/messaging' || pathname.startsWith('/messaging/')) {
+    return 'nav.messagesChatbot';
+  }
+  if (pathname === '/hrm' || pathname === '/hrm/') {
+    return 'nav.hrm';
+  }
+  if (pathname === '/finance-billing' || pathname.startsWith('/finance-billing/')) {
+    return 'nav.financeBilling';
+  }
+  if (pathname === '/attribution' || pathname.startsWith('/attribution/')) {
+    return 'nav.attributionRoas';
   }
   if (
     pathname === CONTENT_AUTO_POST_BASE ||
@@ -221,8 +342,13 @@ export function getPageTitle(pathname: string): string {
     pathname === '/auto-post' ||
     pathname.startsWith('/auto-post/')
   ) {
-    return 'Content Studio';
+    return 'nav.contentStudio';
   }
   const item = mainNav.find((n) => pathname === n.href || pathname.startsWith(`${n.href}/`));
-  return item?.title ?? 'MarketingSpa';
+  return item?.title ?? 'common.brandName';
+}
+
+/** @deprecated Use `getPageTitleKey` with `t()` instead. */
+export function getPageTitle(pathname: string): string {
+  return getPageTitleKey(pathname);
 }

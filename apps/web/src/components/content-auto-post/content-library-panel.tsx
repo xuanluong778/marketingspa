@@ -23,6 +23,7 @@ import {
   loadContentHistory,
 } from '@/lib/content-marketing-form';
 import type { ContentHistoryItem, ContentStudioTab } from '@/types/content-marketing';
+import { useT } from '@/i18n/i18n-provider';
 
 export function ContentLibraryPanel({
   onEditItem,
@@ -33,6 +34,7 @@ export function ContentLibraryPanel({
   onNavigateTab: (tab: ContentAutoPostTab) => void;
   refreshKey?: number;
 }) {
+  const t = useT();
   const { data: user } = useCurrentUser();
   const [history, setHistory] = useState<ContentHistoryItem[]>([]);
   const [historyTabFilter, setHistoryTabFilter] = useState<ContentStudioTab>('ad');
@@ -68,8 +70,8 @@ export function ContentLibraryPanel({
 
   const handleDeleteHistory = useCallback(
     (item: ContentHistoryItem) => {
-      const title = item.title?.trim() || 'bài viết này';
-      if (!window.confirm(`Xóa "${title}" khỏi thư viện?`)) return;
+      const title = item.title?.trim() || t('facebookFlow.deleteThisPost');
+      if (!window.confirm(t('facebookFlow.confirmDeleteLibrary', { title }))) return;
       deleteContentHistoryItem(item.id, user?.id);
       if (historyModalItem?.id === item.id) {
         setHistoryModalOpen(false);
@@ -77,26 +79,25 @@ export function ContentLibraryPanel({
       }
       refreshHistory();
     },
-    [user?.id, historyModalItem, refreshHistory],
+    [user?.id, historyModalItem, refreshHistory, t],
   );
 
   const emptyMessage =
     historyTabFilter === 'ad'
-      ? 'Chưa có bài quảng cáo bán hàng trong thư viện'
+      ? t('facebookFlow.emptyAdInLibrary')
       : historyTabFilter === 'personal'
-        ? 'Chưa có bài xây dựng thương hiệu trong thư viện'
-        : 'Chưa có bài viết nâng cao trong thư viện';
+        ? t('facebookFlow.emptyBrandInLibrary')
+        : t('facebookFlow.emptyAdvancedInLibrary');
 
   return (
     <section className="space-y-4">
       <div className="rounded-lg border border-emerald-100 bg-emerald-50/60 px-4 py-3 text-sm text-emerald-900">
-        Thư viện lưu các bài đã duyệt từ AI. Chọn bài để sửa hoặc gửi sang tab{' '}
-        <strong>Auto Post</strong> để đăng Fanpage.
+        {t('facebookFlow.libraryIntro')}
       </div>
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-lg font-semibold text-white">
-          Thư viện bài viết
+          {t('facebookFlow.tabs.library')}
           {filteredHistory.length > 0 ? (
             <span className="ml-2 text-sm font-normal text-white/70">
               ({filteredHistory.length})
@@ -114,7 +115,7 @@ export function ContentLibraryPanel({
             <SelectContent>
               {AI_MARKETING_TAB_FILTER_OPTIONS.map((o) => (
                 <SelectItem key={o.value} value={o.value}>
-                  {o.label}
+                  {t(`facebookFlow.tabFilter.${o.value}`)}
                 </SelectItem>
               ))}
             </SelectContent>

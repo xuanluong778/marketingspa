@@ -25,6 +25,13 @@ export class CreatePaymentOrderDto {
   planCode!: string;
 }
 
+export class CreateCreditOrderDto {
+  @IsString()
+  @MinLength(3)
+  @MaxLength(64)
+  packageCode!: string;
+}
+
 export class AdminPaymentOrdersQueryDto {
   @IsOptional()
   @Type(() => Number)

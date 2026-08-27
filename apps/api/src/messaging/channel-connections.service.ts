@@ -62,6 +62,11 @@ export class ChannelConnectionsService {
     return rows.map((r) => this.toPublic(r));
   }
 
+  async getPublic(organizationId: string, id: string) {
+    const row = await this.ensureConnection(organizationId, id);
+    return this.toPublic(row);
+  }
+
   /**
    * Đồng bộ khi Messaging thiếu Fanpage đã có ở Auto Post / Chatbot (idempotent).
    * Không chỉ hydrate khi list rỗng — tránh bỏ sót sau khi đã có Zalo hoặc kết nối cũ.
@@ -504,6 +509,317 @@ export class ChannelConnectionsService {
       credentials,
       userId,
     });
+  }
+
+  async upsertZaloOaOAuth(
+    organizationId: string,
+    params: {
+      oaId: string;
+      oaName?: string;
+      accessToken: string;
+      refreshToken?: string;
+      tokenExpiresAt?: Date | null;
+      refreshTokenExpiresAt?: Date | null;
+      webhookSecret?: string;
+      userId?: string;
+    },
+  ) {
+    const oaId = params.oaId.trim();
+    const existing = await this.prisma.messagingChannelConnection.findFirst({
+      where: {
+        organizationId,
+        channel: MessageChannel.ZALO,
+        accountRef: oaId,
+      },
+    });
+    const prev = existing?.encryptedCredentials
+      ? this.decryptCredentials(existing.encryptedCredentials)
+      : {};
+
+    const credentials: Record<string, string> = {
+      ...prev,
+      accessToken: params.accessToken.trim(),
+      oaId: params.oaId.trim(),
+      oaName: params.oaName?.trim() ?? prev.oaName ?? params.oaId.trim(),
+    };
+    if (params.refreshToken?.trim()) {
+      credentials.refreshToken = params.refreshToken.trim();
+    }
+    if (params.webhookSecret?.trim()) {
+      credentials.webhookSecret = params.webhookSecret.trim();
+      credentials.oaSecretKey = params.webhookSecret.trim();
+    }
+    if (params.tokenExpiresAt) {
+      credentials.accessTokenExpiresAt = params.tokenExpiresAt.toISOString();
+    }
+    if (params.refreshTokenExpiresAt) {
+      credentials.refreshTokenExpiresAt = params.refreshTokenExpiresAt.toISOString();
+    }
+
+    return this.upsertConnection({
+      organizationId,
+      channel: MessageChannel.ZALO,
+      providerKind: MessagingProviderKind.ZALO_OA,
+      accountRef: oaId,
+      displayName: params.oaName,
+      credentials,
+      userId: params.userId,
+    });
+  }
+
+  /**
+   * Ngắt kết nối Zalo OA — giữ row + lịch sử; gỡ OAuth token; giữ webhook secret nếu có.
+   * Idempotent; advisory lock theo connection id.
+   */
+  async disconnectZaloOa(organizationId: string, id: string, userId?: string) {
+    const lockKey = `zalo_oa_disconnect:${id}`;
+    const result = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(`SELECT pg_advisory_xact_lock(hashtext($1))`, lockKey);
+
+      const row = await tx.messagingChannelConnection.findFirst({
+        where: {
+          id,
+          organizationId,
+          channel: MessageChannel.ZALO,
+          providerKind: MessagingProviderKind.ZALO_OA,
+        },
+      });
+      if (!row) {
+        throw new NotFoundException('Kết nối Zalo OA không tồn tại');
+      }
+
+      if (row.status === MessagingChannelAccountStatus.DISCONNECTED) {
+        return { row, idempotent: true as const };
+      }
+
+      const prev = row.encryptedCredentials
+        ? this.decryptCredentials(row.encryptedCredentials)
+        : {};
+      const preserved: Record<string, string> = {
+        oaId: row.accountRef,
+        oaName: (prev.oaName || row.displayName || row.accountRef).trim(),
+        _oauthDisabled: '1',
+      };
+      if (prev.webhookSecret?.trim()) preserved.webhookSecret = prev.webhookSecret.trim();
+      if (prev.oaSecretKey?.trim()) preserved.oaSecretKey = prev.oaSecretKey.trim();
+
+      const baseMeta =
+        row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+          ? { ...(row.metadata as Record<string, unknown>) }
+          : {};
+      const metadata = sanitizePublicMetadata({
+        ...baseMeta,
+        disconnectedAt: new Date().toISOString(),
+        credentialsDisabled: true,
+      });
+
+      const updated = await tx.messagingChannelConnection.update({
+        where: { id: row.id },
+        data: {
+          status: MessagingChannelAccountStatus.DISCONNECTED,
+          encryptedCredentials: encryptSecret(
+            JSON.stringify(preserved),
+            this.getEncryptionKey(),
+          ),
+          tokenExpiresAt: null,
+          isPaused: false,
+          permissions: [],
+          metadata: metadata as Prisma.InputJsonValue,
+        },
+      });
+
+      return { row: updated, idempotent: false as const };
+    });
+
+    await this.audit.log({
+      organizationId,
+      userId,
+      action: 'MESSAGING_CHANNEL_DISCONNECTED',
+      entityType: 'MESSAGING_CHANNEL_CONNECTION',
+      entityId: id,
+      metadata: redactForAudit({
+        channel: MessageChannel.ZALO,
+        providerKind: MessagingProviderKind.ZALO_OA,
+        accountRef: result.row.accountRef,
+        idempotent: result.idempotent,
+      }) as Prisma.InputJsonValue,
+    });
+
+    return {
+      idempotent: result.idempotent,
+      connection: this.toPublic(result.row),
+    };
+  }
+
+  /**
+   * Refresh OA access token trước khi hết hạn.
+   * Lưu cả access token + refresh token mới (encrypted). Không log secret.
+   */
+  async refreshZaloOaToken(organizationId: string, id: string, userId?: string) {
+    const row = await this.ensureConnection(organizationId, id);
+    if (row.channel !== MessageChannel.ZALO || row.providerKind !== MessagingProviderKind.ZALO_OA) {
+      throw new BadRequestException('Chỉ hỗ trợ refresh token cho Zalo OA');
+    }
+    if (row.status === MessagingChannelAccountStatus.DISCONNECTED) {
+      throw new BadRequestException('OA đã ngắt kết nối — hãy Kết nối lại qua OAuth');
+    }
+    const credentials = this.decryptCredentials(row.encryptedCredentials);
+    const refreshToken = credentials.refreshToken?.trim();
+    if (!refreshToken) {
+      throw new BadRequestException('Chưa có refresh token — kết nối lại OA qua OAuth');
+    }
+
+    const appId = (this.config.get<string>('ZALO_APP_ID') ?? '').trim();
+    const appSecret = (this.config.get<string>('ZALO_APP_SECRET') ?? '').trim();
+    if (!appId || !appSecret) {
+      throw new BadRequestException('Chưa cấu hình ZALO_APP_ID / ZALO_APP_SECRET');
+    }
+
+    const { refreshZaloOaAccessToken } = await import('@marketingspa/shared');
+    let refreshed: {
+      accessToken: string;
+      refreshToken?: string;
+      expiresAt: Date | null;
+    };
+    try {
+      refreshed = await refreshZaloOaAccessToken({
+        appId,
+        appSecret,
+        refreshToken,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Refresh token thất bại';
+      await this.prisma.messagingChannelConnection.update({
+        where: { id: row.id },
+        data: {
+          status: MessagingChannelAccountStatus.REFRESH_FAILED,
+        },
+      });
+      this.logger.warn(
+        `Zalo refresh failed connection=${row.id.slice(0, 8)}… oa=••••${row.accountRef.slice(-4)}`,
+      );
+      throw new BadRequestException(message);
+    }
+
+    const nextCreds: Record<string, string> = {
+      ...credentials,
+      accessToken: refreshed.accessToken,
+      refreshToken: refreshed.refreshToken ?? refreshToken,
+    };
+    if (refreshed.expiresAt) {
+      nextCreds.accessTokenExpiresAt = refreshed.expiresAt.toISOString();
+    }
+
+    const encrypted = encryptSecret(JSON.stringify(nextCreds), this.getEncryptionKey());
+    const updated = await this.prisma.messagingChannelConnection.update({
+      where: { id: row.id },
+      data: {
+        encryptedCredentials: encrypted,
+        tokenExpiresAt: refreshed.expiresAt,
+        status: MessagingChannelAccountStatus.ACTIVE,
+        lastSyncedAt: new Date(),
+        isPaused: false,
+      },
+    });
+
+    await this.audit.log({
+      organizationId,
+      userId,
+      action: 'MESSAGING_CHANNEL_TOKEN_REFRESHED',
+      entityType: 'MESSAGING_CHANNEL_CONNECTION',
+      entityId: id,
+      metadata: redactForAudit({
+        oaId: row.accountRef,
+        accessTokenExpiresAt: refreshed.expiresAt?.toISOString() ?? null,
+      }) as Prisma.InputJsonValue,
+    });
+
+    return this.toZaloPublic(updated);
+  }
+
+  /**
+   * Đảm bảo access token còn hạn (refresh nếu sắp hết).
+   * Trả access token plaintext chỉ cho caller nội bộ — không log.
+   */
+  async ensureFreshZaloAccessToken(
+    organizationId: string,
+    connectionId: string,
+  ): Promise<{ accessToken: string; connectionId: string; refreshed: boolean }> {
+    const row = await this.ensureConnection(organizationId, connectionId);
+    if (row.status === MessagingChannelAccountStatus.DISCONNECTED) {
+      throw new BadRequestException('OA đã ngắt kết nối');
+    }
+    const credentials = this.decryptCredentials(row.encryptedCredentials);
+    if (credentials._oauthDisabled === '1' || !credentials.accessToken?.trim()) {
+      throw new BadRequestException('OA đã ngắt kết nối — thiếu access token');
+    }
+    const expiresAt =
+      row.tokenExpiresAt ??
+      this.parseOptionalDate(credentials.accessTokenExpiresAt) ??
+      null;
+    const needsRefresh =
+      Boolean(credentials.refreshToken?.trim()) &&
+      (!expiresAt || expiresAt.getTime() - Date.now() < 45 * 60_000);
+
+    if (needsRefresh) {
+      await this.refreshZaloOaToken(organizationId, connectionId);
+      const again = await this.ensureConnection(organizationId, connectionId);
+      const creds = this.decryptCredentials(again.encryptedCredentials);
+      return {
+        accessToken: creds.accessToken ?? '',
+        connectionId,
+        refreshed: true,
+      };
+    }
+
+    return {
+      accessToken: credentials.accessToken ?? '',
+      connectionId,
+      refreshed: false,
+    };
+  }
+
+  toZaloPublic(row: {
+    id: string;
+    organizationId: string;
+    accountRef: string;
+    displayName: string | null;
+    status: MessagingChannelAccountStatus;
+    tokenExpiresAt: Date | null;
+    encryptedCredentials: string | null;
+    lastTestedAt: Date | null;
+    lastSyncedAt: Date | null;
+    isPaused: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+  }) {
+    const creds = this.decryptCredentials(row.encryptedCredentials);
+    const refreshExpires = this.parseOptionalDate(creds.refreshTokenExpiresAt);
+    return {
+      id: row.id,
+      organizationId: row.organizationId,
+      oaId: row.accountRef,
+      oaName: row.displayName || creds.oaName || row.accountRef,
+      accessTokenEncrypted: Boolean(creds.accessToken),
+      refreshTokenEncrypted: Boolean(creds.refreshToken),
+      webhookSecret: Boolean(creds.webhookSecret || creds.oaSecretKey),
+      accessTokenExpiresAt: row.tokenExpiresAt ?? this.parseOptionalDate(creds.accessTokenExpiresAt),
+      refreshTokenExpiresAt: refreshExpires,
+      status: row.isPaused ? MessagingChannelAccountStatus.PAUSED : row.status,
+      lastTestedAt: row.lastTestedAt,
+      lastSyncedAt: row.lastSyncedAt,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  private parseOptionalDate(raw?: string | null): Date | null {
+    if (!raw?.trim()) return null;
+    const asNum = Number(raw);
+    if (Number.isFinite(asNum) && asNum > 1e11) return new Date(asNum);
+    if (Number.isFinite(asNum) && asNum > 1e9 && asNum < 1e11) return new Date(asNum * 1000);
+    const d = new Date(raw);
+    return Number.isNaN(d.getTime()) ? null : d;
   }
 
   async connectZbs(organizationId: string, dto: ConnectZbsChannelDto, userId?: string) {

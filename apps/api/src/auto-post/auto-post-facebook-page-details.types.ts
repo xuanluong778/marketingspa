@@ -29,10 +29,16 @@ export interface FanpageDetailsPage {
   pageId: string;
   name: string;
   pictureUrl: string | null;
+  coverUrl: string | null;
   category: string | null;
   about: string | null;
+  description: string | null;
   website: string | null;
   link: string | null;
+  username: string | null;
+  phone: string | null;
+  emails: string[] | null;
+  location: string | null;
   followersCount: number | null;
   fanCount: number | null;
 }
@@ -56,6 +62,11 @@ export interface FanpageDetailsPermissions {
   pages_manage_posts: boolean;
 }
 
+export interface FanpageDetailsGraphEndpoints {
+  page: string;
+  posts: string;
+}
+
 export interface FanpageDetailsResponse {
   page: FanpageDetailsPage;
   recentPosts: FanpageDetailsPost[];
@@ -67,9 +78,20 @@ export interface FanpageDetailsResponse {
   /** true nếu đang dùng bản stale 24h (chỉ display — không dùng để xác minh quyền/publish) */
   stale?: boolean;
   /** Nguồn dữ liệu hiển thị */
-  dataSource?: 'live' | 'cache' | 'stale';
+  dataSource?: 'live' | 'cache' | 'stale' | 'sync' | 'none';
   /** Token page đã được làm mới từ /me/accounts trong request này */
   pageTokenRefreshed?: boolean;
+  /** Thông báo App Review — chỉ khi dataSource=live */
+  syncStatus?: string | null;
+  /** Graph endpoints vừa gọi (không chứa token) */
+  graphEndpoints?: FanpageDetailsGraphEndpoints;
+  postsError?: string | null;
+  /** Thời điểm Graph sync thành công (ISO UTC) */
+  lastSyncedAt?: string | null;
+  /** created_time bài mới nhất từ Graph (ISO) */
+  lastPostCreatedAt?: string | null;
+  lastSyncedAtDisplay?: string | null;
+  lastPostCreatedAtDisplay?: string | null;
 }
 
 /** Chẩn đoán OAuth Fanpage — không chứa token. */

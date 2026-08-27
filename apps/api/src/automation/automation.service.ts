@@ -147,6 +147,21 @@ export class AutomationService {
     return template;
   }
 
+  listFunnels(organizationId: string) {
+    return this.prisma.funnelRecommendation.findMany({
+      where: { organizationId },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      select: {
+        id: true,
+        prompt: true,
+        selectedSlug: true,
+        completeGeneratedAt: true,
+        createdAt: true,
+      },
+    });
+  }
+
   listFlows(organizationId: string) {
     return this.prisma.automationFlow.findMany({
       where: { organizationId },
@@ -172,6 +187,7 @@ export class AutomationService {
     const flow = await this.prisma.automationFlow.create({
       data: {
         organizationId,
+        funnelId: dto.funnelId,
         name: dto.name,
         triggerType: dto.triggerType,
         messageTemplateId: dto.messageTemplateId,

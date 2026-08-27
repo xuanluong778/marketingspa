@@ -25,6 +25,7 @@ import type {
   AppointmentPageView,
   AppointmentStatus,
 } from '@/types/appointments';
+import { useT } from '@/i18n/i18n-provider';
 
 function getDateRange(view: AppointmentPageView, anchor: Date) {
   if (view === 'day') {
@@ -47,6 +48,7 @@ function getDateRange(view: AppointmentPageView, anchor: Date) {
 }
 
 export default function AppointmentsPage() {
+  const t = useT();
   const [view, setView] = useState<AppointmentPageView>('day');
   const [anchor, setAnchor] = useState(new Date());
   const [formOpen, setFormOpen] = useState(false);
@@ -100,7 +102,7 @@ export default function AppointmentsPage() {
 
   return (
     <div>
-      <PageHeader title="Lịch hẹn" description="Quản lý lịch hẹn spa">
+      <PageHeader title={t('appointments.title')} description={t('appointments.description')}>
         <Button
           onClick={() => {
             setEditing(null);
@@ -108,7 +110,7 @@ export default function AppointmentsPage() {
           }}
         >
           <Plus className="h-4 w-4 mr-2" />
-          Tạo lịch hẹn
+          {t('appointments.create')}
         </Button>
       </PageHeader>
 
@@ -145,7 +147,7 @@ export default function AppointmentsPage() {
             {isLoading && <LoadingState />}
             {isError && <ErrorState onRetry={refetch} />}
             {!isLoading && !isError && appointments.length === 0 && (
-              <EmptyState title="Không có lịch hẹn trong kỳ này" />
+              <EmptyState title={t('appointments.empty')} />
             )}
             {!isLoading && !isError && appointments.length > 0 && (
               <div className="space-y-3">

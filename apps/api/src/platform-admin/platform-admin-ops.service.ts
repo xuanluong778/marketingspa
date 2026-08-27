@@ -101,7 +101,7 @@ export class PlatformAdminOpsService {
           }),
           this.prisma.creditWallet.findUnique({ where: { organizationId: org.id } }),
           this.prisma.creditTransaction.aggregate({
-            where: { organizationId: org.id, type: 'DEBIT' },
+            where: { organizationId: org.id, type: 'USAGE' },
             _sum: { amount: true },
           }),
           this.prisma.aiReport.count({ where: { organizationId: org.id } }),
@@ -110,7 +110,7 @@ export class PlatformAdminOpsService {
         const aiReplies = chatbot._sum.aiReplies ?? 0;
         const chatbotCredits = chatbot._sum.creditsUsed ?? 0;
         const adsSpend = Number(adSpend._sum.spend ?? 0);
-        const creditCost = Number(creditDebits._sum.amount ?? 0);
+        const creditCost = Number(creditDebits._sum?.amount ?? 0);
 
         return {
           organizationId: org.id,

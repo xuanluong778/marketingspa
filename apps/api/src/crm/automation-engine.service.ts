@@ -44,6 +44,9 @@ export class AutomationEngineService {
       appointmentId?: string | null;
       context?: Record<string, string>;
       dedupeKey?: string;
+      delayMinutesOverride?: number;
+      fromStep?: number;
+      flowId?: string;
     },
   ) {
     const flows = await this.prisma.automationFlow.findMany({
@@ -52,6 +55,7 @@ export class AutomationEngineService {
         triggerType,
         isActive: true,
         isPaused: false,
+        ...(payload.flowId ? { id: payload.flowId } : {}),
       },
     });
 
@@ -71,10 +75,14 @@ export class AutomationEngineService {
           appointmentId: payload.appointmentId,
           context: payload.context ?? {},
           idempotencyKey,
+          fromStep: payload.fromStep,
         },
         {
           jobId: `auto:${idempotencyKey}`.slice(0, 120),
-          delay: Math.max(0, flow.delayMinutes) * 60_000,
+          delay:
+            payload.delayMinutesOverride != null
+              ? Math.max(0, payload.delayMinutesOverride) * 60_000
+              : Math.max(0, flow.delayMinutes) * 60_000,
           attempts: 3,
           backoff: { type: 'exponential', delay: 15_000 },
           removeOnComplete: 200,

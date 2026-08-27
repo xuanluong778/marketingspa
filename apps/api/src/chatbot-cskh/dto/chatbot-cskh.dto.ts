@@ -136,6 +136,19 @@ export class CreateChannelDto {
   botId?: string;
 }
 
+export class AttachZaloOaDto {
+  @IsUUID()
+  botId!: string;
+
+  @IsOptional()
+  @IsString()
+  connectionId?: string;
+
+  @IsOptional()
+  @IsString()
+  accountRef?: string;
+}
+
 export class UpdateSettingsDto {
   @IsOptional()
   @IsString()
@@ -250,4 +263,11 @@ export class CrawlKnowledgeUrlDto {
   @IsOptional()
   @IsString()
   replaceExisting?: string;
+}
+
+export class ReplyInboxMessageDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(2000)
+  text!: string;
 }

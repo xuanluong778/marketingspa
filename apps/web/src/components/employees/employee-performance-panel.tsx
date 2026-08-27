@@ -8,12 +8,14 @@ import { LoadingState } from '@/components/shared/page-state';
 import { useEmployeePerformance, defaultPerformanceRange } from '@/hooks/use-employees';
 import { formatCurrency } from '@/lib/format';
 import type { EmployeeDetail } from '@/types/appointments';
+import { useT } from '@/i18n/i18n-provider';
 
 interface EmployeePerformancePanelProps {
   employee: EmployeeDetail;
 }
 
 export function EmployeePerformancePanel({ employee }: EmployeePerformancePanelProps) {
+  const t = useT();
   const [range, setRange] = useState(() => defaultPerformanceRange());
   const { data, isLoading } = useEmployeePerformance(employee.id, range, true);
 
@@ -59,7 +61,7 @@ export function EmployeePerformancePanel({ employee }: EmployeePerformancePanelP
           </div>
         </div>
         {isLoading ? (
-          <LoadingState message="Đang tải KPI..." />
+          <LoadingState message={t('employees.loadingKpi')} />
         ) : (
           <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
             {kpis.map((k) => (

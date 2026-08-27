@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/select';
 import type { AppointmentDetail, CreateAppointmentInput } from '@/types/appointments';
 import type { SpaService } from '@/types/appointments';
+import { useT } from '@/i18n/i18n-provider';
 
 interface AppointmentFormDialogProps {
   open: boolean;
@@ -51,6 +52,7 @@ export function AppointmentFormDialog({
   onSubmit,
   isPending,
 }: AppointmentFormDialogProps) {
+  const t = useT();
   const [form, setForm] = useState<CreateAppointmentInput>(() => ({
     branchId: initial?.branch?.id ?? branches[0]?.id ?? '',
     customerId: initial?.customer?.id ?? '',
@@ -95,7 +97,7 @@ export function AppointmentFormDialog({
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label>Khách hàng</Label>
+            <Label>{t('appointments.customerLabel')}</Label>
             <Select
               value={form.customerId || 'none'}
               onValueChange={(v) => setForm((f) => ({ ...f, customerId: v === 'none' ? '' : v }))}

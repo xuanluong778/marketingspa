@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   AlertTriangle,
   Bot,
@@ -58,13 +59,33 @@ import {
   useAiAdsRules,
   useAiAdsSettings,
   useAdsDateRange,
+  useGoogleAdsCustomers,
+  ADS_DATE_PRESETS,
 } from '@/hooks/use-ai-ads-manager';
 import {
   CONNECTION_STATUS_LABEL,
   RULE_TYPE_OPTIONS,
+  type AdConnectionItem,
   type AdManagerCampaignRow,
 } from '@/types/ai-ads-manager';
 import { cn } from '@/lib/utils';
+import { useT } from '@/i18n/i18n-provider';
+import dynamic from 'next/dynamic';
+
+const GoogleAdsCampaignBuilder = dynamic(
+  () =>
+    import('@/components/ai-ads-manager/google-ads-campaign-builder').then((m) => ({
+      default: m.GoogleAdsCampaignBuilder,
+    })),
+  { ssr: false },
+);
+const GoogleAdsAutopilotPanel = dynamic(
+  () =>
+    import('@/components/ai-ads-manager/google-ads-autopilot').then((m) => ({
+      default: m.GoogleAdsAutopilotPanel,
+    })),
+  { ssr: false },
+);
 
 function formatMoney(n: number): string {
   return `${new Intl.NumberFormat('vi-VN').format(Math.round(n))}đ`;
@@ -93,20 +114,24 @@ function KpiCard({ title, value, sub }: { title: string; value: string; sub?: st
 }
 
 export function AiAdsManagerPage() {
+  const t = useT();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { dateFrom, dateTo } = useAdsDateRange();
   const [range, setRange] = useState({ dateFrom, dateTo });
   const [detailCampaign, setDetailCampaign] = useState<AdManagerCampaignRow | null>(null);
   const [ruleName, setRuleName] = useState('Rule mới');
   const [ruleType, setRuleType] = useState<string>(RULE_TYPE_OPTIONS[0].value);
   const [ruleThreshold, setRuleThreshold] = useState('500000');
-  const [googleCustomerId, setGoogleCustomerId] = useState('');
-  const [googleToken, setGoogleToken] = useState('');
+  const [googlePickerOpen, setGooglePickerOpen] = useState(false);
+  const [selectedGoogleId, setSelectedGoogleId] = useState('');
   const [gmailEmail, setGmailEmail] = useState('');
   const [gmailToken, setGmailToken] = useState('');
   const [draftObjective, setDraftObjective] = useState('lead_form');
   const [draftBudget, setDraftBudget] = useState('500000');
   const [reportEmail, setReportEmail] = useState('');
 
+  const [adsTab, setAdsTab] = useState('campaigns');
   const dashboard = useAiAdsDashboard(range.dateFrom, range.dateTo);
   const connections = useAiAdsConnections();
   const campaigns = useAiAdsCampaigns({
@@ -114,12 +139,36 @@ export function AiAdsManagerPage() {
     dateTo: range.dateTo,
   });
   const settings = useAiAdsSettings();
-  const rules = useAiAdsRules();
-  const logs = useAiAdsLogs();
-  const drafts = useAiAdsDrafts();
-  const emailReports = useAiAdsEmailReports();
+  const rules = useAiAdsRules(adsTab === 'automation');
+  const logs = useAiAdsLogs(adsTab === 'logs');
+  const drafts = useAiAdsDrafts(adsTab === 'drafts');
+  const emailReports = useAiAdsEmailReports(adsTab === 'reports');
 
   const m = useAiAdsMutations();
+  const googleCustomers = useGoogleAdsCustomers(googlePickerOpen);
+
+  const googleConn = connections.data?.items?.find((c) => c.provider === 'GOOGLE');
+  const googleNeedsAccount =
+    Boolean(googleConn?.connected) &&
+    (Boolean(googleConn?.readiness?.pendingCustomerSelection) ||
+      googleConn?.status === 'PENDING_ACCOUNT');
+
+  useEffect(() => {
+    if (googleNeedsAccount) setGooglePickerOpen(true);
+  }, [googleNeedsAccount]);
+
+  useEffect(() => {
+    const google = searchParams.get('google');
+    if (!google) return;
+    if (google === 'select_account') {
+      setGooglePickerOpen(true);
+      void connections.refetch();
+    } else if (google === 'connected') {
+      void connections.refetch();
+      void dashboard.refetch();
+    }
+    router.replace('/ads');
+  }, [searchParams]);
 
   const connMap = useMemo(() => {
     const items = connections.data?.items ?? [];
@@ -138,22 +187,47 @@ export function AiAdsManagerPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="AI Ads Manager"
-        description="Quản lý và tối ưu quảng cáo Facebook Ads + Google Ads với AI"
-      >
+      <PageHeader title={t('ads.aiAdsManagerTitle')} description={t('ads.aiAdsManagerDescription')}>
         <Button
           variant="outline"
           size="sm"
-          onClick={() => m.sync.mutate(range)}
-          disabled={m.sync.isPending}
+          onClick={() => {
+            if (googleNeedsAccount) {
+              setGooglePickerOpen(true);
+              window.alert('Vui lòng chọn tài khoản Google Ads trước khi đồng bộ.');
+              return;
+            }
+            m.syncGoogle.mutate({ dateFrom: range.dateFrom, dateTo: range.dateTo });
+          }}
+          disabled={m.syncGoogle.isPending}
         >
-          <RefreshCw className={cn('mr-2 h-4 w-4', m.sync.isPending && 'animate-spin')} />
-          Đồng bộ dữ liệu
+          <RefreshCw className={cn('mr-2 h-4 w-4', m.syncGoogle.isPending && 'animate-spin')} />
+          {t('ads.syncData')}
         </Button>
       </PageHeader>
 
       <div className="flex flex-wrap gap-3 items-end">
+        <div className="flex flex-wrap gap-2 items-center">
+          {ADS_DATE_PRESETS.map((preset) => (
+            <Button
+              key={preset.days}
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const to = new Date();
+                const from = new Date();
+                from.setDate(from.getDate() - preset.days);
+                setRange({
+                  dateFrom: from.toISOString().slice(0, 10),
+                  dateTo: to.toISOString().slice(0, 10),
+                });
+              }}
+            >
+              {preset.label}
+            </Button>
+          ))}
+        </div>
         <div>
           <Label htmlFor="dateFrom">Từ ngày</Label>
           <Input
@@ -191,8 +265,8 @@ export function AiAdsManagerPage() {
         />
       </div>
 
-      <Tabs defaultValue="campaigns">
-        <TabsList>
+      <Tabs value={adsTab} onValueChange={setAdsTab}>
+        <TabsList className="mb-4 flex h-auto w-full flex-wrap justify-start gap-1">
           <TabsTrigger value="campaigns">Chiến dịch</TabsTrigger>
           <TabsTrigger value="connections">Kết nối</TabsTrigger>
           <TabsTrigger value="automation">Auto Mode & Rule</TabsTrigger>
@@ -210,53 +284,38 @@ export function AiAdsManagerPage() {
               onConnect={() => void m.startMetaOAuth()}
               onDisconnect={() => m.disconnect.mutate('META')}
             />
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-base">
-                  <span className="text-emerald-600 font-bold">G</span> Google Ads
-                </CardTitle>
-                <CardDescription>
-                  {connMap.GOOGLE
-                    ? CONNECTION_STATUS_LABEL[connMap.GOOGLE.status]
-                    : 'Chưa kết nối'}
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Input
-                  placeholder="Customer ID"
-                  value={googleCustomerId}
-                  onChange={(e) => setGoogleCustomerId(e.target.value)}
-                />
-                <Input
-                  placeholder="Refresh token (không lưu plain log)"
-                  type="password"
-                  value={googleToken}
-                  onChange={(e) => setGoogleToken(e.target.value)}
-                />
-                <Button
-                  size="sm"
-                  className="w-full"
-                  onClick={() =>
-                    m.connectGoogle.mutate({
-                      customerId: googleCustomerId,
-                      refreshToken: googleToken,
-                    })
-                  }
-                  disabled={!googleCustomerId || !googleToken}
-                >
-                  Kết nối Google Ads
-                </Button>
-              </CardContent>
-            </Card>
+            <GoogleConnectionCard
+              conn={connMap.GOOGLE}
+              autoModeEnabled={s.autoModeEnabled}
+              onConnect={() => void m.startGoogleOAuth()}
+              onDisconnect={() => m.disconnect.mutate('GOOGLE')}
+              onSelectAccount={() => setGooglePickerOpen(true)}
+              onSync={() => {
+                if (googleNeedsAccount) {
+                  setGooglePickerOpen(true);
+                  window.alert(
+                    'Chưa chọn tài khoản Google Ads.\n\nHãy chọn customer trong hộp thoại, rồi hệ thống sẽ tự đồng bộ.',
+                  );
+                  return;
+                }
+                m.syncGoogle.mutate({ dateFrom: range.dateFrom, dateTo: range.dateTo });
+              }}
+              syncing={m.syncGoogle.isPending}
+              onToggleAutoMode={(enabled) =>
+                m.updateAutoMode.mutate({
+                  autoModeEnabled: enabled,
+                  dailyBudgetLimit: s.dailyBudgetLimit ?? undefined,
+                  maxTogglesPerDay: s.maxTogglesPerDay,
+                })
+              }
+            />
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-base">
                   <Mail className="h-5 w-5" /> Gmail báo cáo
                 </CardTitle>
                 <CardDescription>
-                  {connMap.GMAIL
-                    ? CONNECTION_STATUS_LABEL[connMap.GMAIL.status]
-                    : 'Chưa kết nối'}
+                  {connMap.GMAIL ? CONNECTION_STATUS_LABEL[connMap.GMAIL.status] : 'Chưa kết nối'}
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
@@ -308,7 +367,7 @@ export function AiAdsManagerPage() {
                   {(campaigns.data?.items ?? []).length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={10} className="text-center text-muted-foreground py-8">
-                        Chưa có dữ liệu — kết nối tài khoản và bấm Đồng bộ
+                        {t('aiAds.noDataConnectSync')}
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -317,7 +376,9 @@ export function AiAdsManagerPage() {
                         <TableCell>
                           <Badge variant="secondary">{platformLabel(c.platform)}</Badge>
                         </TableCell>
-                        <TableCell className="font-medium max-w-[180px] truncate">{c.name}</TableCell>
+                        <TableCell className="font-medium max-w-[180px] truncate">
+                          {c.name}
+                        </TableCell>
                         <TableCell>
                           <Badge variant="outline">{c.status}</Badge>
                         </TableCell>
@@ -429,7 +490,9 @@ export function AiAdsManagerPage() {
                   />
                 </div>
                 <div>
-                  <Label>Max bật/tắt/ngày: {s.togglesToday}/{s.maxTogglesPerDay}</Label>
+                  <Label>
+                    Max bật/tắt/ngày: {s.togglesToday}/{s.maxTogglesPerDay}
+                  </Label>
                 </div>
               </div>
               <Button
@@ -481,7 +544,8 @@ export function AiAdsManagerPage() {
                     name: ruleName,
                     ruleType,
                     threshold: Number(ruleThreshold),
-                    spendThreshold: ruleType === 'PAUSE_SPEND_NO_CONVERSION' ? Number(ruleThreshold) : undefined,
+                    spendThreshold:
+                      ruleType === 'PAUSE_SPEND_NO_CONVERSION' ? Number(ruleThreshold) : undefined,
                   })
                 }
               >
@@ -494,8 +558,7 @@ export function AiAdsManagerPage() {
                     className="flex items-center justify-between rounded border px-3 py-2 text-sm"
                   >
                     <span>
-                      {r.name} — {r.ruleType}{' '}
-                      {r.threshold != null && `(ngưỡng ${r.threshold})`}
+                      {r.name} — {r.ruleType} {r.threshold != null && `(ngưỡng ${r.threshold})`}
                     </span>
                     <Button size="sm" variant="ghost" onClick={() => m.deleteRule.mutate(r.id)}>
                       Xóa
@@ -505,9 +568,12 @@ export function AiAdsManagerPage() {
               </ul>
             </CardContent>
           </Card>
+
+          <GoogleAdsAutopilotPanel />
         </TabsContent>
 
         <TabsContent value="drafts" className="space-y-4">
+          <GoogleAdsCampaignBuilder />
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -603,7 +669,8 @@ export function AiAdsManagerPage() {
               {(emailReports.data?.items ?? []).map((r) => (
                 <p key={r.id} className="text-sm text-muted-foreground">
                   {r.recipientEmail} · {r.schedule}
-                  {r.lastSentAt && ` · Gửi lần cuối: ${new Date(r.lastSentAt).toLocaleString('vi-VN')}`}
+                  {r.lastSentAt &&
+                    ` · Gửi lần cuối: ${new Date(r.lastSentAt).toLocaleString('vi-VN')}`}
                 </p>
               ))}
             </CardContent>
@@ -668,7 +735,232 @@ export function AiAdsManagerPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <Dialog open={googlePickerOpen} onOpenChange={setGooglePickerOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Chọn tài khoản Google Ads</DialogTitle>
+            <DialogDescription>
+              Bước 2/3 — chọn tài khoản quảng cáo. Sau khi xác nhận, hệ thống tự xếp hàng đồng bộ.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {googleCustomers.isLoading ? (
+              <p className="text-sm text-muted-foreground">{t('aiAds.loadingAccounts')}</p>
+            ) : googleCustomers.isError ? (
+              <div className="space-y-2">
+                <p className="text-sm text-destructive whitespace-pre-wrap">
+                  {googleCustomers.error instanceof Error
+                    ? googleCustomers.error.message
+                    : 'Không tải được danh sách tài khoản Google Ads.'}
+                </p>
+                {(googleCustomers.error as { requestId?: string; googleAdsErrorCode?: string })
+                  ?.requestId ||
+                (googleCustomers.error as { googleAdsErrorCode?: string })?.googleAdsErrorCode ? (
+                  <p className="text-xs text-muted-foreground">
+                    {[
+                      (googleCustomers.error as { googleAdsErrorCode?: string }).googleAdsErrorCode
+                        ? `Mã ${(googleCustomers.error as { googleAdsErrorCode?: string }).googleAdsErrorCode}`
+                        : null,
+                      (googleCustomers.error as { requestId?: string }).requestId
+                        ? `request-id ${(googleCustomers.error as { requestId?: string }).requestId}`
+                        : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </p>
+                ) : null}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => void googleCustomers.refetch()}
+                >
+                  {t('common.retry')}
+                </Button>
+                <Button size="sm" className="w-full" onClick={() => void m.startGoogleOAuth()}>
+                  Kết nối lại Google
+                </Button>
+              </div>
+            ) : (googleCustomers.data?.items.length ?? 0) === 0 ? (
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  Không tìm thấy tài khoản Google Ads nào. Kiểm tra quyền Ads trên Google hoặc kết
+                  nối lại.
+                </p>
+                <Button size="sm" className="w-full" onClick={() => void m.startGoogleOAuth()}>
+                  Kết nối lại Google
+                </Button>
+              </div>
+            ) : (
+              <Select value={selectedGoogleId} onValueChange={setSelectedGoogleId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Chọn tài khoản" />
+                </SelectTrigger>
+                <SelectContent>
+                  {googleCustomers.data!.items.map((c) => (
+                    <SelectItem key={c.customerId} value={c.customerId}>
+                      {c.name} ({c.customerId})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <Button
+              className="w-full"
+              disabled={
+                !selectedGoogleId ||
+                m.connectGoogle.isPending ||
+                googleCustomers.isLoading ||
+                googleCustomers.isError
+              }
+              onClick={() => {
+                const picked = googleCustomers.data?.items.find(
+                  (c) => c.customerId === selectedGoogleId,
+                );
+                if (!picked) return;
+                m.connectGoogle.mutate(
+                  {
+                    customerId: picked.customerId,
+                    customerName: picked.name,
+                    loginCustomerId: picked.loginCustomerId ?? undefined,
+                  },
+                  {
+                    onSuccess: () => {
+                      setGooglePickerOpen(false);
+                      setSelectedGoogleId('');
+                    },
+                  },
+                );
+              }}
+            >
+              {m.connectGoogle.isPending ? 'Đang lưu…' : 'Xác nhận & đồng bộ'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+function GoogleConnectionCard({
+  conn,
+  autoModeEnabled,
+  onConnect,
+  onDisconnect,
+  onSelectAccount,
+  onSync,
+  syncing,
+  onToggleAutoMode,
+}: {
+  conn?: AdConnectionItem;
+  autoModeEnabled: boolean;
+  onConnect: () => void;
+  onDisconnect: () => void;
+  onSelectAccount: () => void;
+  onSync: () => void;
+  syncing: boolean;
+  onToggleAutoMode: (enabled: boolean) => void;
+}) {
+  const needsAccount =
+    Boolean(conn?.connected) &&
+    (Boolean(conn?.readiness?.pendingCustomerSelection) || conn?.status === 'PENDING_ACCOUNT');
+  const statusKey = (
+    needsAccount ? 'PENDING_ACCOUNT' : (conn?.status ?? 'DISCONNECTED')
+  ) as keyof typeof CONNECTION_STATUS_LABEL;
+  const statusLabel =
+    CONNECTION_STATUS_LABEL[statusKey] ?? (conn?.connected ? 'Đã kết nối' : 'Chưa kết nối');
+  const tone =
+    conn?.connected && !needsAccount
+      ? 'bg-emerald-100 text-emerald-800'
+      : statusKey === 'PENDING_ACCOUNT'
+        ? 'bg-amber-100 text-amber-900'
+        : 'bg-slate-100 text-slate-700';
+
+  const lastSync = conn?.lastSyncAt
+    ? new Date(conn.lastSyncAt).toLocaleString('vi-VN')
+    : 'Chưa đồng bộ';
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <span className="text-emerald-600 font-bold">G</span> Google Ads
+        </CardTitle>
+        <span className={cn('inline-flex w-fit rounded px-2 py-0.5 text-xs', tone)}>
+          {statusLabel}
+        </span>
+        <CardDescription className="pt-1">
+          Kết nối Google → Chọn tài khoản → Đồng bộ dữ liệu → Hoàn tất
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {conn?.accountName && (
+          <p className="text-sm">
+            <span className="text-muted-foreground">Tài khoản:</span> {conn.accountName}
+          </p>
+        )}
+        <p className="text-xs text-muted-foreground">Lần đồng bộ gần nhất: {lastSync}</p>
+        {needsAccount && (
+          <p className="text-xs text-amber-800">
+            Đã OAuth nhưng chưa chọn customer — bấm «Chọn tài khoản» trước khi đồng bộ.
+          </p>
+        )}
+        {conn?.readiness?.stale && conn.connected && !needsAccount && (
+          <p className="text-xs text-amber-700">Dữ liệu có thể đã cũ — nên đồng bộ lại.</p>
+        )}
+        {!conn?.connected ? (
+          <Button size="sm" className="w-full" onClick={onConnect}>
+            Kết nối Google Ads
+          </Button>
+        ) : needsAccount ? (
+          <>
+            <Button size="sm" className="w-full" onClick={onSelectAccount}>
+              Chọn tài khoản
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full"
+              onClick={onSync}
+              disabled={syncing}
+            >
+              <RefreshCw className={cn('mr-2 h-4 w-4', syncing && 'animate-spin')} />
+              Đồng bộ ngay
+            </Button>
+            <Button size="sm" variant="outline" className="w-full" onClick={onDisconnect}>
+              <Unplug className="mr-2 h-4 w-4" /> Ngắt kết nối
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              className="w-full"
+              onClick={onSync}
+              disabled={syncing}
+            >
+              <RefreshCw className={cn('mr-2 h-4 w-4', syncing && 'animate-spin')} />
+              {syncing ? 'Đang xếp hàng…' : 'Đồng bộ ngay'}
+            </Button>
+            <div className="flex items-center justify-between gap-2 text-sm">
+              <Label htmlFor="google-auto-mode">Auto Mode</Label>
+              <input
+                id="google-auto-mode"
+                type="checkbox"
+                className="h-4 w-4"
+                checked={autoModeEnabled}
+                onChange={(e) => onToggleAutoMode(e.target.checked)}
+              />
+            </div>
+            <Button size="sm" variant="outline" className="w-full" onClick={onDisconnect}>
+              <Unplug className="mr-2 h-4 w-4" /> Ngắt kết nối
+            </Button>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -681,7 +973,11 @@ function ConnectionCard({
 }: {
   title: string;
   icon: React.ReactNode;
-  conn?: { status: keyof typeof CONNECTION_STATUS_LABEL; accountName: string | null; connected: boolean };
+  conn?: {
+    status: keyof typeof CONNECTION_STATUS_LABEL;
+    accountName: string | null;
+    connected: boolean;
+  };
   onConnect: () => void;
   onDisconnect: () => void;
 }) {
@@ -706,9 +1002,7 @@ function ConnectionCard({
         </span>
       </CardHeader>
       <CardContent className="space-y-2">
-        {conn?.accountName && (
-          <p className="text-sm text-muted-foreground">{conn.accountName}</p>
-        )}
+        {conn?.accountName && <p className="text-sm text-muted-foreground">{conn.accountName}</p>}
         {!conn?.connected ? (
           <Button size="sm" className="w-full" onClick={onConnect}>
             Kết nối

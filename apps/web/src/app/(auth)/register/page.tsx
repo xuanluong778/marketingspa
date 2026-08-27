@@ -16,8 +16,10 @@ import {
 import { GoogleSignInButton } from '@/components/auth/google-sign-in-button';
 import { OtpVerifyForm } from '@/components/auth/otp-verify-form';
 import { BrandLogo } from '@/components/brand/brand-logo';
+import { useT } from '@/i18n/i18n-provider';
 
 export default function RegisterPage() {
+  const t = useT();
   const router = useRouter();
   const sendOtp = useSendRegistrationOtp();
   const resendOtp = useResendRegistrationOtp();
@@ -66,11 +68,11 @@ export default function RegisterPage() {
         <div className="flex justify-center mb-2">
           <BrandLogo href={null} size={56} showWordmark={false} priority />
         </div>
-        <CardTitle>{step === 'otp' ? 'Xác minh email' : 'Đăng ký spa mới'}</CardTitle>
+        <CardTitle>
+          {step === 'otp' ? t('auth.verifyEmailTitle') : t('auth.registerSpa')}
+        </CardTitle>
         <CardDescription>
-          {step === 'otp'
-            ? 'Nhập mã OTP 6 số gửi về Gmail để hoàn tất đăng ký'
-            : 'Tạo tài khoản — xác minh OTP qua email trước khi kích hoạt'}
+          {step === 'otp' ? t('auth.verifyEmailDescription') : t('auth.registerFormDescription')}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -78,7 +80,7 @@ export default function RegisterPage() {
           <>
             <GoogleSignInButton
               disabled={formPending}
-              label="Tiếp tục với Google"
+              label={t('auth.continueGoogle')}
               onCredential={(idToken) => {
                 googleLogin.mutate(
                   { idToken },
@@ -91,12 +93,12 @@ export default function RegisterPage() {
                 <span className="w-full border-t border-border" />
               </div>
               <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-card px-2 text-muted-foreground">hoặc email</span>
+                <span className="bg-card px-2 text-muted-foreground">{t('auth.orEmail')}</span>
               </div>
             </div>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="org">Tên spa</Label>
+                <Label htmlFor="org">{t('auth.spaName')}</Label>
                 <Input
                   id="org"
                   value={form.organizationName}
@@ -105,7 +107,7 @@ export default function RegisterPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="name">Họ tên</Label>
+                <Label htmlFor="name">{t('auth.name')}</Label>
                 <Input
                   id="name"
                   value={form.name}
@@ -114,7 +116,7 @@ export default function RegisterPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email">{t('auth.email')}</Label>
                 <Input
                   id="email"
                   type="email"
@@ -124,7 +126,7 @@ export default function RegisterPage() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password">Mật khẩu (tối thiểu 8 ký tự)</Label>
+                <Label htmlFor="password">{t('auth.passwordHint')}</Label>
                 <Input
                   id="password"
                   type="password"
@@ -136,7 +138,7 @@ export default function RegisterPage() {
               </div>
               {formError && <p className="text-sm text-destructive">{formError}</p>}
               <Button type="submit" className="w-full" disabled={formPending}>
-                {sendOtp.isPending ? 'Đang gửi OTP...' : 'Đăng ký'}
+                {sendOtp.isPending ? t('auth.sendingOtp') : t('auth.register')}
               </Button>
             </form>
           </>
@@ -176,9 +178,9 @@ export default function RegisterPage() {
           )
         )}
         <p className="mt-4 text-center text-sm text-muted-foreground">
-          Đã có tài khoản?{' '}
+          {t('auth.hasAccount')}{' '}
           <Link href="/login" className="text-primary hover:underline">
-            Đăng nhập
+            {t('auth.login')}
           </Link>
         </p>
       </CardContent>

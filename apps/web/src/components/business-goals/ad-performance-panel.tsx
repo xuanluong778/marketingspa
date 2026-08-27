@@ -46,6 +46,7 @@ import type { AdCampaignRow, AdPerformanceFormState } from '@/types/ad-performan
 import type { FacebookSyncedCampaign } from '@/types/facebook-ads';
 import { facebookCampaignsToFormRows } from '@/lib/facebook-ads-to-form';
 import { useCurrentUser } from '@/hooks/use-auth';
+import { useT } from '@/i18n/i18n-provider';
 
 const INPUT_CELL =
   'h-8 bg-amber-50 border-amber-200 text-slate-900 text-xs placeholder:text-slate-400 focus-visible:ring-amber-400 md:text-sm';
@@ -57,25 +58,27 @@ function formatCount(value: number): string {
 }
 
 function EmptyState({ onSample }: { onSample: () => void }) {
+  const t = useT();
   return (
     <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-14 text-center shadow-sm">
       <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-50">
         <BarChart3 className="h-7 w-7 text-violet-600" />
       </div>
-      <h3 className="text-lg font-semibold text-slate-900">Chưa có dữ liệu quảng cáo</h3>
+      <h3 className="text-lg font-semibold text-slate-900">{t('businessGoals.noAdData')}</h3>
       <p className="mx-auto mt-2 max-w-md text-sm text-slate-600">
         Thêm chiến dịch và nhập số liệu kinh doanh — hệ thống tự tính ROAS, lãi/lỗ và insight chiến
         dịch.
       </p>
       <Button type="button" className="mt-6" onClick={onSample}>
         <Sparkles className="mr-2 h-4 w-4" />
-        Dùng dữ liệu mẫu
+        {t('businessGoals.useSample')}
       </Button>
     </div>
   );
 }
 
 export function AdPerformancePanel() {
+  const t = useT();
   const { data: user } = useCurrentUser();
   const userId = user?.id;
 
@@ -171,7 +174,7 @@ export function AdPerformancePanel() {
       <div className="flex min-h-[320px] items-center justify-center rounded-2xl border border-slate-200 bg-white">
         <div className="flex items-center gap-3 text-slate-600">
           <Loader2 className="h-5 w-5 animate-spin" />
-          <span className="text-sm">Đang tải dữ liệu nháp…</span>
+          <span className="text-sm">{t('businessGoals.loadingDraft')}</span>
         </div>
       </div>
     );

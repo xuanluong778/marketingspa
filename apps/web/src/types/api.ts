@@ -20,6 +20,13 @@ export interface AuthUser {
   emailVerified?: boolean;
   organization: { id: string; name: string; slug: string };
   employee: { id: string; name: string } | null;
+  /** Server-driven feature flags (canary org allowlist for Trợ lý AI). */
+  features?: {
+    assistantEnabled?: boolean;
+    assistantCanaryMode?: boolean;
+  };
+  /** Preferred UI locale from `/auth/me`; sync via PATCH `/auth/locale`. */
+  uiLocale?: 'vi' | 'en' | null;
 }
 
 export interface AuthResponse {
@@ -58,6 +65,8 @@ export interface Lead {
   tags?: string[];
   serviceName?: string | null;
   isStale?: boolean;
+  score?: number;
+  qualification?: 'MQL' | 'SQL' | null;
   assignedTo?: { id: string; name: string } | null;
   leadSource?: { id: string; name: string } | null;
   branch?: { id: string; name: string } | null;
@@ -80,6 +89,9 @@ export interface Customer {
   phone: string | null;
   email: string | null;
   tags: string[];
+  source?: string | null;
+  firstSource?: string | null;
+  latestSource?: string | null;
   leadSource?: { name: string; id?: string } | null;
   branch?: { id: string; name: string } | null;
 }

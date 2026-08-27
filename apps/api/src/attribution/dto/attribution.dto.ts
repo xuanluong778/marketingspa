@@ -1,5 +1,6 @@
-import { IsBoolean, IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsEnum, IsIn, IsOptional, IsString } from 'class-validator';
 import { AdPlatform } from '@marketingspa/database';
+import type { FunnelTouchModel } from '@marketingspa/shared';
 
 export class AttributionDashboardQueryDto {
   @IsOptional()
@@ -35,6 +36,10 @@ export class AttributionDashboardQueryDto {
   @IsOptional()
   @IsString()
   utmSource?: string;
+
+  @IsOptional()
+  @IsIn(['first', 'last'])
+  touchModel?: FunnelTouchModel;
 }
 
 export class AttributionInputDto {

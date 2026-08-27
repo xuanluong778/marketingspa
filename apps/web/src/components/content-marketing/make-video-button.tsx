@@ -11,6 +11,7 @@ import {
   navigateToTeleprompter,
   type TeleprompterSourceType,
 } from '@/lib/teleprompter-bridge';
+import { useT } from '@/i18n/i18n-provider';
 
 export type MakeVideoButtonProps = {
   title?: string;
@@ -53,6 +54,7 @@ export function MakeVideoButton({
   disabled,
   label = 'Làm video',
 }: MakeVideoButtonProps) {
+  const t = useT();
   const router = useRouter();
   const [opening, setOpening] = useState(false);
 
@@ -71,9 +73,7 @@ export function MakeVideoButton({
       editedScript,
     });
     if (!handoff) {
-      window.alert(
-        'Chưa có nội dung để làm video. Hãy tạo hoặc dán bài viết / kịch bản trước.',
-      );
+      window.alert(t('content.noContentForVideo'));
       return;
     }
 

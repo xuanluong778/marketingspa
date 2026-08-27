@@ -1,8 +1,8 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
-import { Menu, ChevronRight, LogOut, User, Handshake, Shield } from 'lucide-react';
-import { getPageTitle } from '@/config/navigation';
+import { Menu, ChevronRight, LogOut, User, Handshake, Shield, Languages } from 'lucide-react';
+import { getPageTitleKey } from '@/config/navigation';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
@@ -13,12 +13,17 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useCurrentUser, useLogout } from '@/hooks/use-auth';
+import { useT } from '@/i18n/i18n-provider';
+import { MessagesHeaderIcon } from './messages-header-icon';
+import { HeaderCreditChip } from './header-credit-chip';
+import { HeaderSubscriptionChips } from './header-subscription-chips';
 
 interface TopbarProps {
   onMenuClick: () => void;
 }
 
 export function Topbar({ onMenuClick }: TopbarProps) {
+  const t = useT();
   const pathname = usePathname();
   const router = useRouter();
   const { data: user } = useCurrentUser();
@@ -33,26 +38,42 @@ export function Topbar({ onMenuClick }: TopbarProps) {
     .toUpperCase();
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 items-center gap-4 border-b border-white/10 bg-[#0A3D30] px-4 text-white">
-      <Button variant="ghost" size="icon" className="lg:hidden text-white hover:bg-white/10 hover:text-white" onClick={onMenuClick}>
+    <header className="sticky top-0 z-30 flex h-14 min-w-0 items-center gap-2 overflow-hidden border-b border-white/10 bg-[#0A3D30] px-2 text-white sm:gap-3 sm:px-4">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-11 w-11 shrink-0 text-white hover:bg-white/10 hover:text-white lg:hidden"
+        onClick={onMenuClick}
+      >
         <Menu className="h-5 w-5" />
       </Button>
 
-      <div className="flex items-center gap-1 text-sm text-white/70 min-w-0">
-        <span className="hidden sm:inline">MarketingSpa</span>
-        <ChevronRight className="h-4 w-4 hidden sm:inline shrink-0" />
-        <span className="font-medium text-[hsl(var(--heading))] truncate">{getPageTitle(pathname)}</span>
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 text-sm text-white/70">
+        <span className="hidden shrink-0 sm:inline">{t('common.brandName')}</span>
+        <ChevronRight className="hidden h-4 w-4 shrink-0 sm:inline" />
+        <span className="truncate font-medium text-[hsl(var(--heading))]">
+          {t(getPageTitleKey(pathname))}
+        </span>
       </div>
 
-      <div className="ml-auto flex items-center gap-2">
+      {/* 1 icon tin nhắn (realtime Socket) — góc phải header, trước avatar */}
+      <div className="ml-auto flex min-w-0 shrink-0 items-center gap-1.5 sm:gap-2">
+        <div className="hidden min-w-0 items-center gap-2 md:flex">
+          <HeaderSubscriptionChips />
+        </div>
+        <HeaderCreditChip />
+        <MessagesHeaderIcon tone="dark" />
         {user?.organization && (
-          <span className="hidden md:inline text-xs text-white/70 truncate max-w-[160px]">
+          <span className="hidden max-w-[160px] truncate text-xs text-white/70 md:inline">
             {user.organization.name}
           </span>
         )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="relative h-9 w-9 rounded-full text-white hover:bg-white/10 hover:text-white">
+            <Button
+              variant="ghost"
+              className="relative h-11 w-11 rounded-full text-white hover:bg-white/10 hover:text-white"
+            >
               <Avatar className="h-9 w-9">
                 <AvatarFallback className="bg-primary text-primary-foreground text-xs">
                   {initials ?? 'U'}
@@ -68,17 +89,21 @@ export function Topbar({ onMenuClick }: TopbarProps) {
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={() => router.push('/affiliate')}>
               <Handshake className="mr-2 h-4 w-4" />
-              Affiliate
+              {t('nav.affiliate')}
             </DropdownMenuItem>
             {isSuperAdmin && (
               <DropdownMenuItem onClick={() => router.push('/admin')}>
                 <Shield className="mr-2 h-4 w-4" />
-                Quản trị viên
+                {t('nav.admin')}
               </DropdownMenuItem>
             )}
+            <DropdownMenuItem onClick={() => router.push('/settings?tab=language')}>
+              <Languages className="mr-2 h-4 w-4" />
+              {t('settings.tabs.language')}
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => router.push('/settings')}>
               <User className="mr-2 h-4 w-4" />
-              Cài đặt
+              {t('nav.settings')}
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => {
@@ -86,7 +111,7 @@ export function Topbar({ onMenuClick }: TopbarProps) {
               }}
             >
               <LogOut className="mr-2 h-4 w-4" />
-              Đăng xuất
+              {t('auth.logout')}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

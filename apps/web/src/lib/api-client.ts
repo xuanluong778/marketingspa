@@ -23,6 +23,9 @@ export class ApiError extends Error {
     public errors?: string[],
     public code?: string,
     public redirectTo?: string,
+    public guidance?: string,
+    public requestId?: string,
+    public googleAdsErrorCode?: string,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -30,14 +33,32 @@ export class ApiError extends Error {
 }
 
 function throwApiError(res: Response, body: Record<string, unknown>) {
+  const rawMsg = body.message;
   const message =
-    typeof body.message === 'string' ? body.message : res.statusText || 'API error';
+    typeof rawMsg === 'string'
+      ? rawMsg
+      : Array.isArray(rawMsg)
+        ? rawMsg.map(String).join('; ')
+        : res.statusText || 'API error';
+  const guidance = typeof body.guidance === 'string' ? body.guidance : undefined;
+  const requestId = typeof body.requestId === 'string' ? body.requestId : undefined;
+  const googleAdsErrorCode =
+    typeof body.googleAdsErrorCode === 'string'
+      ? body.googleAdsErrorCode
+      : typeof body.code === 'string'
+        ? body.code
+        : undefined;
+  const display =
+    guidance && !message.includes(guidance) ? `${message}\n\nCách xử lý: ${guidance}` : message;
   const err = new ApiError(
-    message,
+    display,
     res.status,
     Array.isArray(body.errors) ? (body.errors as string[]) : undefined,
     typeof body.code === 'string' ? body.code : undefined,
     typeof body.redirectTo === 'string' ? body.redirectTo : undefined,
+    guidance,
+    requestId,
+    googleAdsErrorCode,
   );
   // Chặn gọi API trực tiếp khi chưa thanh toán / hết trial → về trang giá
   if (
@@ -45,33 +66,80 @@ function throwApiError(res: Response, body: Record<string, unknown>) {
     res.status === 403 &&
     (body.code === 'SUBSCRIPTION_REQUIRED' || body.code === 'TRIAL_EXPIRED')
   ) {
-    const dest =
-      typeof body.redirectTo === 'string' ? body.redirectTo : '/pricing';
+    const dest = typeof body.redirectTo === 'string' ? body.redirectTo : '/pricing';
     if (!window.location.pathname.startsWith('/pricing')) {
-      const reason =
-        body.code === 'TRIAL_EXPIRED' ? 'trial_expired' : 'subscription_required';
+      const reason = body.code === 'TRIAL_EXPIRED' ? 'trial_expired' : 'subscription_required';
       window.location.replace(`${dest}?reason=${reason}`);
     }
   }
   throw err;
 }
 
-async function refreshAccessToken(): Promise<string | null> {
-  const API_URL = resolveApiUrl();
-  const res = await fetch(`${API_URL}/api/v1/auth/refresh`, {
-    method: 'POST',
-    credentials: 'include',
-    headers: { 'Content-Type': 'application/json' },
-  });
+/** Single-flight refresh — tránh race nhiều request 401 song song làm hỏng refresh token */
+let refreshInFlight: Promise<string | null> | null = null;
+/** One hard login redirect per page load */
+let loginRedirectScheduled = false;
 
-  if (!res.ok) {
-    authStorage.clear();
-    return null;
+/** JWT exp trong ≤45s hoặc malformed → refresh trước (tránh 401 ồn console trên /auth/me). */
+function accessTokenNeedsRefresh(token: string | null): boolean {
+  if (!token) return true;
+  try {
+    const parts = token.split('.');
+    if (parts.length < 2) return true;
+    const b64 = parts[1]!.replace(/-/g, '+').replace(/_/g, '/');
+    const json = atob(b64.padEnd(b64.length + ((4 - (b64.length % 4)) % 4), '='));
+    const payload = JSON.parse(json) as { exp?: number };
+    if (typeof payload.exp !== 'number') return true;
+    return payload.exp * 1000 <= Date.now() + 45_000;
+  } catch {
+    return true;
   }
+}
 
-  const data = (await res.json()) as { accessToken: string };
-  authStorage.setAccessToken(data.accessToken);
-  return data.accessToken;
+async function refreshAccessToken(): Promise<string | null> {
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = (async () => {
+    try {
+      const API_URL = resolveApiUrl();
+      const res = await fetch(`${API_URL}/api/v1/auth/refresh`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (!res.ok) {
+        // Only clear session when refresh cookie is definitely rejected
+        if (res.status === 401 || res.status === 403) {
+          authStorage.clear();
+        }
+        return null;
+      }
+
+      const data = (await res.json()) as { accessToken?: string; data?: { accessToken?: string } };
+      const token = data.accessToken || data.data?.accessToken || null;
+      if (!token) {
+        authStorage.clear();
+        return null;
+      }
+      authStorage.setAccessToken(token);
+      return token;
+    } catch {
+      // Network blip — keep access token; do not clear session
+      return null;
+    } finally {
+      refreshInFlight = null;
+    }
+  })();
+  return refreshInFlight;
+}
+
+function scheduleLoginRedirectOnce() {
+  if (typeof window === 'undefined') return;
+  if (loginRedirectScheduled) return;
+  if (window.location.pathname.startsWith('/login')) return;
+  loginRedirectScheduled = true;
+  const next = encodeURIComponent(window.location.pathname + window.location.search);
+  window.location.replace(`/login?next=${next}`);
 }
 
 function withCredentials(init: RequestInit): RequestInit {
@@ -88,7 +156,16 @@ export async function apiClient<T>(
     ...((init.headers as Record<string, string>) ?? {}),
   };
 
-  const token = auth ? authStorage.getAccessToken() : null;
+  let token = auth ? authStorage.getAccessToken() : null;
+  // Proactive refresh so /auth/me rarely logs a 401 in the console
+  if (auth && accessTokenNeedsRefresh(token)) {
+    const refreshed = await refreshAccessToken();
+    if (refreshed) token = refreshed;
+    else if (!token) {
+      scheduleLoginRedirectOnce();
+      throw new ApiError('Unauthorized', 401);
+    }
+  }
   if (auth && token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
@@ -115,9 +192,8 @@ export async function apiClient<T>(
     if (newToken) {
       headers['Authorization'] = `Bearer ${newToken}`;
       res = await fetch(`${API_URL}/api/v1${path}`, withCredentials({ ...init, headers }));
-    } else if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
-      const next = encodeURIComponent(window.location.pathname + window.location.search);
-      window.location.replace(`/login?next=${next}`);
+    } else {
+      scheduleLoginRedirectOnce();
       throw new ApiError('Unauthorized', 401);
     }
   }
@@ -140,21 +216,27 @@ export async function apiUpload<T>(path: string, formData: FormData): Promise<T>
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const API_URL = resolveApiUrl();
-  let res = await fetch(`${API_URL}/api/v1${path}`, withCredentials({
-    method: 'POST',
-    headers,
-    body: formData,
-  }));
+  let res = await fetch(
+    `${API_URL}/api/v1${path}`,
+    withCredentials({
+      method: 'POST',
+      headers,
+      body: formData,
+    }),
+  );
 
   if (res.status === 401) {
     const newToken = await refreshAccessToken();
     if (newToken) {
       headers.Authorization = `Bearer ${newToken}`;
-      res = await fetch(`${API_URL}/api/v1${path}`, withCredentials({
-        method: 'POST',
-        headers,
-        body: formData,
-      }));
+      res = await fetch(
+        `${API_URL}/api/v1${path}`,
+        withCredentials({
+          method: 'POST',
+          headers,
+          body: formData,
+        }),
+      );
     }
   }
 
@@ -191,8 +273,15 @@ export async function apiDownload(path: string): Promise<{ blob: Blob; filename:
   }
 
   const disposition = res.headers.get('Content-Disposition') ?? '';
-  const match = /filename="?([^"]+)"?/i.exec(disposition);
-  const filename = match?.[1] ?? 'download.bin';
+  const star = /filename\*=(?:UTF-8''|utf-8'')([^;]+)/i.exec(disposition);
+  const plain = /filename="?([^";]+)"?/i.exec(disposition);
+  const rawName = star?.[1]?.trim() || plain?.[1]?.trim() || 'download.bin';
+  let filename = rawName;
+  try {
+    filename = decodeURIComponent(rawName);
+  } catch {
+    filename = rawName;
+  }
   const blob = await res.blob();
   return { blob, filename };
 }

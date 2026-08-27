@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { LoadingState, EmptyState, ErrorState } from '@/components/shared/page-state';
 import { CONNECTION_STATUS_LABEL, type AdConnectionItem } from '@/types/ai-ads-manager';
 import { cn } from '@/lib/utils';
+import { useT } from '@/i18n/i18n-provider';
 
 function ConnectionCard({
   title,
@@ -140,7 +141,8 @@ export function AdsConnectionsTab({
     missing: string[];
   } | null;
 }) {
-  if (isLoading) return <LoadingState message="Đang tải kết nối..." />;
+  const t = useT();
+  if (isLoading) return <LoadingState message={t('aiAds.loadingConnections')} />;
   if (isError) return <ErrorState onRetry={onRetry} />;
 
   const map = Object.fromEntries(items.map((c) => [c.provider, c]));
@@ -150,7 +152,7 @@ export function AdsConnectionsTab({
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <EmptyState
           title="Chưa tải được danh sách kết nối"
-          description="Thử lại hoặc kiểm tra quyền ads.read"
+          description={t('aiAds.retryOrCheckAds')}
           className="col-span-full"
         />
       </div>

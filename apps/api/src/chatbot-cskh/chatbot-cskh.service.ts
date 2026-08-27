@@ -11,6 +11,8 @@ import {
   AutoPostFacebookConnectionStatus,
   ChatbotBotStatus,
   ChatbotSourceType,
+  MessageChannel,
+  MessagingProviderKind,
   Prisma,
 } from '@marketingspa/database';
 import { randomBytes } from 'crypto';
@@ -22,6 +24,7 @@ import {
   CreateChatbotBotDto,
   CreateKnowledgeSourceDto,
   CrawlKnowledgeUrlDto,
+  ReplyInboxMessageDto,
   UpdateChatbotBotDto,
   UpdateSettingsDto,
 } from './dto/chatbot-cskh.dto';
@@ -41,7 +44,10 @@ import {
   CrawlValidationError,
   fetchAndExtractUrl,
 } from './utils/website-crawl.util';
+import { sendZaloOaHttp, WS_EVENTS } from '@marketingspa/shared';
+import { pickBetterZaloDisplayName } from '@marketingspa/shared';
 import { ChannelConnectionsService } from '../messaging/channel-connections.service';
+import { EventsGateway } from '../events/events.gateway';
 
 const MAX_BOTS = 10;
 const MAX_SOURCES = 50;
@@ -57,6 +63,7 @@ export class ChatbotCskhService {
     @Inject(forwardRef(() => ChatbotFacebookWebhookService))
     private readonly facebookWebhook: ChatbotFacebookWebhookService,
     private readonly channelConnections: ChannelConnectionsService,
+    private readonly events: EventsGateway,
   ) {}
 
   private appBaseUrl(): string {
@@ -437,6 +444,91 @@ export class ChatbotCskhService {
     });
   }
 
+  async attachZaloOaToBot(
+    organizationId: string,
+    dto: { botId: string; connectionId?: string; accountRef?: string },
+  ) {
+    const bot = await this.findBotOrThrow(organizationId, dto.botId);
+    const connection = await this.prisma.messagingChannelConnection.findFirst({
+      where: {
+        organizationId,
+        channel: MessageChannel.ZALO,
+        providerKind: MessagingProviderKind.ZALO_OA,
+        ...(dto.connectionId
+          ? { id: dto.connectionId }
+          : dto.accountRef
+            ? { accountRef: dto.accountRef }
+            : {}),
+        status: 'ACTIVE',
+        isPaused: false,
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+    if (!connection) {
+      throw new NotFoundException(
+        'Không tìm thấy Zalo OA ACTIVE trong tổ chức — kết nối OA trước tại Zalo Marketing / Cài đặt',
+      );
+    }
+
+    const prevMeta = (connection.metadata as Record<string, unknown> | null) || {};
+    await this.prisma.messagingChannelConnection.update({
+      where: { id: connection.id },
+      data: {
+        metadata: {
+          ...prevMeta,
+          botId: bot.id,
+        } as Prisma.InputJsonValue,
+      },
+    });
+
+    const existingChannel = await this.prisma.chatbotChannel.findFirst({
+      where: {
+        organizationId,
+        botId: bot.id,
+        channelType: 'ZALO',
+      },
+    });
+    const channelConfig = {
+      accountRef: connection.accountRef,
+      connectionId: connection.id,
+      oaName: connection.displayName || connection.accountRef,
+    };
+    let channel = existingChannel;
+    if (existingChannel) {
+      channel = await this.prisma.chatbotChannel.update({
+        where: { id: existingChannel.id },
+        data: {
+          name: connection.displayName || 'Zalo OA',
+          status: 'CONNECTED',
+          config: channelConfig as Prisma.InputJsonValue,
+        },
+      });
+    } else {
+      channel = await this.prisma.chatbotChannel.create({
+        data: {
+          organizationId,
+          botId: bot.id,
+          name: connection.displayName || 'Zalo OA',
+          channelType: 'ZALO',
+          status: 'CONNECTED',
+          config: channelConfig as Prisma.InputJsonValue,
+        },
+      });
+    }
+
+    return {
+      success: true,
+      bot: { id: bot.id, botName: bot.botName },
+      oa: {
+        connectionId: connection.id,
+        accountRef: connection.accountRef,
+        oaName: connection.displayName,
+        status: connection.status,
+      },
+      channel: { id: channel.id, status: channel.status },
+    };
+  }
+
   async deleteChannel(organizationId: string, id: string) {
     const row = await this.prisma.chatbotChannel.findFirst({
       where: { id, organizationId },
@@ -446,47 +538,414 @@ export class ChatbotCskhService {
     return { success: true };
   }
 
-  async listConversations(organizationId: string, limit = 50) {
-    // Backfill nhẹ tên/avatar khi còn đủ pageId + PSID
-    await this.backfillMessengerProfiles(organizationId, 8).catch((e) =>
-      this.logger.warn(`backfillMessengerProfiles: ${e instanceof Error ? e.message : String(e)}`),
+  private isInboundMessage(m: {
+    role?: string | null;
+    direction?: string | null;
+    senderType?: string | null;
+  }): boolean {
+    if (m.direction === 'INBOUND') return true;
+    if (m.direction === 'OUTBOUND') return false;
+    if (m.senderType === 'CUSTOMER') return true;
+    return m.role === 'user';
+  }
+
+  /** Unread = tin inbound sau staffReadAt (PostgreSQL là source of truth). */
+  private unreadInboundMessages<
+    T extends {
+      role?: string | null;
+      direction?: string | null;
+      senderType?: string | null;
+      createdAt: Date;
+    },
+  >(messages: T[] | undefined, staffReadAt: Date | null | undefined): T[] {
+    const cutoff = staffReadAt?.getTime() ?? 0;
+    return (messages || []).filter(
+      (m) => this.isInboundMessage(m) && m.createdAt.getTime() > cutoff,
     );
+  }
+
+  /** Throttle Meta profile/picture maintenance so inbox list is never blocked. */
+  private inboxMaintenanceAt = new Map<string, number>();
+  private static readonly INBOX_MAINTENANCE_TTL_MS = 90_000;
+
+  private scheduleInboxProfileMaintenance(organizationId: string) {
+    const now = Date.now();
+    const last = this.inboxMaintenanceAt.get(organizationId) ?? 0;
+    if (now - last < ChatbotCskhService.INBOX_MAINTENANCE_TTL_MS) return;
+    this.inboxMaintenanceAt.set(organizationId, now);
+    void this.backfillMessengerProfiles(organizationId, 6).catch((e) =>
+      this.logger.warn(
+        `backfillMessengerProfiles: ${e instanceof Error ? e.message : String(e)}`,
+      ),
+    );
+  }
+
+  private encodeInboxCursor(row: { updatedAt: Date; id: string }) {
+    return Buffer.from(`${row.updatedAt.toISOString()}|${row.id}`, 'utf8').toString(
+      'base64url',
+    );
+  }
+
+  private decodeInboxCursor(
+    cursor: string,
+  ): { updatedAt: Date; id: string } | null {
+    try {
+      const raw = Buffer.from(cursor, 'base64url').toString('utf8');
+      const sep = raw.lastIndexOf('|');
+      if (sep <= 0) return null;
+      const iso = raw.slice(0, sep);
+      const id = raw.slice(sep + 1);
+      const updatedAt = new Date(iso);
+      if (!id || Number.isNaN(updatedAt.getTime())) return null;
+      return { updatedAt, id };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Danh sách hội thoại inbox — chỉ last message + unread count (SQL).
+   * Không await Graph API; pagination cursor theo updatedAt+id.
+   */
+  async listConversations(
+    organizationId: string,
+    limit = 25,
+    cursor?: string | null,
+    opts?: {
+      maxLimit?: number;
+      /** Project/Bot — bắt buộc để không trộn hộp thư */
+      botId?: string | null;
+      /** all | facebook | website | zalo */
+      channel?: string | null;
+      /** pageId (Fanpage), domain (Website), hoặc OA accountRef (Zalo) */
+      channelId?: string | null;
+    },
+  ) {
+    this.scheduleInboxProfileMaintenance(organizationId);
+
+    const maxLimit = opts?.maxLimit ?? 200;
+    const take = Math.min(Math.max(Number(limit) || 25, 1), maxLimit);
+    const decoded = cursor ? this.decodeInboxCursor(cursor) : null;
+    const botId = opts?.botId?.trim() || null;
+    const channel = this.normalizeInboxChannel(opts?.channel);
+    const channelId = opts?.channelId?.trim() || null;
+
+    // Không chọn Project → không trả hộp thư chung (tránh trộn)
+    if (!botId) {
+      return { items: [], nextCursor: null, hasMore: false, requiresBotId: true };
+    }
+
+    const scopeWhere = {
+      organizationId,
+      botId,
+      ...(channel ? { channel } : {}),
+      ...(channelId
+        ? channel === 'website' || (!channel && channelId.includes('.'))
+          ? {
+              OR: [
+                { channelRef: channelId },
+                { channelRef: { endsWith: channelId } },
+                { channelRef: `www.${channelId}` },
+              ],
+            }
+          : { channelRef: channelId }
+        : {}),
+    };
 
     const rows = await this.prisma.chatbotConversation.findMany({
-      where: { organizationId },
+      where: {
+        ...scopeWhere,
+        ...(decoded
+          ? {
+              OR: [
+                { updatedAt: { lt: decoded.updatedAt } },
+                {
+                  AND: [{ updatedAt: decoded.updatedAt }, { id: { lt: decoded.id } }],
+                },
+              ],
+            }
+          : {}),
+      },
       include: {
         bot: { select: { id: true, botName: true } },
         messages: { orderBy: { createdAt: 'desc' }, take: 1 },
-        _count: { select: { messages: true } },
       },
-      orderBy: { updatedAt: 'desc' },
-      take: Math.min(limit, 200),
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      take: take + 1,
     });
+
+    const hasMore = rows.length > take;
+    const pageRows = hasMore ? rows.slice(0, take) : rows;
+
+    const unreadCounts = await this.countUnreadByConversationIds(
+      organizationId,
+      pageRows.map((r) => r.id),
+    );
 
     const pageIds = [
       ...new Set(
-        rows
+        pageRows
           .filter((r) => r.channel === 'facebook' && r.channelRef)
           .map((r) => r.channelRef as string),
       ),
     ];
     const pages = pageIds.length
       ? await this.prisma.chatbotFacebookPage.findMany({
-          where: { organizationId, pageId: { in: pageIds } },
+          where: { organizationId, botId, pageId: { in: pageIds } },
           select: { pageId: true, pageName: true, pagePictureUrl: true },
         })
       : [];
     const pageMap = new Map(pages.map((p) => [p.pageId, p]));
 
-    return rows.map((c) => this.serializeConversation(c, pageMap.get(c.channelRef || '')));
+    const oaRefs = [
+      ...new Set(
+        pageRows
+          .filter((r) => r.channel === 'zalo' && r.channelRef)
+          .map((r) => r.channelRef as string),
+      ),
+    ];
+    const oaRows = oaRefs.length
+      ? await this.prisma.messagingChannelConnection.findMany({
+          where: {
+            organizationId,
+            channel: MessageChannel.ZALO,
+            providerKind: MessagingProviderKind.ZALO_OA,
+            accountRef: { in: oaRefs },
+          },
+          select: { accountRef: true, displayName: true, metadata: true },
+        })
+      : [];
+    const oaMap = new Map(
+      oaRows.map((o) => [
+        o.accountRef,
+        {
+          accountRef: o.accountRef,
+          oaName: o.displayName,
+          avatarUrl:
+            typeof (o.metadata as { avatar?: string } | null)?.avatar === 'string'
+              ? String((o.metadata as { avatar?: string }).avatar).slice(0, 2000)
+              : null,
+        },
+      ]),
+    );
+
+    const items = pageRows.map((c) =>
+      this.serializeConversation(c, pageMap.get(c.channelRef || ''), false, {
+        unreadMessageCount: unreadCounts.get(c.id) ?? 0,
+        zaloOa: oaMap.get(c.channelRef || '') || null,
+      }),
+    );
+    const last = pageRows[pageRows.length - 1];
+    return {
+      items,
+      nextCursor: hasMore && last ? this.encodeInboxCursor(last) : null,
+      hasMore,
+      requiresBotId: false,
+    };
   }
 
+  /**
+   * Badge header + dropdown — scope theo Project/Bot (+ channel).
+   * Trả thêm unreadByBot để UI badge từng Project.
+   */
+  async getUnreadInboxSummary(
+    organizationId: string,
+    limit = 15,
+    opts?: { botId?: string | null; channel?: string | null; channelId?: string | null },
+  ) {
+    const take = Math.min(Math.max(limit, 1), 40);
+    const botId = opts?.botId?.trim() || null;
+    const channel = this.normalizeInboxChannel(opts?.channel);
+    const channelId = opts?.channelId?.trim() || null;
+
+    const scopeWhere = {
+      organizationId,
+      lastUserMessageAt: { not: null } as const,
+      ...(botId ? { botId } : {}),
+      ...(channel ? { channel } : {}),
+      ...(channelId ? { channelRef: channelId } : {}),
+    };
+
+    const rows = await this.prisma.chatbotConversation.findMany({
+      where: scopeWhere,
+      select: {
+        id: true,
+        botId: true,
+        visitorName: true,
+        visitorAvatarUrl: true,
+        channel: true,
+        channelRef: true,
+        externalUserId: true,
+        lastUserMessageAt: true,
+      },
+      orderBy: { lastUserMessageAt: 'desc' },
+      take: botId ? 150 : 300,
+    });
+
+    const unreadCounts = await this.countUnreadByConversationIds(
+      organizationId,
+      rows.map((r) => r.id),
+    );
+    const unreadRows = rows.filter((r) => (unreadCounts.get(r.id) ?? 0) > 0);
+
+    const unreadByBot: Record<string, number> = {};
+    const unreadByChannel: Record<string, number> = {};
+    let unreadCount = 0;
+    for (const r of unreadRows) {
+      const n = unreadCounts.get(r.id) ?? 0;
+      unreadCount += n;
+      unreadByBot[r.botId] = (unreadByBot[r.botId] || 0) + n;
+      const chKey = `${r.botId}:${r.channel}:${r.channelRef || ''}`;
+      unreadByChannel[chKey] = (unreadByChannel[chKey] || 0) + n;
+    }
+
+    const top = unreadRows.slice(0, take);
+    const previewById = new Map<string, { message: string; createdAt: Date }>();
+    if (top.length) {
+      const topIds = top.map((r) => r.id);
+      const previews = await this.prisma.$queryRawUnsafe<
+        Array<{ conversation_id: string; message: string; created_at: Date }>
+      >(
+        `
+        SELECT DISTINCT ON (m.conversation_id)
+          m.conversation_id AS conversation_id,
+          m.message,
+          m.created_at
+        FROM chatbot_messages m
+        INNER JOIN chatbot_conversations c ON c.id = m.conversation_id
+        WHERE m.conversation_id = ANY($1::text[])
+          AND (
+            m.direction = 'INBOUND'
+            OR (m.direction IS NULL AND (m.sender_type = 'CUSTOMER' OR m.role = 'user'))
+          )
+          AND (c.staff_read_at IS NULL OR m.created_at > c.staff_read_at)
+        ORDER BY m.conversation_id, m.created_at DESC
+        `,
+        topIds,
+      );
+      for (const p of previews) {
+        previewById.set(p.conversation_id, {
+          message: p.message,
+          createdAt: p.created_at,
+        });
+      }
+    }
+
+    const pageIds = [
+      ...new Set(
+        top
+          .filter((r) => r.channel === 'facebook' && r.channelRef)
+          .map((r) => r.channelRef as string),
+      ),
+    ];
+    const pages = pageIds.length
+      ? await this.prisma.chatbotFacebookPage.findMany({
+          where: {
+            organizationId,
+            ...(botId ? { botId } : {}),
+            pageId: { in: pageIds },
+          },
+          select: { pageId: true, pageName: true, pagePictureUrl: true },
+        })
+      : [];
+    const pageMap = new Map(pages.map((p) => [p.pageId, p]));
+
+    const items = top.map((row) => {
+      const preview = previewById.get(row.id);
+      const page = pageMap.get(row.channelRef || '');
+      const name =
+        row.channel === 'zalo'
+          ? pickBetterZaloDisplayName(row.visitorName, null, row.externalUserId)
+          : row.visitorName && !/^Khách Messenger$/i.test(row.visitorName)
+            ? row.visitorName
+            : row.externalUserId
+              ? `PSID …${row.externalUserId.slice(-4)}`
+              : row.visitorName || 'Khách';
+      return {
+        conversationId: row.id,
+        botId: row.botId,
+        visitorName: name,
+        visitorAvatarUrl: row.visitorAvatarUrl || null,
+        preview: String(preview?.message || '').slice(0, 160),
+        channel: row.channel,
+        channelRef: row.channelRef,
+        pageName: page?.pageName || null,
+        pagePictureUrl: page?.pagePictureUrl || null,
+        lastMessageAt: (preview?.createdAt || row.lastUserMessageAt || new Date()).toISOString(),
+        unreadMessageCount: unreadCounts.get(row.id) ?? 0,
+        isUnread: true as const,
+      };
+    });
+
+    return {
+      unreadCount,
+      unreadConversationCount: unreadRows.length,
+      items,
+      unreadByBot,
+      unreadByChannel,
+      requiresBotId: !botId,
+    };
+  }
+
+  async markConversationRead(organizationId: string, conversationId: string) {
+    const conv = await this.prisma.chatbotConversation.findFirst({
+      where: { id: conversationId, organizationId },
+      select: { id: true, staffReadAt: true },
+    });
+    if (!conv) throw new NotFoundException('Không tìm thấy hội thoại');
+    const now = new Date();
+    await this.prisma.chatbotConversation.update({
+      where: { id: conv.id },
+      data: { staffReadAt: now },
+    });
+    return {
+      ok: true,
+      conversationId: conv.id,
+      staffReadAt: now.toISOString(),
+    };
+  }
+
+  /** SQL COUNT unread inbound — không load toàn bộ messages vào Node. */
+  private async countUnreadByConversationIds(
+    organizationId: string,
+    ids: string[],
+  ): Promise<Map<string, number>> {
+    const map = new Map<string, number>();
+    if (!ids.length) return map;
+    for (const id of ids) map.set(id, 0);
+
+    const rows = await this.prisma.$queryRawUnsafe<Array<{ id: string; cnt: number }>>(
+      `
+      SELECT c.id AS id, COUNT(m.id)::int AS cnt
+      FROM chatbot_conversations c
+      LEFT JOIN chatbot_messages m
+        ON m.conversation_id = c.id
+       AND (
+         m.direction = 'INBOUND'
+         OR (m.direction IS NULL AND (m.sender_type = 'CUSTOMER' OR m.role = 'user'))
+       )
+       AND (c.staff_read_at IS NULL OR m.created_at > c.staff_read_at)
+      WHERE c.organization_id = $1
+        AND c.id = ANY($2::text[])
+      GROUP BY c.id
+      `,
+      organizationId,
+      ids,
+    );
+    for (const row of rows) {
+      map.set(row.id, Number(row.cnt) || 0);
+    }
+    return map;
+  }
+
+  /** Chi tiết 1 hội thoại — chỉ fetch messages khi mở (limit gần nhất). */
   async getConversation(organizationId: string, id: string) {
+    const MESSAGE_TAKE = 200;
     const conv = await this.prisma.chatbotConversation.findFirst({
       where: { id, organizationId },
       include: {
         bot: { select: { id: true, botName: true } },
-        messages: { orderBy: { createdAt: 'asc' } },
+        messages: { orderBy: { createdAt: 'desc' }, take: MESSAGE_TAKE },
       },
     });
     if (!conv) throw new NotFoundException('Không tìm thấy hội thoại');
@@ -499,7 +958,50 @@ export class ChatbotCskhService {
           })
         : null;
 
-    return this.serializeConversation(conv, fanpage || undefined, true);
+    const zaloOa =
+      conv.channel === 'zalo' && conv.channelRef
+        ? await this.prisma.messagingChannelConnection.findFirst({
+            where: {
+              organizationId,
+              channel: MessageChannel.ZALO,
+              providerKind: MessagingProviderKind.ZALO_OA,
+              accountRef: conv.channelRef,
+            },
+            select: { accountRef: true, displayName: true, metadata: true },
+          })
+        : null;
+
+    const messagesAsc = [...conv.messages].reverse();
+    const unreadCounts = await this.countUnreadByConversationIds(organizationId, [conv.id]);
+
+    return this.serializeConversation(
+      { ...conv, messages: messagesAsc },
+      fanpage || undefined,
+      true,
+      {
+        unreadMessageCount: unreadCounts.get(conv.id) ?? 0,
+        zaloOa: zaloOa
+          ? {
+              accountRef: zaloOa.accountRef,
+              oaName: zaloOa.displayName,
+              avatarUrl:
+                typeof (zaloOa.metadata as { avatar?: string } | null)?.avatar === 'string'
+                  ? String((zaloOa.metadata as { avatar?: string }).avatar).slice(0, 2000)
+                  : null,
+            }
+          : null,
+      },
+    );
+  }
+
+  private normalizeInboxChannel(raw?: string | null): 'facebook' | 'website' | 'zalo' | null {
+    const channelRaw = (raw || '').trim().toLowerCase();
+    if (channelRaw === 'messenger' || channelRaw === 'facebook' || channelRaw === 'fanpage') {
+      return 'facebook';
+    }
+    if (channelRaw === 'website' || channelRaw === 'web') return 'website';
+    if (channelRaw === 'zalo' || channelRaw === 'zalo_oa' || channelRaw === 'oa') return 'zalo';
+    return null;
   }
 
   private serializeConversation(
@@ -519,6 +1021,7 @@ export class ChatbotCskhService {
       updatedAt: Date;
       createdAt: Date;
       lastUserMessageAt?: Date | null;
+      staffReadAt?: Date | null;
       bot?: { id: string; botName: string } | null;
       messages?: Array<{
         id: string;
@@ -535,14 +1038,23 @@ export class ChatbotCskhService {
     },
     fanpage?: { pageId: string; pageName: string; pagePictureUrl: string | null } | null,
     includeAllMessages = false,
+    extras?: {
+      unreadMessageCount?: number;
+      zaloOa?: { accountRef: string; oaName: string | null; avatarUrl?: string | null } | null;
+    },
   ) {
     const psid = conv.externalUserId || null;
-    const customerName =
-      conv.visitorName && !/^Khách Messenger$/i.test(conv.visitorName)
+    const isZalo = conv.channel === 'zalo';
+    const customerName = isZalo
+      ? pickBetterZaloDisplayName(conv.visitorName, null, psid)
+      : conv.visitorName && !/^Khách Messenger$/i.test(conv.visitorName)
         ? conv.visitorName
         : psid
           ? `PSID …${psid.slice(-4)}`
           : conv.visitorName;
+
+    const cleanVisitorAvatar = conv.visitorAvatarUrl ?? null;
+    const cleanPageAvatar = fanpage?.pagePictureUrl ?? extras?.zaloOa?.avatarUrl ?? null;
 
     const messages = (conv.messages || []).map((m) => {
       const direction =
@@ -570,6 +1082,10 @@ export class ChatbotCskhService {
       };
     });
 
+    const unreadMessageCount =
+      extras?.unreadMessageCount ??
+      this.unreadInboundMessages(conv.messages, conv.staffReadAt).length;
+
     return {
       id: conv.id,
       organizationId: conv.organizationId,
@@ -577,7 +1093,7 @@ export class ChatbotCskhService {
       sessionId: conv.sessionId,
       visitorName: customerName,
       visitorPhone: conv.visitorPhone,
-      visitorAvatarUrl: conv.visitorAvatarUrl ?? null,
+      visitorAvatarUrl: cleanVisitorAvatar ?? null,
       channel: conv.channel,
       externalUserId: psid,
       channelRef: conv.channelRef,
@@ -586,19 +1102,31 @@ export class ChatbotCskhService {
       updatedAt: conv.updatedAt,
       createdAt: conv.createdAt,
       lastUserMessageAt: conv.lastUserMessageAt ?? null,
+      staffReadAt: conv.staffReadAt?.toISOString() ?? null,
+      isUnread: unreadMessageCount > 0,
+      unreadMessageCount,
       bot: conv.bot ?? undefined,
       _count: conv._count,
       customer: {
         name: customerName,
-        avatarUrl: conv.visitorAvatarUrl ?? null,
+        avatarUrl: cleanVisitorAvatar ?? null,
         psid,
+        zaloUid: isZalo ? psid : null,
       },
       fanpage:
         conv.channel === 'facebook'
           ? {
               pageId: fanpage?.pageId || conv.channelRef,
               pageName: fanpage?.pageName || null,
-              avatarUrl: fanpage?.pagePictureUrl || null,
+              avatarUrl: cleanPageAvatar ?? null,
+            }
+          : null,
+      zaloOa:
+        isZalo
+          ? {
+              accountRef: extras?.zaloOa?.accountRef || conv.channelRef,
+              oaName: extras?.zaloOa?.oaName || null,
+              avatarUrl: extras?.zaloOa?.avatarUrl || cleanPageAvatar || null,
             }
           : null,
       messages: includeAllMessages || messages.length ? messages : messages,
@@ -745,6 +1273,425 @@ export class ChatbotCskhService {
     });
 
     return this.getConversation(organizationId, updated.id);
+  }
+
+  /**
+   * Nhân viên trả lời từ Hộp thư → đúng kênh (Zalo OA / Messenger / Website).
+   * Tenant-scoped; auto humanTakeover; không log token.
+   */
+  async replyInboxMessage(
+    organizationId: string,
+    conversationId: string,
+    dto: ReplyInboxMessageDto,
+  ) {
+    const text = String(dto.text || '').trim();
+    if (!text) throw new BadRequestException('Nội dung trả lời trống');
+
+    const conv = await this.prisma.chatbotConversation.findFirst({
+      where: { id: conversationId, organizationId },
+    });
+    if (!conv) throw new NotFoundException('Không tìm thấy hội thoại');
+
+    const channel = this.normalizeInboxChannel(conv.channel) || String(conv.channel || '').toLowerCase();
+    if (channel !== 'zalo' && channel !== 'facebook' && channel !== 'website') {
+      throw new BadRequestException(
+        `Kênh "${conv.channel}" chưa hỗ trợ trả lời từ Hộp thư`,
+      );
+    }
+
+    if (!conv.humanTakeover) {
+      await this.prisma.chatbotConversation.update({
+        where: { id: conv.id },
+        data: { humanTakeover: true, status: 'NEEDS_STAFF' },
+      });
+    }
+
+    const pending = await this.prisma.chatbotMessage.create({
+      data: {
+        conversationId: conv.id,
+        role: 'assistant',
+        message: text.slice(0, 2000),
+        status: 'SENDING',
+        direction: 'OUTBOUND',
+        senderType: 'STAFF',
+      },
+    });
+
+    try {
+      if (channel === 'zalo') {
+        await this.replyViaZalo(organizationId, conv, pending.id, text);
+      } else if (channel === 'facebook') {
+        await this.replyViaMessenger(organizationId, conv, pending.id, text);
+      } else {
+        await this.replyViaWebsite(organizationId, conv, pending.id, text);
+      }
+    } catch (err) {
+      const existing = await this.prisma.chatbotMessage.findUnique({
+        where: { id: pending.id },
+        select: { status: true },
+      });
+      if (existing && existing.status !== 'FAILED') {
+        await this.prisma.chatbotMessage.update({
+          where: { id: pending.id },
+          data: {
+            status: 'FAILED',
+            errorCode: 'SEND_ERROR',
+          },
+        });
+      }
+      throw err instanceof BadRequestException
+        ? err
+        : new BadRequestException((err as Error).message || 'Gửi tin thất bại');
+    }
+
+    await this.prisma.chatbotConversation.update({
+      where: { id: conv.id },
+      data: { updatedAt: new Date(), status: 'NEEDS_STAFF', humanTakeover: true },
+    });
+
+    this.events.emitToOrg(organizationId, WS_EVENTS.CHATBOT_MESSAGE_NEW, {
+      conversationId: conv.id,
+      channel,
+      channelRef: conv.channelRef || undefined,
+      externalUserId: conv.externalUserId || undefined,
+      direction: 'OUTBOUND',
+      preview: text.slice(0, 120),
+      botId: conv.botId,
+    });
+
+    return this.getConversation(organizationId, conv.id);
+  }
+
+  private async replyViaZalo(
+    organizationId: string,
+    conv: {
+      id: string;
+      channelRef: string | null;
+      externalUserId: string | null;
+    },
+    messageId: string,
+    text: string,
+  ) {
+    const accountRef = String(conv.channelRef || '').trim();
+    const userId = String(conv.externalUserId || '').trim();
+    if (!accountRef || !userId) {
+      throw new BadRequestException('Thiếu OA hoặc UID Zalo trên hội thoại');
+    }
+
+    const connection = await this.prisma.messagingChannelConnection.findFirst({
+      where: {
+        organizationId,
+        channel: MessageChannel.ZALO,
+        providerKind: MessagingProviderKind.ZALO_OA,
+        accountRef,
+        isPaused: false,
+      },
+    });
+    if (!connection) {
+      throw new BadRequestException('Không tìm thấy kết nối Zalo OA cho hội thoại này');
+    }
+
+    let sendResult: Awaited<ReturnType<typeof sendZaloOaHttp>>;
+    try {
+      const { accessToken } = await this.channelConnections.ensureFreshZaloAccessToken(
+        organizationId,
+        connection.id,
+      );
+      if (!accessToken) {
+        throw new BadRequestException('Thiếu access token Zalo OA');
+      }
+      sendResult = await sendZaloOaHttp({
+        accessToken,
+        recipientId: userId,
+        text,
+      });
+    } catch (err) {
+      await this.prisma.chatbotMessage.update({
+        where: { id: messageId },
+        data: { status: 'FAILED', errorCode: 'ZALO_SEND_ERROR' },
+      });
+      this.logger.warn(
+        `Zalo inbox reply failed conv=${conv.id.slice(0, 8)}…: ${(err as Error).message}`,
+      );
+      throw err instanceof BadRequestException
+        ? err
+        : new BadRequestException((err as Error).message || 'Gửi Zalo thất bại');
+    }
+
+    if (!sendResult.success) {
+      const tierBlocked = /upgrade OA Tier|-224|chưa đủ gói Zalo/i.test(
+        sendResult.message || '',
+      );
+      await this.prisma.chatbotMessage.update({
+        where: { id: messageId },
+        data: {
+          status: 'FAILED',
+          errorCode: String(
+            tierBlocked ? 'ZALO_OA_TIER' : sendResult.reasonCode || 'ZALO_SEND_FAILED',
+          ).slice(0, 64),
+        },
+      });
+      throw new BadRequestException(sendResult.message || 'Gửi Zalo thất bại');
+    }
+
+    await this.prisma.chatbotMessage.update({
+      where: { id: messageId },
+      data: {
+        status: 'SENT',
+        externalMessageId: sendResult.messageId?.slice(0, 128) || null,
+        errorCode: null,
+      },
+    });
+  }
+
+  private async replyViaMessenger(
+    organizationId: string,
+    conv: {
+      id: string;
+      botId: string;
+      channelRef: string | null;
+      externalUserId: string | null;
+    },
+    messageId: string,
+    text: string,
+  ) {
+    const pageId = String(conv.channelRef || '').trim();
+    const psid = String(conv.externalUserId || '').trim();
+    if (!pageId || !psid) {
+      throw new BadRequestException('Thiếu Fanpage hoặc PSID trên hội thoại');
+    }
+
+    const pageForBot = await this.prisma.chatbotFacebookPage.findFirst({
+      where: { organizationId, pageId, botId: conv.botId },
+    });
+    const page =
+      pageForBot ||
+      (await this.prisma.chatbotFacebookPage.findFirst({
+        where: { organizationId, pageId },
+        orderBy: { updatedAt: 'desc' },
+      }));
+    if (!page?.pageAccessTokenEncrypted) {
+      throw new BadRequestException('Không tìm thấy Fanpage hoặc thiếu page token');
+    }
+
+    const pageToken = this.facebookWebhook.decodePageToken(page.pageAccessTokenEncrypted);
+    if (!pageToken) {
+      throw new BadRequestException('Không giải mã được page access token');
+    }
+
+    // Local Graph send — do not call private facebookWebhook.sendText (FB freeze)
+    const graphVersion = this.config.get<string>('META_API_VERSION') || 'v21.0';
+    const url = `https://graph.facebook.com/${graphVersion}/me/messages?access_token=${encodeURIComponent(pageToken)}`;
+    let sendResult: { ok: boolean; messageId?: string; errorMessage?: string } = { ok: false };
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipient: { id: psid },
+          messaging_type: 'RESPONSE',
+          message: { text: String(text || '').slice(0, 2000) },
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        message_id?: string;
+        error?: { message?: string; code?: number };
+      };
+      if (!res.ok || body.error) {
+        sendResult = {
+          ok: false,
+          errorMessage: body.error?.message || 'Gửi Messenger thất bại',
+        };
+      } else {
+        sendResult = { ok: true, messageId: body.message_id };
+      }
+    } catch (err) {
+      sendResult = { ok: false, errorMessage: (err as Error).message };
+    }
+
+    if (!sendResult.ok) {
+      const classified = this.facebookWebhook.classifyMessengerSendFailure(
+        JSON.stringify({
+          error: {
+            message: sendResult.errorMessage,
+          },
+        }),
+      );
+      await this.prisma.chatbotMessage.update({
+        where: { id: messageId },
+        data: {
+          status: 'FAILED',
+          errorCode: String(classified || 'MESSENGER_SEND_FAILED').slice(0, 64),
+        },
+      });
+      throw new BadRequestException(
+        sendResult.errorMessage || 'Gửi Messenger thất bại',
+      );
+    }
+
+    await this.prisma.chatbotMessage.update({
+      where: { id: messageId },
+      data: {
+        status: 'SENT',
+        externalMessageId: sendResult.messageId?.slice(0, 128) || null,
+        errorCode: null,
+      },
+    });
+  }
+
+  private async replyViaWebsite(
+    _organizationId: string,
+    _conv: { id: string; sessionId: string; botId: string },
+    messageId: string,
+    _text: string,
+  ) {
+    // Website widget nhận tin qua poll public API; staff UI qua org Socket.IO
+    await this.prisma.chatbotMessage.update({
+      where: { id: messageId },
+      data: {
+        status: 'SENT',
+        errorCode: null,
+      },
+    });
+  }
+
+  async listInboxChannelOptions(organizationId: string, botId?: string | null) {
+    // Luôn trả toàn bộ Fanpage + Website của org (kèm botId) — UI tự đổi Project khi chọn
+    const pages = await this.prisma.chatbotFacebookPage.findMany({
+      where: { organizationId },
+      include: { bot: { select: { id: true, botName: true, businessName: true } } },
+      orderBy: [{ pageName: 'asc' }, { createdAt: 'desc' }],
+    });
+
+    const bots = await this.prisma.chatbotBot.findMany({
+      where: { organizationId },
+      select: { id: true, botName: true, businessName: true, websiteUrl: true, allowedDomains: true },
+    });
+
+    const fromConv = await this.prisma.chatbotConversation.findMany({
+      where: {
+        organizationId,
+        channel: 'website',
+        channelRef: { not: null },
+      },
+      distinct: ['channelRef', 'botId'],
+      select: { channelRef: true, botId: true },
+      take: 200,
+    });
+
+    type WebRow = { domain: string; botId: string; botName: string };
+    const webMap = new Map<string, WebRow>();
+
+    const botNameOf = (id: string) => {
+      const b = bots.find((x) => x.id === id);
+      return b?.botName || b?.businessName || id.slice(0, 8);
+    };
+
+    for (const row of fromConv) {
+      const domain = (row.channelRef || '').trim();
+      if (!domain) continue;
+      const key = `${row.botId}::${domain}`;
+      if (!webMap.has(key)) {
+        webMap.set(key, { domain, botId: row.botId, botName: botNameOf(row.botId) });
+      }
+    }
+
+    for (const bot of bots) {
+      const addDomain = (raw: string | null | undefined) => {
+        const s = String(raw || '').trim();
+        if (!s) return;
+        let host = s;
+        try {
+          host = new URL(s.includes('://') ? s : `https://${s}`).hostname;
+        } catch {
+          host = s.replace(/^https?:\/\//, '').split('/')[0] || s;
+        }
+        host = host.replace(/^www\./, '').slice(0, 128);
+        if (!host) return;
+        const key = `${bot.id}::${host}`;
+        if (!webMap.has(key)) {
+          webMap.set(key, {
+            domain: host,
+            botId: bot.id,
+            botName: bot.botName || bot.businessName || bot.id.slice(0, 8),
+          });
+        }
+      };
+      addDomain(bot.websiteUrl);
+      for (const d of (bot.allowedDomains || '').split(/[\s,;]+/)) addDomain(d);
+    }
+
+    const fanpages = pages.map((p) => ({
+      pageId: p.pageId,
+      pageName: p.pageName,
+      status: p.status,
+      botId: p.botId,
+      botName: p.bot?.botName || p.bot?.businessName || p.botId.slice(0, 8),
+    }));
+
+    // Nếu đang chọn Project — đưa kênh của Project đó lên đầu
+    const sortedFanpages = botId
+      ? [
+          ...fanpages.filter((p) => p.botId === botId),
+          ...fanpages.filter((p) => p.botId !== botId),
+        ]
+      : fanpages;
+
+    const websites = [...webMap.values()].sort((a, b) => {
+      if (botId) {
+        const aMine = a.botId === botId ? 0 : 1;
+        const bMine = b.botId === botId ? 0 : 1;
+        if (aMine !== bMine) return aMine - bMine;
+      }
+      return a.domain.localeCompare(b.domain);
+    });
+
+    const oaConnections = await this.prisma.messagingChannelConnection.findMany({
+      where: {
+        organizationId,
+        channel: MessageChannel.ZALO,
+        providerKind: MessagingProviderKind.ZALO_OA,
+      },
+      select: {
+        id: true,
+        accountRef: true,
+        displayName: true,
+        status: true,
+        metadata: true,
+      },
+      orderBy: [{ displayName: 'asc' }, { createdAt: 'desc' }],
+    });
+
+    const oas = oaConnections.map((o) => {
+      const meta = (o.metadata as { botId?: string; avatar?: string } | null) || {};
+      const mappedBotId =
+        typeof meta.botId === 'string' && bots.some((b) => b.id === meta.botId)
+          ? meta.botId
+          : botId || bots[0]?.id || '';
+      return {
+        accountRef: o.accountRef,
+        oaName: o.displayName || o.accountRef,
+        status: o.status,
+        botId: mappedBotId,
+        botName: mappedBotId ? botNameOf(mappedBotId) : undefined,
+        avatarUrl: typeof meta.avatar === 'string' ? meta.avatar.slice(0, 2000) : null,
+        connectionId: o.id,
+      };
+    });
+
+    const sortedOas = botId
+      ? [...oas.filter((o) => o.botId === botId), ...oas.filter((o) => o.botId !== botId)]
+      : oas;
+
+    return {
+      fanpages: sortedFanpages,
+      websites,
+      oas: sortedOas,
+      /** Số Fanpage thuộc Project đang chọn (tiện UI) */
+      projectFanpageCount: botId ? fanpages.filter((p) => p.botId === botId).length : fanpages.length,
+      projectWebsiteCount: botId ? websites.filter((w) => w.botId === botId).length : websites.length,
+      projectOaCount: botId ? oas.filter((o) => o.botId === botId).length : oas.length,
+    };
   }
 
   async listLeads(organizationId: string, limit = 50) {

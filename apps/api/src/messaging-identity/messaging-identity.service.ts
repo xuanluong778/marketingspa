@@ -117,8 +117,8 @@ export class MessagingIdentityService {
       where.customerId = null;
       where.leadId = null;
     }
-    if (query.funnelStageId) {
-      where.lead = { funnelStageId: query.funnelStageId };
+    if (query.stageId) {
+      where.lead = { stageId: query.stageId };
     }
     if (query.pipelineStatus) {
       where.lead = { pipelineStatus: query.pipelineStatus };
@@ -150,7 +150,7 @@ export class MessagingIdentityService {
               pipelineStatus: true,
               branch: { select: { id: true, name: true } },
               assignedTo: { select: { id: true, name: true } },
-              funnelStage: { select: { id: true, name: true } },
+              stage: { select: { id: true, name: true } },
             },
           },
           integration: { select: { id: true, provider: true, status: true } },

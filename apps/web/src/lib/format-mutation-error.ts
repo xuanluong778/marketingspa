@@ -1,17 +1,25 @@
 import { ApiError } from '@/lib/api-client';
+import type { TranslateParams } from '@/i18n/types';
+
+type TranslateFn = (key: string, params?: TranslateParams) => string;
 
 /** Hiển thị message từ mutation error, gồm chi tiết validation nếu có */
-export function formatMutationError(error: unknown, fallback = ''): string {
+export function formatMutationError(
+  error: unknown,
+  fallback = '',
+  t?: TranslateFn,
+): string {
+  const tr = t ?? ((k: string) => k);
   if (!error) return fallback;
   if (error instanceof ApiError) {
     if (error.errors?.length) {
-      return `Dữ liệu không hợp lệ: ${error.errors.join(' · ')}`;
+      return `${tr('validation.invalidData')}: ${error.errors.join(' · ')}`;
     }
     if (error.statusCode === 401) {
-      return 'Phiên đăng nhập hết hạn. Vui lòng tải lại trang hoặc đăng nhập lại.';
+      return tr('validation.sessionExpired');
     }
     if (error.message === 'Validation failed' && error.statusCode === 400) {
-      return fallback || 'Dữ liệu gửi lên không hợp lệ (ValidationPipe). Kiểm tra lại các trường bắt buộc.';
+      return fallback || tr('validation.validationFailed');
     }
     return error.message || fallback;
   }

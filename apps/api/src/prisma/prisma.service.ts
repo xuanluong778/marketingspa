@@ -1,5 +1,10 @@
 import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
-import { PrismaClient } from '@marketingspa/database';
+import { PrismaClient, applyPrismaPoolEnv } from '@marketingspa/database';
+
+// Cap pool before PrismaClient super() reads DATABASE_URL
+applyPrismaPoolEnv({
+  connectionLimit: Number(process.env.DATABASE_CONNECTION_LIMIT || 12) || 12,
+});
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {

@@ -1,10 +1,14 @@
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   Logger,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
+import type Redis from 'ioredis';
+import { REDIS_CLIENT } from '../redis/redis.constants';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
@@ -74,7 +78,24 @@ export class AuthService {
     private readonly mail: AuthMailService,
     private readonly googleVerifier: GoogleTokenVerifier,
     private readonly affiliate: AffiliateService,
+    @Optional() @Inject(REDIS_CLIENT) private readonly redis?: Redis,
   ) {}
+
+  private authUserKey(userId: string) {
+    return `maaz:auth:u:${userId}`;
+  }
+  private authMeKey(userId: string) {
+    return `maaz:auth:me:${userId}`;
+  }
+
+  async invalidateAuthCache(userId: string) {
+    if (!this.redis) return;
+    try {
+      await this.redis.del(this.authUserKey(userId), this.authMeKey(userId));
+    } catch {
+      /* fail-open */
+    }
+  }
 
   /** Chặn Gmail dot-trick / +alias: mỗi email chuẩn hóa chỉ 1 tài khoản */
   private async assertEmailAvailable(rawEmail: string) {
@@ -885,6 +906,7 @@ export class AuthService {
       });
     }
 
+    await this.invalidateAuthCache(userId);
     return { message: 'Đăng xuất thành công' };
   }
 
@@ -906,6 +928,7 @@ export class AuthService {
       });
     }
 
+    await this.invalidateAuthCache(userId);
     return { message: 'Đã đăng xuất tất cả thiết bị' };
   }
 
@@ -1073,13 +1096,47 @@ export class AuthService {
       ipAddress: ip,
     });
 
+    await this.invalidateAuthCache(userId);
     return { message: 'Đổi mật khẩu thành công' };
   }
 
-  async validateUser(userId: string) {
+  async validateUser(userId: string): Promise<{
+    id: string;
+    email: string;
+    name: string;
+    role: string;
+    organizationId: string;
+    employeeId: string | null;
+    permissions: string[];
+  } | null> {
+    if (this.redis) {
+      try {
+        const cached = await this.redis.get(this.authUserKey(userId));
+        if (cached) {
+          return JSON.parse(cached) as {
+            id: string;
+            email: string;
+            name: string;
+            role: string;
+            organizationId: string;
+            employeeId: string | null;
+            permissions: string[];
+          };
+        }
+      } catch {
+        /* miss */
+      }
+    }
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: {
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        isActive: true,
+        deletedAt: true,
+        organizationId: true,
+        employeeId: true,
         role: {
           select: {
             code: true,
@@ -1090,7 +1147,7 @@ export class AuthService {
     });
     // Khóa (isActive=false) hoặc soft-delete → JWT/session cũ không còn gọi được API
     if (!user || !user.isActive || user.deletedAt || !user.role) return null;
-    return {
+    const mapped = {
       id: user.id,
       email: user.email,
       name: user.name,
@@ -1099,23 +1156,67 @@ export class AuthService {
       employeeId: user.employeeId,
       permissions: user.role.permissions.map((rp) => rp.permission.code),
     };
+    if (this.redis) {
+      try {
+        await this.redis.set(this.authUserKey(userId), JSON.stringify(mapped), 'EX', 45);
+      } catch {
+        /* fail-open */
+      }
+    }
+    return mapped;
   }
 
   async getCurrentUser(userId: string) {
+    if (this.redis) {
+      try {
+        const cached = await this.redis.get(this.authMeKey(userId));
+        if (cached) return JSON.parse(cached);
+      } catch {
+        /* miss */
+      }
+    }
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: {
-        organization: true,
+      select: {
+        id: true,
+        email: true,
+        name: true,
+        avatarUrl: true,
+        authProvider: true,
+        organizationId: true,
+        employeeId: true,
+        emailVerifiedAt: true,
+        uiLocale: true,
+        organization: { select: { id: true, name: true, slug: true } },
         role: {
-          include: {
+          select: {
+            code: true,
+            name: true,
             permissions: { select: { permission: { select: { code: true } } } },
           },
         },
-        employee: true,
+        employee: { select: { id: true, name: true } },
       },
     });
-    if (!user) throw new UnauthorizedException();
-    return this.mapUserResponse(user);
+    if (!user || !user.role || !user.organization) throw new UnauthorizedException();
+    const mapped = this.mapUserResponse(user);
+    if (this.redis) {
+      try {
+        await this.redis.set(this.authMeKey(userId), JSON.stringify(mapped), 'EX', 20);
+      } catch {
+        /* fail-open */
+      }
+    }
+    return mapped;
+  }
+
+  async updateLocale(userId: string, locale: string) {
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { uiLocale: locale },
+    });
+    await this.invalidateAuthCache(userId);
+    return this.getCurrentUser(userId);
   }
 
   async issueTokens(
@@ -1181,6 +1282,7 @@ export class AuthService {
     organizationId: string;
     employeeId?: string | null;
     emailVerifiedAt?: Date | null;
+    uiLocale?: string | null;
     role: {
       code: string;
       name: string;
@@ -1200,6 +1302,7 @@ export class AuthService {
       organizationId: user.organizationId,
       employeeId: user.employeeId ?? user.employee?.id ?? null,
       emailVerified: !!user.emailVerifiedAt,
+      uiLocale: user.uiLocale ?? 'vi',
       permissions: (user.role.permissions ?? []).map((rp) => rp.permission.code),
       organization: {
         id: user.organization.id,

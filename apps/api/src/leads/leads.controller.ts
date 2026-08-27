@@ -11,6 +11,8 @@ import {
 } from '@nestjs/common';
 import { LeadPipelineStatus } from '@marketingspa/database';
 import { LeadsService } from './leads.service';
+import { FunnelAnalyticsService } from './funnel-analytics.service';
+import { CustomerJourneyService } from '../crm/customer-journey.service';
 import { JwtAuthGuard } from '../common/guards/auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
@@ -30,12 +32,16 @@ import {
   CreateLeadSavedViewDto,
   UpdateLeadSavedViewDto,
 } from './dto/lead.dto';
-import { FunnelQueryDto } from './dto/funnel.dto';
+import { FunnelQueryDto, FunnelAnalyticsQueryDto } from './dto/funnel.dto';
 
 @Controller('leads')
 @UseGuards(JwtAuthGuard, TenantGuard, PermissionsGuard)
 export class LeadsController {
-  constructor(private readonly service: LeadsService) {}
+  constructor(
+    private readonly service: LeadsService,
+    private readonly funnelAnalyticsService: FunnelAnalyticsService,
+    private readonly customerJourney: CustomerJourneyService,
+  ) {}
 
   @Get()
   @RequirePermissions('lead.read')
@@ -69,6 +75,24 @@ export class LeadsController {
   @RequirePermissions('lead.read')
   funnelStats(@CurrentUser() user: AuthUser, @Query() query: FunnelQueryDto) {
     return this.service.getFunnelStats(user.organizationId, query);
+  }
+
+  @Get('pipeline-counts')
+  @RequirePermissions('lead.read')
+  pipelineCounts(@CurrentUser() user: AuthUser) {
+    return this.service.countByPipeline(user.organizationId);
+  }
+
+  @Get('funnel/analytics')
+  @RequirePermissions('lead.read')
+  funnelAnalytics(@CurrentUser() user: AuthUser, @Query() query: FunnelAnalyticsQueryDto) {
+    return this.funnelAnalyticsService.getAnalytics(user.organizationId, query);
+  }
+
+  @Get(':id/journey')
+  @RequirePermissions('lead.read')
+  leadJourney(@CurrentUser() user: AuthUser, @Param('id') id: string) {
+    return this.customerJourney.getLeadJourney(user.organizationId, id);
   }
 
   @Get('saved-views')

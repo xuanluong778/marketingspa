@@ -22,6 +22,7 @@ import { JwtAuthGuard } from '../common/guards/auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
+import { createUploadMulterOptions, sanitizeOriginalName } from '../common/uploads/upload-policy';
 import { VideoTranscriptionService } from './video-transcription.service';
 import {
   CreateVideoTranscriptionDto,
@@ -44,6 +45,7 @@ export class VideoTranscriptionController {
   @Post()
   @UseInterceptors(
     FileInterceptor('file', {
+      ...createUploadMulterOptions('video_transcription'),
       storage: diskStorage({
         destination: (_req, _file, cb) => {
           const dir = join(videoTranscriptionUploadsRoot(), '_incoming');
@@ -51,8 +53,13 @@ export class VideoTranscriptionController {
           cb(null, dir);
         },
         filename: (_req, file, cb) => {
-          const ext = extname(file.originalname || '').slice(0, 10) || '.bin';
-          cb(null, `${randomUUID()}${ext}`);
+          try {
+            const safe = sanitizeOriginalName(file.originalname || 'video.bin');
+            const ext = extname(safe).slice(0, 10) || '.bin';
+            cb(null, `${randomUUID()}${ext}`);
+          } catch (e) {
+            cb(e as Error, '');
+          }
         },
       }),
       limits: { fileSize: maxBytes() },

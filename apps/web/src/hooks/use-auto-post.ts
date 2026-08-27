@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
+import { invalidateCredits } from '@/hooks/use-credit';
 import { invalidateFanpageConnectionCaches } from '@/lib/invalidate-fanpage-connection-caches';
 import type {
   AutoPostFacebookStatus,
@@ -74,6 +75,29 @@ export async function fetchFanpageDetailsRefresh(fanpageId: string) {
   return apiClient<import('@/types/auto-post').FanpageDetailsResponse>(
     `${BASE}/facebook/pages/${fanpageId}/details?refresh=true`,
   );
+}
+
+/** Đồng bộ live Graph API — không cache / không fallback dữ liệu cũ. */
+export function useSyncFanpageDetails() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (fanpageId: string) =>
+      apiClient<import('@/types/auto-post').FanpageDetailsResponse>(
+        `${BASE}/facebook/pages/${fanpageId}/sync`,
+        { method: 'POST' },
+      ),
+    onSuccess: (data, fanpageId) => {
+      qc.setQueriesData(
+        { queryKey: ['auto-post', 'facebook', 'page-details'] },
+        (current: import('@/types/auto-post').FanpageDetailsResponse | undefined) => {
+          if (!current) return data;
+          if (current.page?.id === fanpageId || data.page?.id === fanpageId) return data;
+          return current;
+        },
+      );
+      void qc.invalidateQueries({ queryKey: ['auto-post', 'facebook'] });
+    },
+  });
 }
 
 /** Chẩn đoán quyền Fanpage — không token. */
@@ -191,6 +215,9 @@ export function useAutoPostMutations() {
         method: 'POST',
         body: JSON.stringify(body),
       }),
+    onSettled: () => {
+      void invalidateCredits(qc);
+    },
   });
 
   const rewriteAi = useMutation({
@@ -203,6 +230,9 @@ export function useAutoPostMutations() {
         method: 'POST',
         body: JSON.stringify(body),
       }),
+    onSettled: () => {
+      void invalidateCredits(qc);
+    },
   });
 
   const saveDraft = useMutation({

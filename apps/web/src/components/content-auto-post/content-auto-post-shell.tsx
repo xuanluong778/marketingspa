@@ -10,7 +10,6 @@ import { AutoPostPublishPanel } from '@/components/content-auto-post/auto-post-p
 import { AutoPostSchedulePanel } from '@/components/content-auto-post/auto-post-schedule-panel';
 import { AutoPostChannelsPanel } from '@/components/content-auto-post/auto-post-channels-panel';
 import {
-  CONTENT_AUTO_POST_MENU_DESCRIPTION,
   CONTENT_AUTO_POST_TABS,
   buildContentAutoPostHref,
   isContentAutoPostTab,
@@ -18,12 +17,22 @@ import {
   resolveContentCreateSection,
   type ContentAutoPostTab,
 } from '@/lib/content-auto-post-routes';
+import { useT } from '@/i18n/i18n-provider';
 import type { ContentHistoryItem } from '@/types/content-marketing';
+
+const TAB_I18N: Record<ContentAutoPostTab, string> = {
+  create: 'facebookFlow.tabs.create',
+  library: 'facebookFlow.tabs.library',
+  'auto-post': 'facebookFlow.tabs.autoPost',
+  schedule: 'facebookFlow.tabs.schedule',
+  channels: 'facebookFlow.tabs.channels',
+};
 
 /** Chiều cao thanh tab (py-2 + trigger ~36px) — spacer tránh content bị che. */
 const CONTENT_TAB_BAR_H = 'h-12';
 
 export function ContentAutoPostShell() {
+  const t = useT();
   const router = useRouter();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab');
@@ -94,13 +103,13 @@ export function ContentAutoPostShell() {
         */}
         <div className="fixed inset-x-0 top-14 z-40 border-b border-white/10 bg-[#0A3D30] lg:left-64">
           <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 rounded-none bg-transparent p-2 text-white">
-            {CONTENT_AUTO_POST_TABS.map((t) => (
+            {CONTENT_AUTO_POST_TABS.map((tab) => (
               <TabsTrigger
-                key={t.value}
-                value={t.value}
+                key={tab.value}
+                value={tab.value}
                 className="rounded-md text-xs sm:text-sm data-[state=active]:bg-white data-[state=active]:text-black data-[state=inactive]:text-white/80"
               >
-                {t.label}
+                {t(TAB_I18N[tab.value])}
               </TabsTrigger>
             ))}
           </TabsList>
@@ -111,8 +120,8 @@ export function ContentAutoPostShell() {
 
         <div className="mt-4 space-y-6">
           <PageHeader
-            title="Content Studio"
-            description={CONTENT_AUTO_POST_MENU_DESCRIPTION}
+            title={t('facebookFlow.studioTitle')}
+            description={t('facebookFlow.studioDescription')}
             titleClassName="text-2xl font-bold tracking-tight text-[#F97316] sm:text-3xl"
           />
 

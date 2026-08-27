@@ -12,6 +12,7 @@ import { createCostLine } from '@/lib/business-goal-form';
 import { formatMoneyDisplay } from '@/lib/money-input';
 import { cn } from '@/lib/utils';
 import { BG_BOX_INNER, BG_BOX_MUTED } from '@/components/business-goals/business-goals-theme';
+import { useT } from '@/i18n/i18n-provider';
 
 interface CostLineListProps {
   label: string;
@@ -30,6 +31,7 @@ export function CostLineList({
   addButtonLabel,
   onChange,
 }: CostLineListProps) {
+  const t = useT();
   const total = lines.reduce((sum, l) => sum + (Number.isFinite(l.amount) ? l.amount : 0), 0);
 
   function updateLine(id: string, patch: Partial<CostLineItem>) {
@@ -60,7 +62,7 @@ export function CostLineList({
             BG_BOX_MUTED,
           )}
         >
-          Chưa có dòng chi phí. Nhấn &quot;{addButtonLabel}&quot; để thêm chi tiết.
+          {t('businessGoals.noCostLines', { label: addButtonLabel })}
         </p>
       )}
 

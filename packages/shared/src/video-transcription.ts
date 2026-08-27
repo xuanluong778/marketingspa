@@ -9,16 +9,23 @@ export const VIDEO_TRANSCRIPTION_LIMITS = {
   jobTimeoutMs: 45 * 60 * 1000,
   chunkTimeoutMs: 12 * 60 * 1000,
   maxAttempts: 3,
-  rateLimitMax: 5,
+  /** New jobs per user/org in the window. Retry of an existing job uses a separate bucket. */
+  rateLimitMax: 20,
   rateLimitWindowMs: 10 * 60 * 1000,
-  /** Target chunk length (seconds) — 5–10 min band */
-  chunkSeconds: 7 * 60,
+  /** Target chunk length (seconds) — 5–10 min band (prefer 5m: Whisper ổn định hơn 7–10m) */
+  chunkSeconds: 5 * 60,
   chunkMinSeconds: 5 * 60,
   chunkMaxSeconds: 10 * 60,
   /** Overlap between consecutive chunks */
   overlapSeconds: 8,
   /** Completed only if processed duration within this of audio duration */
   durationMatchToleranceSec: 3,
+  /** Min relative ASR end / chunk duration before accepting chunk (verbose_json) */
+  chunkAsrCoverageRatio: 0.85,
+  /** Abs slack (s) for last speech timestamp vs chunk length */
+  chunkAsrCoverageSlackSec: 20,
+  /** In-worker retries per chunk when ASR incomplete or empty */
+  chunkMaxAttempts: 3,
   dailyQuotaByPlan: {
     trial: 10,
     starter: 20,
@@ -167,6 +174,29 @@ export function mapVideoDownloadError(
     };
   }
   if (
+    /http error 403|403:\s*forbidden|unable to download video data: http error 403|sabr-only/i.test(
+      msg,
+    )
+  ) {
+    return {
+      code: 'HTTP_403',
+      message:
+        platform === 'youtube'
+          ? 'YouTube chặn tải media (HTTP 403). Hệ thống sẽ ưu tiên phụ đề nếu có; nếu không, hãy tải file về máy rồi upload.'
+          : `${platLabel} trả HTTP 403 khi tải file. Hãy thử lại sau hoặc tải file về máy rồi upload.`,
+    };
+  }
+  if (
+    /this video has been removed|video unavailable|has been deleted|removed by the uploader|không còn tồn tại/i.test(
+      msg,
+    )
+  ) {
+    return {
+      code: 'VIDEO_DELETED',
+      message: `Video ${platLabel} đã bị gỡ / không còn tồn tại.`,
+    };
+  }
+  if (
     /private video|this video is private|login required|only available for|friends only|chỉ dành cho bạn bè|members.?only|authentication|cookies? are needed/i.test(
       msg,
     )
@@ -206,10 +236,284 @@ export function mapVideoDownloadError(
   };
 }
 
+const VTT_TS = /<\d{2}:\d{2}:\d{2}\.\d{3}>/g;
+
+function vttCueBlockToPlainText(block: string): string {
+  const payload = block
+    .split('\n')
+    .map((l) => l.trim())
+    .filter(
+      (l) =>
+        l &&
+        !/^\d+$/.test(l) &&
+        !/-->/.test(l) &&
+        !/^(NOTE|STYLE|REGION|KIND|LANGUAGE)\b/i.test(l),
+    )
+    .join(' ');
+  return payload
+    .replace(/<c(\.[^>]*)?>/gi, '')
+    .replace(/<\/c>/gi, '')
+    .replace(VTT_TS, '')
+    .replace(/<\/?[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Merge rolling YouTube caption cues — append only non-overlapping suffix. */
+export function mergeRollingCaptionCues(cues: string[]): string {
+  const cleaned = cues.map((c) => c.trim()).filter(Boolean);
+  if (!cleaned.length) return '';
+  let merged = cleaned[0]!;
+  for (let i = 1; i < cleaned.length; i++) {
+    const next = cleaned[i]!;
+    if (!next || next === merged) continue;
+    merged = appendRollingCaptionCue(merged, next);
+  }
+  return merged.trim();
+}
+
+/** Append one rolling caption cue onto accumulated text without duplication. */
+export function appendRollingCaptionCue(merged: string, next: string): string {
+  const cur = (merged || '').trim();
+  const nxt = (next || '').trim();
+  if (!nxt) return cur;
+  if (!cur) return nxt;
+  if (nxt === cur) return cur;
+  if (cur.includes(nxt)) return cur;
+  if (nxt.startsWith(cur)) return nxt;
+
+  const mw = normalizeWords(cur);
+  const nw = normalizeWords(nxt);
+
+  // Rolling window grew from the same start (common YouTube auto-caption pattern)
+  if (mw.length >= 2 && nw.length > mw.length) {
+    let prefixMatch = true;
+    for (let i = 0; i < mw.length; i++) {
+      if (!wordsEqualish(mw[i]!, nw[i]!)) {
+        prefixMatch = false;
+        break;
+      }
+    }
+    if (prefixMatch) {
+      const suffix = dropLeadingWords(nxt, mw.length);
+      return suffix ? `${cur} ${suffix}`.replace(/\s+/g, ' ').trim() : cur;
+    }
+  }
+
+  // Standard trailing overlap at cue boundary
+  const boundaryOverlap = findOverlapWordCount(cur.slice(-2500), nxt, 48);
+  if (boundaryOverlap > 0) {
+    const suffix = dropLeadingWords(nxt, boundaryOverlap);
+    if (!suffix) return cur;
+    if (cur.endsWith(suffix) || cur.includes(suffix)) return cur;
+    return `${cur} ${suffix}`.replace(/\s+/g, ' ').trim();
+  }
+
+  // Restart overlap: prefix of next matches suffix of merged
+  for (let k = Math.min(nw.length, 40); k >= 2; k--) {
+    const tail = mw.slice(-k);
+    const head = nw.slice(0, k);
+    if (tail.every((w, idx) => wordsEqualish(w, head[idx]!))) {
+      const suffix = dropLeadingWords(nxt, k);
+      if (!suffix) return cur;
+      if (cur.endsWith(suffix) || cur.includes(suffix)) return cur;
+      return `${cur} ${suffix}`.replace(/\s+/g, ' ').trim();
+    }
+  }
+
+  // Partial restart: longest prefix of next already present at end of merged
+  for (let k = Math.min(nw.length - 1, 32); k >= 4; k--) {
+    const head = nw.slice(0, k).join(' ');
+    if (cur.endsWith(head) || cur.includes(` ${head}`)) {
+      const suffix = dropLeadingWords(nxt, k);
+      if (suffix) return `${cur} ${suffix}`.replace(/\s+/g, ' ').trim();
+      return cur;
+    }
+  }
+
+  return `${cur} ${nxt}`.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Convert YouTube WEBVTT (manual or auto-captions) into readable plain text.
+ * Handles rolling overlap cues by incremental word-level merge (not line-per-cue).
+ */
+export function youtubeVttToPlainText(vtt: string): string {
+  const body = String(vtt || '')
+    .replace(/^\uFEFF/, '')
+    .replace(/^WEBVTT[^\n]*\n+/i, '');
+  const cues: string[] = [];
+  for (const block of body.split(/\n\n+/)) {
+    const text = vttCueBlockToPlainText(block);
+    if (!text) continue;
+    const prev = cues[cues.length - 1];
+    if (prev === text) continue;
+    cues.push(text);
+  }
+  return mergeRollingCaptionCues(cues);
+}
+
+export type YoutubeCaptionQualityResult = {
+  ok: boolean;
+  score: number;
+  reasons: string[];
+  cueCount: number;
+  mergedChars: number;
+  naiveLineChars: number;
+  repetitionRatio: number;
+  prefixOverlapLines: number;
+  charsPerSecond: number | null;
+};
+
+/** Detect phrase-level repetition in merged caption text (post-merge quality gate). */
+export function captionPhraseRepetitionRatio(text: string): number {
+  const words = normalizeWords(text);
+  if (words.length < 24) return 0;
+  const window = 6;
+  const seen = new Map<string, number>();
+  let repeats = 0;
+  for (let i = 0; i <= words.length - window; i++) {
+    const key = words.slice(i, i + window).join(' ');
+    const n = (seen.get(key) || 0) + 1;
+    seen.set(key, n);
+    if (n > 1) repeats++;
+  }
+  const slots = Math.max(1, words.length - window + 1);
+  return repeats / slots;
+}
+
+/**
+ * Score YouTube caption usability after rolling merge.
+ * Low score → prefer STT fallback when audio download is available.
+ */
+export function assessYoutubeCaptionQuality(opts: {
+  vtt: string;
+  mergedText: string;
+  durationSeconds?: number | null;
+  source?: 'manual' | 'auto';
+}): YoutubeCaptionQualityResult {
+  const reasons: string[] = [];
+  let score = 100;
+  const mergedText = (opts.mergedText || '').trim();
+  const mergedChars = mergedText.length;
+
+  const body = String(opts.vtt || '')
+    .replace(/^\uFEFF/, '')
+    .replace(/^WEBVTT[^\n]*\n+/i, '');
+  const cueTexts: string[] = [];
+  for (const block of body.split(/\n\n+/)) {
+    const t = vttCueBlockToPlainText(block);
+    if (t) cueTexts.push(t);
+  }
+  const cueCount = cueTexts.length;
+
+  // Naive line-per-cue join (legacy bug pattern) for overlap artifact detection
+  const naiveLines: string[] = [];
+  for (const t of cueTexts) {
+    const prev = naiveLines[naiveLines.length - 1];
+    if (prev === t) continue;
+    if (prev && t.startsWith(prev) && t.length > prev.length) {
+      naiveLines[naiveLines.length - 1] = t;
+      continue;
+    }
+    if (prev && (prev.endsWith(t) || prev.includes(t))) continue;
+    naiveLines.push(t);
+  }
+  const naiveLineChars = naiveLines.join('\n').length;
+
+  let prefixOverlapLines = 0;
+  for (let i = 1; i < naiveLines.length; i++) {
+    const prev = naiveLines[i - 1]!;
+    const cur = naiveLines[i]!;
+    const ow = findOverlapWordCount(prev.slice(-400), cur, 24);
+    if (ow >= 4 && ow >= Math.floor(normalizeWords(cur).length * 0.35)) {
+      prefixOverlapLines++;
+    }
+  }
+
+  const repetitionRatio = captionPhraseRepetitionRatio(mergedText);
+  const duration = opts.durationSeconds != null && opts.durationSeconds > 0 ? opts.durationSeconds : null;
+  const charsPerSecond = duration ? mergedChars / duration : null;
+  const mergeEffective =
+    naiveLineChars > 200 && mergedChars > 0 && mergedChars / naiveLineChars < 0.68;
+
+  if (mergedChars < 40) {
+    score -= 60;
+    reasons.push('TOO_SHORT');
+  }
+  if (repetitionRatio > 0.08) {
+    score -= Math.min(45, Math.round(repetitionRatio * 200));
+    reasons.push('PHRASE_REPETITION');
+  }
+  if (!mergeEffective && prefixOverlapLines > Math.max(8, Math.floor(naiveLines.length * 0.25))) {
+    score -= 35;
+    reasons.push('ROLLING_OVERLAP_ARTIFACT');
+  }
+  if (naiveLineChars > 0 && mergedChars > 0 && mergedChars / naiveLineChars > 0.82 && naiveLines.length > 20) {
+    score -= 25;
+    reasons.push('MERGE_INEFFECTIVE');
+  }
+  if (charsPerSecond != null) {
+    if (charsPerSecond < 1.2) {
+      score -= 20;
+      reasons.push('LOW_DENSITY');
+    }
+    if (charsPerSecond > 22) {
+      score -= 30;
+      reasons.push('HIGH_DENSITY');
+    }
+  }
+  if (opts.source === 'auto' && !/[.!?…]/.test(mergedText.slice(0, 800))) {
+    reasons.push('NO_PUNCTUATION');
+  }
+  if (opts.source === 'manual') score = Math.min(100, score + 8);
+
+  const ok =
+    score >= 55 &&
+    mergedChars >= 40 &&
+    !reasons.includes('PHRASE_REPETITION') &&
+    !reasons.includes('ROLLING_OVERLAP_ARTIFACT') &&
+    !reasons.includes('MERGE_INEFFECTIVE');
+
+  return {
+    ok,
+    score: Math.max(0, Math.min(100, score)),
+    reasons,
+    cueCount,
+    mergedChars,
+    naiveLineChars,
+    repetitionRatio,
+    prefixOverlapLines,
+    charsPerSecond,
+  };
+}
+
+/** Last cue end time in seconds, if present. */
+export function youtubeVttDurationSeconds(vtt: string): number | null {
+  const matches = [...String(vtt || '').matchAll(/(\d{2}):(\d{2}):(\d{2})\.(\d{3})\s+-->\s+(\d{2}):(\d{2}):(\d{2})\.(\d{3})/g)];
+  const last = matches[matches.length - 1];
+  if (!last) return null;
+  const h = Number(last[5]);
+  const m = Number(last[6]);
+  const s = Number(last[7]);
+  const ms = Number(last[8]);
+  const sec = h * 3600 + m * 60 + s + ms / 1000;
+  return Number.isFinite(sec) && sec > 0 ? sec : null;
+}
+
 export const videoTranscriptionQueuePayloadSchema = z.object({
   organizationId: z.string().uuid(),
   transcriptionId: z.string().uuid(),
   userId: z.string().uuid(),
+  /**
+   * When true (remote URL jobs): download full video and keep for TTL download.
+   * When false/omitted: download audio-only for STT (default).
+   */
+  keepVideo: z.boolean().optional().default(false),
   /** Retry only this chunk index, then re-merge */
   chunkIndex: z.number().int().nonnegative().optional(),
 });
@@ -243,6 +547,8 @@ export type TranscriptChunkResult = {
   charCount: number;
   error?: string | null;
   attempts: number;
+  /** Relative end of last speech segment within this chunk (seconds from chunk start) */
+  asrEndSec?: number | null;
 };
 
 export type TranscriptProgressSnapshot = {
@@ -252,6 +558,8 @@ export type TranscriptProgressSnapshot = {
   processedDurationSeconds: number;
   chunkCount: number;
   chunksCompleted: number;
+  /** Chunk index currently PROCESSING (UI: chunk hiện tại / tổng) */
+  currentChunkIndex?: number | null;
   firstTimestamp: number | null;
   lastTimestamp: number | null;
   resultCharCount: number;
@@ -277,6 +585,7 @@ export function buildChunkPlan(
     Math.max(5, opts?.overlapSeconds ?? VIDEO_TRANSCRIPTION_LIMITS.overlapSeconds),
   );
 
+  // Single chunk when short (duration fits one window + a little slack)
   if (duration <= chunkLen + overlap) {
     return [{ index: 0, startSec: 0, endSec: duration, durationSec: duration }];
   }
@@ -285,7 +594,12 @@ export function buildChunkPlan(
   let start = 0;
   let index = 0;
   while (start < duration - 0.05) {
-    const end = Math.min(duration, start + chunkLen);
+    let end = Math.min(duration, start + chunkLen);
+    // Nếu phần còn lại sau chunk này < ~2 phút, gộp vào chunk cuối (luôn cover hết audio)
+    const remainingAfter = duration - end;
+    if (remainingAfter > 0.05 && remainingAfter < Math.max(overlap + 5, 90)) {
+      end = duration;
+    }
     plans.push({
       index,
       startSec: start,
@@ -295,8 +609,23 @@ export function buildChunkPlan(
     if (end >= duration - 0.05) break;
     start = Math.max(0, end - overlap);
     index += 1;
-    // Safety against infinite loop
     if (index > 500) break;
+  }
+
+  // Hard guarantee: last plan end == duration
+  if (plans.length) {
+    const last = plans[plans.length - 1]!;
+    if (last.endSec < duration - 0.05) {
+      plans.push({
+        index: plans.length,
+        startSec: Math.max(0, last.endSec - overlap),
+        endSec: duration,
+        durationSec: Math.max(0.1, duration - Math.max(0, last.endSec - overlap)),
+      });
+    } else {
+      last.endSec = duration;
+      last.durationSec = Math.max(0.1, duration - last.startSec);
+    }
   }
   return plans;
 }
@@ -320,13 +649,22 @@ function wordsEqualish(a: string, b: string): boolean {
 
 /**
  * Find how many leading words of `next` duplicate the trailing words of `prev`.
+ * Caps drop so we never strip most of a chunk (partial-transcript bug).
  */
-export function findOverlapWordCount(prev: string, next: string, maxLook = 80): number {
+export function findOverlapWordCount(prev: string, next: string, maxLook = 40): number {
   const a = normalizeWords(prev);
   const b = normalizeWords(next);
   if (!a.length || !b.length) return 0;
-  const maxK = Math.min(maxLook, a.length, b.length);
-  for (let k = maxK; k >= 4; k--) {
+  // Cap by maxLook and 50% of next length — enough for ~8s speech overlap (~15–25 words)
+  // without wiping the bulk of a multi-minute chunk.
+  const hardCap = Math.min(
+    maxLook,
+    a.length,
+    b.length,
+    Math.max(2, Math.floor(b.length * 0.5)),
+  );
+  if (hardCap < 2) return 0;
+  for (let k = hardCap; k >= 4; k--) {
     let ok = true;
     for (let i = 0; i < k; i++) {
       if (!wordsEqualish(a[a.length - k + i]!, b[i]!)) {
@@ -336,8 +674,7 @@ export function findOverlapWordCount(prev: string, next: string, maxLook = 80): 
     }
     if (ok) return k;
   }
-  // Try shorter with high ratio
-  for (let k = Math.min(3, maxK); k >= 2; k--) {
+  for (let k = Math.min(3, hardCap); k >= 2; k--) {
     let ok = true;
     for (let i = 0; i < k; i++) {
       if (!wordsEqualish(a[a.length - k + i]!, b[i]!)) {
@@ -356,8 +693,94 @@ function dropLeadingWords(text: string, count: number): string {
   return parts.slice(count).join(' ').trim();
 }
 
+/** Max relative end time of ASR segments within a chunk (0 = no segments). */
+export function asrRelativeEndSec(segments: TranscriptSegment[] | undefined | null): number {
+  if (!segments?.length) return 0;
+  let max = 0;
+  for (const s of segments) {
+    const e = Number(s.end) || 0;
+    if (e > max) max = e;
+  }
+  return max;
+}
+
 /**
- * Merge chunk texts using timestamp segments when available; otherwise word-overlap dedupe.
+ * Decide if STT result covers enough of the chunk timeline.
+ * Root cause of partial transcripts: Whisper/OpenAI returns early-cut text while
+ * worker still marked the chunk completed and plan-based coverage looked "full".
+ */
+export function isChunkAsrCoverageAcceptable(opts: {
+  durationSec: number;
+  text: string;
+  segments?: TranscriptSegment[] | null;
+}): { ok: boolean; asrEndSec: number; reason?: string } {
+  const duration = Math.max(0.1, opts.durationSec);
+  const text = (opts.text || '').trim();
+  const words = text ? normalizeWords(text).length : 0;
+  const asrEnd = asrRelativeEndSec(opts.segments);
+  const ratio = VIDEO_TRANSCRIPTION_LIMITS.chunkAsrCoverageRatio;
+  const slack = VIDEO_TRANSCRIPTION_LIMITS.chunkAsrCoverageSlackSec;
+  const required = Math.max(0, Math.min(duration * ratio, duration - slack));
+
+  // Hard gate (user): audio >20s must not complete with tiny transcript (prompt-echo / mute)
+  if (duration > 20 && text.length < 50) {
+    return {
+      ok: false,
+      asrEndSec: asrEnd,
+      reason: `ASR_TOO_SHORT: ${text.length} chars for ${duration.toFixed(1)}s (min 50)`,
+    };
+  }
+
+  // Very short clips
+  if (duration <= 45) {
+    if (!text) {
+      return { ok: false, asrEndSec: 0, reason: 'EMPTY_TRANSCRIPT' };
+    }
+    return { ok: true, asrEndSec: asrEnd > 0 ? asrEnd : duration };
+  }
+
+  // Minimum density — prevents "full timeline segments + 15-char hallucination"
+  const minChars = Math.max(50, Math.min(400, Math.floor(duration * 2)));
+  if (text.length < minChars) {
+    return {
+      ok: false,
+      asrEndSec: asrEnd,
+      reason: `ASR_TOO_SHORT: ${text.length} chars < min ${minChars} for ${duration.toFixed(1)}s`,
+    };
+  }
+
+  if (opts.segments && opts.segments.length > 0) {
+    if (asrEnd + 0.05 >= required) {
+      return { ok: true, asrEndSec: asrEnd };
+    }
+    if (words >= 20 && asrEnd < required) {
+      return {
+        ok: false,
+        asrEndSec: asrEnd,
+        reason: `ASR_TRUNCATED: only ${asrEnd.toFixed(1)}s of ${duration.toFixed(1)}s (words=${words})`,
+      };
+    }
+    return { ok: true, asrEndSec: duration };
+  }
+
+  if (!text) {
+    return { ok: false, asrEndSec: 0, reason: 'EMPTY_TRANSCRIPT' };
+  }
+  const minWords = Math.min(50, Math.max(8, Math.floor(duration / 12)));
+  if (words < minWords) {
+    return {
+      ok: false,
+      asrEndSec: 0,
+      reason: `ASR_TOO_SHORT: words=${words} < min=${minWords} for ${duration.toFixed(1)}s`,
+    };
+  }
+  return { ok: true, asrEndSec: duration };
+}
+
+/**
+ * Merge **full chunk texts** (primary) with capped word-overlap dedupe.
+ * Segments only provide timeline metadata — never the sole text source
+ * (segment filter previously could drop middle/end chunk bodies).
  */
 export function mergeChunkTranscripts(
   chunks: Array<{
@@ -367,7 +790,7 @@ export function mergeChunkTranscripts(
     text: string;
     segments?: TranscriptSegment[];
   }>,
-  overlapSeconds = VIDEO_TRANSCRIPTION_LIMITS.overlapSeconds,
+  _overlapSeconds = VIDEO_TRANSCRIPTION_LIMITS.overlapSeconds,
 ): {
   rawMerged: string;
   segments: TranscriptSegment[];
@@ -381,49 +804,55 @@ export function mergeChunkTranscripts(
 
   for (let i = 0; i < ordered.length; i++) {
     const chunk = ordered[i]!;
+    let text = (chunk.text || '').trim();
+    if (!text) {
+      // Timeline: still advance coverage for empty/silent chunks
+      coveredUntil = Math.max(coveredUntil, chunk.endSec);
+      continue;
+    }
+
+    if (textParts.length) {
+      // Only inspect trailing context — avoid O(n²) + over-dedupe on long merges
+      const prevTail = textParts[textParts.length - 1] || '';
+      const prevCtx = `${prevTail}`.slice(-2500);
+      const nextWords = normalizeWords(text).length;
+      const maxDrop = Math.min(40, Math.max(4, Math.floor(nextWords * 0.5)));
+      const overlapWords = findOverlapWordCount(prevCtx, text, maxDrop);
+      text = dropLeadingWords(text, overlapWords);
+    }
+    if (text) {
+      textParts.push(text);
+    }
+
     const segs = (chunk.segments || [])
       .map((s) => ({
-        start: chunk.startSec + s.start,
-        end: chunk.startSec + s.end,
+        start: chunk.startSec + (Number(s.start) || 0),
+        end: chunk.startSec + (Number(s.end) || 0),
         text: (s.text || '').trim(),
       }))
       .filter((s) => s.text);
 
     if (segs.length) {
       for (const seg of segs) {
-        // Skip segments that mostly sit in already-covered overlap region
         if (i > 0 && seg.end <= coveredUntil + 0.35) continue;
         if (i > 0 && seg.start < coveredUntil) {
-          // Partial overlap: keep if majority is new
           const newDur = seg.end - coveredUntil;
           if (newDur < (seg.end - seg.start) * 0.35) continue;
         }
         allSegs.push(seg);
-        textParts.push(seg.text);
       }
-      coveredUntil = Math.max(coveredUntil, chunk.endSec - (i < ordered.length - 1 ? 0 : 0));
-      // Advance coverage to end of this chunk minus overlap reserved for next
-      const next = ordered[i + 1];
-      coveredUntil = next
-        ? Math.max(coveredUntil, next.startSec)
-        : Math.max(coveredUntil, chunk.endSec);
-    } else {
-      let text = (chunk.text || '').trim();
-      if (!text) continue;
-      if (textParts.length) {
-        const overlapWords = findOverlapWordCount(textParts.join(' '), text, 80);
-        text = dropLeadingWords(text, overlapWords);
-      }
-      if (text) {
-        textParts.push(text);
-        allSegs.push({
-          start: chunk.startSec,
-          end: chunk.endSec,
-          text,
-        });
-      }
-      coveredUntil = Math.max(coveredUntil, chunk.endSec - overlapSeconds);
+    } else if (text) {
+      allSegs.push({
+        start: chunk.startSec,
+        end: chunk.endSec,
+        text,
+      });
     }
+
+    const next = ordered[i + 1];
+    coveredUntil = next
+      ? Math.max(coveredUntil, next.startSec)
+      : Math.max(coveredUntil, chunk.endSec);
   }
 
   const rawMerged = textParts
@@ -432,8 +861,20 @@ export function mergeChunkTranscripts(
     .replace(/\s+\n/g, '\n')
     .trim();
 
-  const firstTimestamp = allSegs.length ? allSegs[0]!.start : null;
-  const lastTimestamp = allSegs.length ? allSegs[allSegs.length - 1]!.end : null;
+  // Prefer timeline spanning first chunk start → last chunk end when we have texts
+  const firstTimestamp =
+    ordered.length && textParts.length
+      ? ordered[0]!.startSec
+      : allSegs.length
+        ? allSegs[0]!.start
+        : null;
+  const lastWithText = [...ordered].reverse().find((c) => (c.text || '').trim());
+  const lastTimestamp = lastWithText
+    ? lastWithText.endSec
+    : allSegs.length
+      ? allSegs[allSegs.length - 1]!.end
+      : null;
+
   return { rawMerged, segments: allSegs, firstTimestamp, lastTimestamp };
 }
 

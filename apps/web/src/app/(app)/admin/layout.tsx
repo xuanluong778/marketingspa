@@ -18,21 +18,23 @@ import {
 import { useCurrentUser } from '@/hooks/use-auth';
 import { LoadingState } from '@/components/shared/page-state';
 import { cn } from '@/lib/utils';
+import { useT } from '@/i18n/i18n-provider';
 
 const NAV = [
-  { href: '/admin', label: 'Tổng quan', icon: LayoutDashboard, exact: true },
-  { href: '/admin/organizations', label: 'Spa / Tổ chức', icon: Building2 },
-  { href: '/admin/users', label: 'Người dùng', icon: Users },
-  { href: '/admin/subscriptions', label: 'Gói đăng ký', icon: CreditCard },
-  { href: '/admin/billing', label: 'Thanh toán SePay', icon: Shield },
-  { href: '/admin/usage', label: 'Mức sử dụng', icon: Activity },
-  { href: '/admin/integrations', label: 'Tích hợp', icon: Plug },
-  { href: '/admin/jobs', label: 'Công việc nền', icon: Workflow },
-  { href: '/admin/audit', label: 'Nhật ký hệ thống', icon: ScrollText },
-  { href: '/admin/affiliate', label: 'Affiliate', icon: Handshake },
-];
+  { href: '/admin', labelKey: 'admin.nav.overview', icon: LayoutDashboard, exact: true },
+  { href: '/admin/organizations', labelKey: 'admin.nav.organizations', icon: Building2 },
+  { href: '/admin/users', labelKey: 'admin.nav.users', icon: Users },
+  { href: '/admin/subscriptions', labelKey: 'admin.nav.subscriptions', icon: CreditCard },
+  { href: '/admin/billing', labelKey: 'admin.nav.billing', icon: Shield },
+  { href: '/admin/usage', labelKey: 'admin.nav.usage', icon: Activity },
+  { href: '/admin/integrations', labelKey: 'admin.nav.integrations', icon: Plug },
+  { href: '/admin/jobs', labelKey: 'admin.nav.jobs', icon: Workflow },
+  { href: '/admin/audit', labelKey: 'admin.nav.audit', icon: ScrollText },
+  { href: '/admin/affiliate', labelKey: 'admin.nav.affiliate', icon: Handshake },
+] as const;
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  const t = useT();
   const { data: user, isLoading } = useCurrentUser();
   const router = useRouter();
   const pathname = usePathname();
@@ -47,49 +49,34 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   if (!user || user.role !== 'SUPER_ADMIN') {
     return (
       <div className="rounded-xl border border-red-400/30 bg-red-500/10 p-6 text-sm text-red-100">
-        Bạn không có quyền truy cập khu vực quản trị nền tảng.
+        {t('admin.noAccess')}
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold tracking-tight text-[hsl(var(--heading))]">
-            Quản trị MarketingAutoAZ
-          </h1>
-          <p className="text-xs text-muted-foreground">
-            SUPER_ADMIN · thao tác có audit log · yêu cầu lý do · không lộ secret
-          </p>
-        </div>
-      </div>
-
-      <nav className="flex flex-wrap gap-1 rounded-xl border border-white/10 bg-[#0A3D30] p-1.5">
-        {NAV.map((item) => {
-          const active = item.exact
-            ? pathname === item.href
-            : pathname === item.href || pathname.startsWith(`${item.href}/`);
-          const Icon = item.icon;
+    <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+      <nav className="flex shrink-0 flex-wrap gap-1 lg:w-56 lg:flex-col">
+        {NAV.map(({ href, labelKey, icon: Icon, exact }) => {
+          const active = exact ? pathname === href : pathname.startsWith(href);
           return (
             <Link
-              key={item.href}
-              href={item.href}
+              key={href}
+              href={href}
               className={cn(
-                'inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition sm:text-sm',
+                'inline-flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
                 active
-                  ? 'bg-white text-[#0A3D30]'
-                  : 'text-white/80 hover:bg-white/10 hover:text-white',
+                  ? 'bg-primary/10 font-medium text-primary'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground',
               )}
             >
-              <Icon className="h-3.5 w-3.5" />
-              {item.label}
+              <Icon className="h-4 w-4 shrink-0" />
+              {t(labelKey)}
             </Link>
           );
         })}
       </nav>
-
-      <div className="min-h-[40vh]">{children}</div>
+      <div className="min-w-0 flex-1">{children}</div>
     </div>
   );
 }

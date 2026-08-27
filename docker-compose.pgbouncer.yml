@@ -1,0 +1,39 @@
+# PgBouncer in front of marketingspa Postgres (transaction pooling).
+# Joins the existing postgres docker network; publishes 127.0.0.1:6432 for host apps.
+#
+# Start:
+#   docker compose -f docker-compose.pgbouncer.yml --env-file .env up -d
+#
+# Prisma URL (via ecosystem DATABASE_VIA_PGBOUNCER=1):
+#   postgresql://…@127.0.0.1:6432/marketingspa?pgbouncer=true&connection_limit=5&pool_timeout=20&schema=public
+
+services:
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: marketingspa-pgbouncer
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:6432:5432'
+    environment:
+      # Reach postgres by service DNS on shared compose network
+      DATABASE_URL: postgresql://${POSTGRES_USER:-marketingspa}:${POSTGRES_PASSWORD}@marketingspa-postgres-dev:5432/${POSTGRES_DB:-marketingspa}
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: 400
+      DEFAULT_POOL_SIZE: 20
+      MIN_POOL_SIZE: 4
+      RESERVE_POOL_SIZE: 5
+      SERVER_RESET_QUERY: DISCARD ALL
+      IGNORE_STARTUP_PARAMETERS: extra_float_digits,search_path
+      AUTH_TYPE: plain
+      ADMIN_USERS: ${POSTGRES_USER:-marketingspa}
+    networks:
+      - marketingautoazcom_default
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -p 5432 -U $${POSTGRES_USER:-marketingspa} || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  marketingautoazcom_default:
+    external: true

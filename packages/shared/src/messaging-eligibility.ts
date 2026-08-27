@@ -317,14 +317,8 @@ function evaluateMessenger(
   const withinWindow =
     lastInbound != null && now.getTime() - lastInbound.getTime() <= MESSENGER_INTERACTION_WINDOW_MS;
 
+  // Bulk/broadcast trong sản phẩm = gửi hàng loạt qua cửa sổ 24h (RESPONSE), không phải Meta message tag.
   if (withinWindow) {
-    if (input.campaignType === 'broadcast') {
-      return block(
-        'MESSENGER_STANDARD',
-        ELIGIBILITY_REASON.MESSENGER_TAG_NOT_ALLOWED,
-        'Messenger không hỗ trợ broadcast — chỉ gửi trong cửa sổ tương tác',
-      );
-    }
     return allow('MESSENGER_STANDARD', cost);
   }
 
@@ -386,21 +380,14 @@ function evaluateZalo(
   }
 
   if (input.campaignType === 'broadcast' || defaultModeVal === 'ZALO_OA_BROADCAST') {
-    if (input.identity?.followStatus === 'UNFOLLOWED') {
+    // Chỉ follower đang Quan tâm OA — không gửi UNKNOWN/UNFOLLOWED
+    if (input.identity?.followStatus !== 'FOLLOWING') {
       return block(
         'ZALO_OA_BROADCAST',
         ELIGIBILITY_REASON.ZALO_NOT_FOLLOWING,
-        'Người nhận đã bỏ quan tâm OA',
-      );
-    }
-    if (
-      input.identity?.followStatus !== 'FOLLOWING' &&
-      input.identity?.followStatus !== 'UNKNOWN'
-    ) {
-      return block(
-        'ZALO_OA_BROADCAST',
-        ELIGIBILITY_REASON.ZALO_NOT_FOLLOWING,
-        'Broadcast chỉ gửi người còn quan tâm OA',
+        input.identity?.followStatus === 'UNFOLLOWED'
+          ? 'Người nhận đã bỏ quan tâm OA'
+          : 'Broadcast chỉ gửi người đang Quan tâm OA',
       );
     }
     if (quota.broadcastsRemaining != null && quota.broadcastsRemaining <= 0) {

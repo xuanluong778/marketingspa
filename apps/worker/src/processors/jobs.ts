@@ -288,21 +288,27 @@ export async function processDailyReport(redis: Redis) {
 export async function processBackup() {
   const { spawn } = await import('child_process');
   const path = await import('path');
+  const fs = await import('fs');
 
-  const root = path.resolve(__dirname, '../../..');
-  const scriptPath =
-    process.platform === 'win32'
-      ? path.join(root, 'scripts', 'backup-postgres.ps1')
-      : path.join(root, 'scripts', 'backup-postgres.sh');
+  let root = path.resolve(__dirname);
+  let scriptPath = '';
+  for (let i = 0; i < 8; i++) {
+    const candidate = path.join(root, 'scripts', 'backup-postgres.sh');
+    if (fs.existsSync(candidate)) {
+      scriptPath = candidate;
+      break;
+    }
+    root = path.dirname(root);
+  }
+  if (!scriptPath) {
+    throw new Error('backup-postgres.sh not found from worker dist');
+  }
 
   return new Promise<{ ok: boolean; output: string }>((resolve, reject) => {
-    const cmd = process.platform === 'win32' ? 'powershell' : 'sh';
-    const args =
-      process.platform === 'win32'
-        ? ['-ExecutionPolicy', 'Bypass', '-File', scriptPath]
-        : [scriptPath];
-
-    const child = spawn(cmd, args, { env: process.env, cwd: process.cwd() });
+    const child = spawn('bash', [scriptPath], {
+      env: process.env,
+      cwd: path.dirname(path.dirname(scriptPath)),
+    });
     let output = '';
     child.stdout?.on('data', (d) => {
       output += d.toString();
@@ -311,12 +317,16 @@ export async function processBackup() {
       output += d.toString();
     });
     child.on('close', (code) => {
+      const safe = output
+        .replace(/postgres(?:ql)?:\/\/[^@\s'"]+@/gi, 'postgresql://***@')
+        .replace(/(password|secret|token)=[^\s&]+/gi, '$1=***');
       if (code === 0) {
-        console.log(`[backup] Completed\n${output}`);
-        resolve({ ok: true, output });
+        console.log(`[backup] Completed\n${safe}`);
+        resolve({ ok: true, output: safe });
       } else {
         const err = new Error(`Backup script exited with code ${code}`);
         captureException(err, 'backup');
+        console.error(`[backup] FAIL code=${code}\n${safe}`);
         reject(err);
       }
     });

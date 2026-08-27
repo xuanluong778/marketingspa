@@ -19,6 +19,7 @@ import { RequirePermissions } from '../common/decorators/require-permissions.dec
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ClientIp } from '../common/decorators/client-ip.decorator';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
+import { createUploadMulterOptions } from '../common/uploads/upload-policy';
 import { HrmLeaveService } from './hrm-leave.service';
 import {
   CreateLeaveRequestDto,
@@ -50,11 +51,7 @@ export class HrmLeaveController {
 
   @Post()
   @RequirePermissions('hrm.leave.write')
-  @UseInterceptors(
-    FileInterceptor('file', {
-      limits: { fileSize: 5 * 1024 * 1024 },
-    }),
-  )
+  @UseInterceptors(FileInterceptor('file', createUploadMulterOptions('document')))
   create(
     @CurrentUser() user: AuthUser,
     @Body() dto: CreateLeaveRequestDto,

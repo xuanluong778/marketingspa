@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/select';
 import type { Lead } from '@/types/api';
 import type { CreateAppointmentInput } from '@/types/crm';
+import { useT } from '@/i18n/i18n-provider';
 
 interface AppointmentFromLeadDialogProps {
   open: boolean;
@@ -41,6 +42,7 @@ export function AppointmentFromLeadDialog({
   onSubmit,
   isPending,
 }: AppointmentFromLeadDialogProps) {
+  const t = useT();
   const defaultBranch = lead.branch?.id ?? branches[0]?.id ?? '';
   const [form, setForm] = useState({
     branchId: defaultBranch,
@@ -68,11 +70,11 @@ export function AppointmentFromLeadDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Tạo lịch hẹn — {lead.name}</DialogTitle>
+          <DialogTitle>{t('crm.createAppointmentTitle', { name: lead.name })}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label>Chi nhánh *</Label>
+            <Label>{t('crm.branchRequired')}</Label>
             <Select
               value={form.branchId}
               onValueChange={(v) => setForm((f) => ({ ...f, branchId: v }))}
@@ -90,7 +92,7 @@ export function AppointmentFromLeadDialog({
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>Nhân viên</Label>
+            <Label>{t('crm.employee')}</Label>
             <Select
               value={form.employeeId || 'none'}
               onValueChange={(v) => setForm((f) => ({ ...f, employeeId: v === 'none' ? '' : v }))}
@@ -109,7 +111,7 @@ export function AppointmentFromLeadDialog({
             </Select>
           </div>
           <div className="space-y-2">
-            <Label>Thời gian *</Label>
+            <Label>{t('crm.scheduledAtRequired')}</Label>
             <Input
               type="datetime-local"
               value={form.scheduledAt}
@@ -118,7 +120,7 @@ export function AppointmentFromLeadDialog({
             />
           </div>
           <div className="space-y-2">
-            <Label>Thời lượng (phút)</Label>
+            <Label>{t('crm.durationMinutes')}</Label>
             <Input
               type="number"
               min={15}
@@ -128,7 +130,7 @@ export function AppointmentFromLeadDialog({
             />
           </div>
           <div className="space-y-2">
-            <Label>Ghi chú</Label>
+            <Label>{t('crm.note')}</Label>
             <Textarea
               value={form.note}
               onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))}
@@ -137,10 +139,10 @@ export function AppointmentFromLeadDialog({
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button type="submit" disabled={isPending || !form.branchId}>
-              {isPending ? 'Đang tạo...' : 'Tạo lịch hẹn'}
+              {isPending ? t('crm.creating') : t('crm.createAppointment')}
             </Button>
           </DialogFooter>
         </form>

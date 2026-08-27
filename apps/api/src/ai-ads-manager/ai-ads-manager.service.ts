@@ -19,6 +19,7 @@ import { AdsMcpGateway } from '../ads-mcp/ads-mcp.gateway';
 import { tenantFromAuthUser } from '../ads-mcp/ads-mcp.context';
 import { AdsActionService } from '../ads-actions/ads-action.service';
 import { OpenAiService } from '../openai/openai.service';
+import { TenantKpiCacheService } from '../common/services/tenant-kpi-cache.service';
 import { createHash } from 'crypto';
 import { evaluateRules, clampBudgetChangePercent, normalizeMcpMode } from './ads-automation.engine';
 import { decimalToNumber, type CampaignMetrics } from './ads-efficiency.util';
@@ -47,10 +48,14 @@ export class AiAdsManagerService {
     private readonly adsMcp: AdsMcpGateway,
     private readonly adsActions: AdsActionService,
     private readonly openAi: OpenAiService,
+    private readonly kpiCache?: TenantKpiCacheService,
   ) {}
 
   /** Đọc dashboard chỉ qua Internal Ads MCP Gateway (PostgreSQL). */
   async getDashboard(user: AuthUser, dateFrom: string, dateTo: string) {
+    const cacheName = `ads:${dateFrom}:${dateTo}`;
+    const cached = await this.kpiCache?.getJson<any>(user.organizationId, cacheName);
+    if (cached) return cached;
     const ctx = tenantFromAuthUser(user);
     const m = await this.adsMcp.getMetrics(ctx, { dateFrom, dateTo });
     const { assertNoCredentialLeak } = await import('../common/utils/token-security.util');
@@ -71,6 +76,7 @@ export class AiAdsManagerService {
       evidence: m.evidence,
     };
     assertNoCredentialLeak(payload);
+    await this.kpiCache?.setJson(user.organizationId, cacheName, payload, 20);
     return payload;
   }
 
@@ -98,6 +104,32 @@ export class AiAdsManagerService {
 
   getGoogleOAuthStart(user: AuthUser): Promise<{ url: string }> {
     return this.googleAds.getOAuthStartUrl(user, 'ads');
+  }
+
+  listGoogleCustomers(user: AuthUser) {
+    return this.googleAds.listCustomers(user);
+  }
+
+  selectGoogleCustomer(user: AuthUser, dto: { customerId: string; customerName?: string; loginCustomerId?: string }) {
+    return this.googleAds.selectCustomer(user, dto);
+  }
+
+  listGoogleLinkedAccounts(user: AuthUser) {
+    return this.googleAds.listLinkedAccounts(user);
+  }
+
+  selectGoogleAccounts(
+    user: AuthUser,
+    dto: {
+      accounts: Array<{ customerId: string; customerName?: string; loginCustomerId?: string }>;
+      deselectOthers?: boolean;
+    },
+  ) {
+    return this.googleAds.selectAccounts(user, dto);
+  }
+
+  syncGoogleOnly(user: AuthUser, dto?: { dateFrom?: string; dateTo?: string }) {
+    return this.googleAds.sync(user, dto ?? {});
   }
 
   /** @deprecated Paste refresh token bị từ chối — dùng OAuth */

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -30,14 +31,33 @@ import {
   EMPLOYMENT_TYPE_OPTIONS,
 } from '@/types/hrm';
 import { ROLE_OPTIONS } from '@/types/appointments';
+import { apiClient } from '@/lib/api-client';
+import { useT } from '@/i18n/i18n-provider';
 
 export default function HrmEmployeeDetailPage() {
+  const t = useT();
   const params = useParams<{ id: string }>();
   const id = params.id;
   const { data, isLoading, isError, refetch } = useHrmEmployee(id);
   const { data: contracts } = useHrmContracts(id);
   const { data: documents } = useHrmDocuments(id);
   const mutations = useHrmEmployeeMutations();
+  const workStatsQ = useQuery({
+    queryKey: ['work-management', 'employee-stats', id],
+    queryFn: () =>
+      apiClient<{
+        counts: { inProgress: number; overdue: number; done: number; total: number };
+        projects: Array<{ id: string; name: string }>;
+        workload: {
+          score: number;
+          onTimeRate: number;
+          timeAccuracy: number | null;
+          note: string;
+        };
+        recent: Array<{ id: string; title: string; columnName: string; deadline?: string | null }>;
+      }>(`/work-management/employees/${id}/stats`),
+    enabled: !!id,
+  });
 
   const [accountForm, setAccountForm] = useState({
     email: '',
@@ -74,7 +94,7 @@ export default function HrmEmployeeDetailPage() {
         <div>
           <h1 className="text-2xl font-bold text-[hsl(var(--heading))]">{data.name}</h1>
           <p className="text-sm text-muted-foreground">
-            {data.code ?? 'Chưa có mã'} ·{' '}
+            {data.code ?? t('hrm.noCode')} ·{' '}
             {EMPLOYEE_STATUS_OPTIONS.find((s) => s.value === data.status)?.label ?? data.status}
           </p>
         </div>
@@ -86,6 +106,7 @@ export default function HrmEmployeeDetailPage() {
           <TabsTrigger value="account">Tài khoản</TabsTrigger>
           <TabsTrigger value="contracts">Hợp đồng</TabsTrigger>
           <TabsTrigger value="documents">Tài liệu</TabsTrigger>
+          <TabsTrigger value="work">Công việc</TabsTrigger>
         </TabsList>
 
         <TabsContent value="info" className="mt-4">
@@ -102,9 +123,7 @@ export default function HrmEmployeeDetailPage() {
               <Info label="Quản lý trực tiếp" value={data.manager?.name} />
               <Info
                 label="Loại hình"
-                value={
-                  EMPLOYMENT_TYPE_OPTIONS.find((x) => x.value === data.employmentType)?.label
-                }
+                value={EMPLOYMENT_TYPE_OPTIONS.find((x) => x.value === data.employmentType)?.label}
               />
               <Info
                 label="Ngày vào"
@@ -178,9 +197,7 @@ export default function HrmEmployeeDetailPage() {
                       type="email"
                       required
                       value={accountForm.email}
-                      onChange={(e) =>
-                        setAccountForm((f) => ({ ...f, email: e.target.value }))
-                      }
+                      onChange={(e) => setAccountForm((f) => ({ ...f, email: e.target.value }))}
                     />
                   </div>
                   <div className="space-y-1">
@@ -190,9 +207,7 @@ export default function HrmEmployeeDetailPage() {
                       required
                       minLength={6}
                       value={accountForm.password}
-                      onChange={(e) =>
-                        setAccountForm((f) => ({ ...f, password: e.target.value }))
-                      }
+                      onChange={(e) => setAccountForm((f) => ({ ...f, password: e.target.value }))}
                     />
                   </div>
                   <div className="space-y-1">
@@ -229,7 +244,10 @@ export default function HrmEmployeeDetailPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               {(contracts?.length ?? 0) === 0 ? (
-                <EmptyState title="Chưa có hợp đồng" className="py-8 text-white [&_svg]:text-white" />
+                <EmptyState
+                  title={t('hrm.noContracts')}
+                  className="py-8 text-white [&_svg]:text-white"
+                />
               ) : (
                 <ul className="space-y-2 text-sm">
                   {contracts!.map((c) => (
@@ -291,24 +309,24 @@ export default function HrmEmployeeDetailPage() {
                   type="number"
                   placeholder="Lương cơ bản"
                   value={contractForm.salaryBase}
-                  onChange={(e) =>
-                    setContractForm((f) => ({ ...f, salaryBase: e.target.value }))
-                  }
+                  onChange={(e) => setContractForm((f) => ({ ...f, salaryBase: e.target.value }))}
                 />
                 <Input
                   type="date"
                   required
                   value={contractForm.startDate}
-                  onChange={(e) =>
-                    setContractForm((f) => ({ ...f, startDate: e.target.value }))
-                  }
+                  onChange={(e) => setContractForm((f) => ({ ...f, startDate: e.target.value }))}
                 />
                 <Input
                   type="date"
                   value={contractForm.endDate}
                   onChange={(e) => setContractForm((f) => ({ ...f, endDate: e.target.value }))}
                 />
-                <Button type="submit" className="sm:col-span-2" disabled={mutations.createContract.isPending}>
+                <Button
+                  type="submit"
+                  className="sm:col-span-2"
+                  disabled={mutations.createContract.isPending}
+                >
                   Lưu hợp đồng
                 </Button>
               </form>
@@ -323,7 +341,10 @@ export default function HrmEmployeeDetailPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               {(documents?.length ?? 0) === 0 ? (
-                <EmptyState title="Chưa có tài liệu" className="py-8 text-white [&_svg]:text-white" />
+                <EmptyState
+                  title={t('hrm.noDocuments')}
+                  className="py-8 text-white [&_svg]:text-white"
+                />
               ) : (
                 <ul className="space-y-2 text-sm">
                   {documents!.map((d) => (
@@ -398,6 +419,77 @@ export default function HrmEmployeeDetailPage() {
                   Lưu tài liệu
                 </Button>
               </form>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="work" className="mt-4 space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Công việc</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {workStatsQ.isLoading ? (
+                <p className="text-sm text-muted-foreground">{t('hrm.loading')}</p>
+              ) : workStatsQ.isError || !workStatsQ.data ? (
+                <p className="text-sm text-muted-foreground">Không tải được thống kê công việc.</p>
+              ) : (
+                <>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                    <Info label="Đang làm" value={String(workStatsQ.data.counts.inProgress)} />
+                    <Info label="Quá hạn" value={String(workStatsQ.data.counts.overdue)} />
+                    <Info label="Hoàn thành" value={String(workStatsQ.data.counts.done)} />
+                    <Info label="Tổng việc" value={String(workStatsQ.data.counts.total)} />
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Info
+                      label="Tỷ lệ đúng hạn"
+                      value={`${workStatsQ.data.workload.onTimeRate ?? 0}%`}
+                    />
+                    <Info
+                      label="Khối lượng (điểm)"
+                      value={String(Math.round(workStatsQ.data.workload.score || 0))}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">{workStatsQ.data.workload.note}</p>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Dự án tham gia</p>
+                    {(workStatsQ.data.projects?.length ?? 0) === 0 ? (
+                      <p className="text-sm">—</p>
+                    ) : (
+                      <ul className="list-disc pl-5 text-sm">
+                        {workStatsQ.data.projects.map((p) => (
+                          <li key={p.id}>{p.name}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Việc gần đây</p>
+                    {(workStatsQ.data.recent?.length ?? 0) === 0 ? (
+                      <p className="text-sm">—</p>
+                    ) : (
+                      <ul className="space-y-1 text-sm">
+                        {workStatsQ.data.recent.map((t) => (
+                          <li
+                            key={t.id}
+                            className="flex flex-wrap justify-between gap-2 border-b border-white/5 py-1"
+                          >
+                            <span>{t.title}</span>
+                            <span className="text-muted-foreground text-xs">
+                              {t.columnName}
+                              {t.deadline ? ` · ${t.deadline}` : ''}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                  <Button variant="outline" size="sm" asChild>
+                    <Link href="/work-management/my">Mở Việc của tôi</Link>
+                  </Button>
+                </>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

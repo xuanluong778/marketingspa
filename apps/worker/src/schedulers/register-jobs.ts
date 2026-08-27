@@ -69,6 +69,30 @@ export async function registerRepeatableJobs() {
     { repeat: { pattern: '*/15 * * * *' }, jobId: 'marketing-autopilot-outcome-scan-due' },
   );
 
+  const emailPlanQueue = new Queue(QUEUE_NAMES.EMAIL_CAMPAIGN_PLAN, {
+    connection,
+    prefix: queuePrefix,
+  });
+  await emailPlanQueue.add(
+    'scan-due-scheduled-email-campaigns',
+    {},
+    { repeat: { pattern: '* * * * *' }, jobId: 'email-campaign-scan-due' },
+  );
+
+  // Zalo OA access token ~25h — quét mỗi 10 phút, refresh trước hạn ~45 phút
+  const zaloOaRefreshQueue = new Queue(QUEUE_NAMES.ZALO_OA_TOKEN_REFRESH, {
+    connection,
+    prefix: queuePrefix,
+  });
+  await zaloOaRefreshQueue.add(
+    'scan-due-zalo-oa-tokens',
+    {},
+    {
+      repeat: { pattern: '*/10 * * * *' },
+      jobId: 'zalo-oa-token-refresh-scan',
+    },
+  );
+
   console.log('[scheduler] Repeatable jobs registered');
 
   await Promise.all([
@@ -76,5 +100,7 @@ export async function registerRepeatableJobs() {
     autoPostQueue.close(),
     messagingPlanQueue.close(),
     autopilotOutcomeQueue.close(),
+    emailPlanQueue.close(),
+    zaloOaRefreshQueue.close(),
   ]);
 }

@@ -420,8 +420,10 @@ export class ChatbotFacebookWebhookService implements OnModuleInit {
    */
   verifySignature(rawBody?: Buffer, signatureHeader?: string): boolean {
     const secret = this.getAppSecret();
+    // Fail-closed: production must configure META_APP_SECRET
     if (!secret) {
-      return true;
+      this.logger.error('META_APP_SECRET missing — rejecting Meta webhook (fail-closed)');
+      return false;
     }
 
     if (!signatureHeader?.startsWith('sha256=')) {

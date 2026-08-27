@@ -10,8 +10,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { ErrorState, LoadingState } from '@/components/shared/page-state';
 import { useMetaFanpageMutations, useMetaFanpageStatus } from '@/hooks/use-meta-fanpage';
 import { formatMutationError } from '@/lib/format-mutation-error';
+import { useT } from '@/i18n/i18n-provider';
 
 export function MetaFanpageAutoPostPanel() {
+  const t = useT();
   const { data: status, isLoading, refetch, isFetching } = useMetaFanpageStatus();
   const { checkConnection, publishNow } = useMetaFanpageMutations();
 
@@ -39,20 +41,18 @@ export function MetaFanpageAutoPostPanel() {
       setMsg(data.message);
       if (!data.connected) setErrorMsg(data.message);
     } catch (error) {
-      setErrorMsg(formatMutationError(error, 'Không kiểm tra được kết nối Fanpage'));
+      setErrorMsg(formatMutationError(error, t('facebookFlow.cannotCheckConnection')));
     }
-  }, [checkConnection]);
+  }, [checkConnection, t]);
 
   const handlePublish = useCallback(async () => {
     setMsg('');
     setErrorMsg('');
     if (link.trim() && imageUrl.trim()) {
-      setErrorMsg('Chỉ chọn một: link hoặc ảnh — không gửi cả hai.');
+      setErrorMsg(t('facebookFlow.pickLinkOrImage'));
       return;
     }
-    const ok = window.confirm(
-      'Đăng bài này lên Facebook Fanpage ngay bây giờ?\n\nNội dung sẽ xuất hiện công khai trên Fanpage.',
-    );
+    const ok = window.confirm(t('facebookFlow.confirmPublishPublic'));
     if (!ok) return;
 
     try {
@@ -61,20 +61,18 @@ export function MetaFanpageAutoPostPanel() {
         link: link.trim() || undefined,
         imageUrl: imageUrl.trim() || undefined,
       });
-      setMsg(
-        `Đã đăng thành công. Facebook post: ${result.facebookPostId}. Đã lưu vào lịch sử Auto Post.`,
-      );
+      setMsg(t('facebookFlow.publishedOkWithId', { id: result.facebookPostId }));
       setMessage('');
       setLink('');
       setImageUrl('');
       await refetch();
     } catch (error) {
-      setErrorMsg(formatMutationError(error, 'Đăng bài thất bại'));
+      setErrorMsg(formatMutationError(error, t('facebookFlow.publishFailed')));
     }
-  }, [publishNow, message, link, imageUrl, refetch]);
+  }, [publishNow, message, link, imageUrl, refetch, t]);
 
   if (isLoading) {
-    return <LoadingState message="Đang kiểm tra kết nối Fanpage..." />;
+    return <LoadingState message={t('facebookFlow.checkingConnection')} />;
   }
 
   return (
@@ -84,10 +82,10 @@ export function MetaFanpageAutoPostPanel() {
           <div>
             <h2 className="text-lg font-semibold flex items-center gap-2">
               <Facebook className="h-5 w-5 text-[#1877F2]" />
-              Kết nối Facebook Fanpage
+              {t('facebookFlow.connectTitle')}
             </h2>
             <p className="text-sm text-muted-foreground mt-1">
-              Token Page chỉ lưu trên server (biến môi trường). Không nhập token trên trình duyệt.
+              {t('facebookFlow.tokenOnServer')}
             </p>
           </div>
           <Button
@@ -101,31 +99,32 @@ export function MetaFanpageAutoPostPanel() {
             ) : (
               <RefreshCw className="mr-2 h-4 w-4" />
             )}
-            Kiểm tra kết nối
+            {t('facebookFlow.checkConnection')}
           </Button>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-3 text-sm">
           <div className="rounded-md border px-3 py-2">
-            <p className="text-muted-foreground text-xs">Trạng thái</p>
+            <p className="text-muted-foreground text-xs">{t('facebookFlow.statusLabel')}</p>
             <p className={connected ? 'font-medium text-emerald-700' : 'font-medium text-amber-700'}>
-              {connected ? 'Đã kết nối' : 'Chưa kết nối'}
+              {connected ? t('facebookFlow.connected') : t('facebookFlow.notConnected')}
             </p>
           </div>
           <div className="rounded-md border px-3 py-2">
-            <p className="text-muted-foreground text-xs">Tên Fanpage</p>
+            <p className="text-muted-foreground text-xs">{t('facebookFlow.fanpageName')}</p>
             <p className="font-medium truncate">{status?.pageName || '—'}</p>
           </div>
           <div className="rounded-md border px-3 py-2">
-            <p className="text-muted-foreground text-xs">Page ID</p>
+            <p className="text-muted-foreground text-xs">{t('facebookFlow.pageId')}</p>
             <p className="font-medium font-mono">{status?.pageIdMasked || '—'}</p>
           </div>
         </div>
 
         {!status?.configured && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-            Cấu hình trên server: <code>META_PAGE_ID</code>, <code>META_PAGE_ACCESS_TOKEN</code>,{' '}
-            <code>META_GRAPH_VERSION</code> trong file <code>.env</code> rồi restart API.
+            {t('facebookFlow.envConfigPrefix')} <code>META_PAGE_ID</code>,{' '}
+            <code>META_PAGE_ACCESS_TOKEN</code>, <code>META_GRAPH_VERSION</code>{' '}
+            {t('facebookFlow.envConfigSuffix')}
           </div>
         )}
 
@@ -139,36 +138,41 @@ export function MetaFanpageAutoPostPanel() {
 
       <div className="grid gap-6 lg:grid-cols-2">
         <div className="rounded-lg border bg-card p-5 shadow-sm space-y-4">
-          <h3 className="font-semibold">Đăng bài Fanpage</h3>
+          <h3 className="font-semibold">{t('facebookFlow.postToFanpage')}</h3>
+          {!connected ? (
+            <p className="text-xs text-amber-700">
+              {t('facebookFlow.composeWhileDisconnected')}
+            </p>
+          ) : null}
           <div className="space-y-2">
-            <Label htmlFor="meta-fp-message">Nội dung</Label>
+            <Label htmlFor="meta-fp-message">{t('facebookFlow.content')}</Label>
             <Textarea
               id="meta-fp-message"
               rows={6}
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              placeholder="Nội dung bài đăng trên Fanpage..."
-              disabled={!connected || publishNow.isPending}
+              placeholder={t('facebookFlow.contentPlaceholderShort')}
+              disabled={publishNow.isPending}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="meta-fp-link">Link (tuỳ chọn)</Label>
+            <Label htmlFor="meta-fp-link">{t('facebookFlow.linkOptional')}</Label>
             <Input
               id="meta-fp-link"
               value={link}
               onChange={(e) => setLink(e.target.value)}
               placeholder="https://..."
-              disabled={!connected || publishNow.isPending || Boolean(imageUrl.trim())}
+              disabled={publishNow.isPending || Boolean(imageUrl.trim())}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="meta-fp-image">URL ảnh (tuỳ chọn)</Label>
+            <Label htmlFor="meta-fp-image">{t('facebookFlow.imageUrl')}</Label>
             <Input
               id="meta-fp-image"
               value={imageUrl}
               onChange={(e) => setImageUrl(e.target.value)}
               placeholder="https://.../image.jpg"
-              disabled={!connected || publishNow.isPending || Boolean(link.trim())}
+              disabled={publishNow.isPending || Boolean(link.trim())}
             />
           </div>
           <Button
@@ -182,12 +186,12 @@ export function MetaFanpageAutoPostPanel() {
             ) : (
               <Send className="mr-2 h-4 w-4" />
             )}
-            Đăng ngay
+            {t('facebookFlow.publishNow')}
           </Button>
         </div>
 
         <div className="space-y-2">
-          <p className="text-sm font-medium text-muted-foreground">Xem trước</p>
+          <p className="text-sm font-medium text-muted-foreground">{t('facebookFlow.preview')}</p>
           <FacebookFanpagePreview
             pageName={pageName}
             caption={message}

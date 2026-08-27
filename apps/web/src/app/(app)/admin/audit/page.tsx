@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { ErrorState, LoadingState } from '@/components/shared/page-state';
 import { useAdminAuditLogs } from '@/hooks/use-platform-admin';
 import { formatDateTime } from '@/lib/format';
+import { useT } from '@/i18n/i18n-provider';
 
 type AuditRow = {
   id: string;
@@ -22,6 +23,7 @@ type AuditRow = {
 };
 
 export default function AdminAuditPage() {
+  const t = useT();
   const [q, setQ] = useState('');
   const [action, setAction] = useState('');
   const [page, setPage] = useState(1);
@@ -66,7 +68,7 @@ export default function AdminAuditPage() {
       </div>
 
       {!items.length ? (
-        <p className="text-sm text-muted-foreground">Chưa có nhật ký.</p>
+        <p className="text-sm text-muted-foreground">{t('admin.noLogs')}</p>
       ) : (
         <div className="space-y-2">
           {items.map((row) => (

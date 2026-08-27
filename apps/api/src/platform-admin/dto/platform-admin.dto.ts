@@ -102,9 +102,9 @@ export class AdminListQueryDto {
 }
 
 export class AdminReasonDto {
-  @IsOptional()
   @IsString()
-  reason?: string;
+  @MinLength(3, { message: 'reason phải có ít nhất 3 ký tự' })
+  reason!: string;
 }
 
 export class AdminSetActiveDto {

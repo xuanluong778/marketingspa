@@ -2,20 +2,22 @@
 
 import Link from 'next/link';
 import { useCurrentSubscription } from '@/hooks/use-billing';
+import { useI18n } from '@/i18n/i18n-provider';
 
-function formatRemaining(ms: number): string {
-  if (ms <= 0) return '0 giờ';
+function formatRemaining(ms: number, t: ReturnType<typeof useI18n>['t']): string {
+  if (ms <= 0) return t('billing.zeroHours');
   const days = Math.floor(ms / 86400000);
   const hours = Math.floor((ms % 86400000) / 3600000);
-  if (days > 0) return `${days} ngày ${hours} giờ`;
+  if (days > 0) return t('billing.daysHours', { days, hours });
   const minutes = Math.floor((ms % 3600000) / 60000);
-  return `${hours} giờ ${minutes} phút`;
+  return t('billing.hoursMinutes', { hours, minutes });
 }
 
 /**
  * Banner dùng thử — khôi phục từ runtime AppShell (20260802_2028).
  */
 export function TrialBanner() {
+  const { locale, t } = useI18n();
   const { data } = useCurrentSubscription();
   const status = data?.subscriptionStatus ?? data?.status;
   const trial = data?.trial;
@@ -23,6 +25,7 @@ export function TrialBanner() {
   if (status !== 'TRIALING' || !trial) return null;
 
   const warn = trial.warningWithin24h;
+  const dateLocale = locale === 'en' ? 'en-US' : 'vi-VN';
 
   return (
     <div
@@ -31,17 +34,20 @@ export function TrialBanner() {
       }`}
     >
       <p className="text-white">
-        {warn ? '⚠️ Dùng thử sắp hết hạn — ' : 'Dùng thử miễn phí — '}
-        còn <strong className="text-white">{formatRemaining(trial.remainingMs)}</strong>
+        {warn ? '⚠️ ' : ''}
+        {t('billing.trialRemaining')}{' '}
+        <strong className="text-white">{formatRemaining(trial.remainingMs, t)}</strong>
         {trial.trialEndsAt
-          ? ` (đến ${new Date(trial.trialEndsAt).toLocaleString('vi-VN')})`
+          ? ` ${t('billing.trialUntil', {
+              date: new Date(trial.trialEndsAt).toLocaleString(dateLocale),
+            })}`
           : ''}
       </p>
       <Link
         href="/pricing"
         className="rounded-md bg-heading px-3 py-1 text-xs font-medium text-white hover:bg-heading/90"
       >
-        Nâng cấp ngay
+        {t('billing.upgradeNow')}
       </Link>
     </div>
   );

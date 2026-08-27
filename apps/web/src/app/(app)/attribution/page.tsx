@@ -23,6 +23,7 @@ import {
   type AttributionRow,
 } from '@/hooks/use-attribution';
 import { formatCurrency } from '@/lib/format';
+import { useT } from '@/i18n/i18n-provider';
 
 function metric(v: number | null | undefined, digits = 2) {
   if (v == null || Number.isNaN(v)) return '—';
@@ -30,6 +31,7 @@ function metric(v: number | null | undefined, digits = 2) {
 }
 
 export default function AttributionPage() {
+  const t = useT();
   const [filters, setFilters] = useState<AttributionFilters>(defaultAttributionFilters);
   const { data, isLoading, isError, refetch } = useAttributionDashboard(filters);
   const { data: branches } = useBranches();
@@ -193,7 +195,7 @@ export default function AttributionPage() {
           data={rows}
           isLoading={false}
           isError={false}
-          emptyTitle="Chưa có dữ liệu attribution"
+          emptyTitle={t('attribution.empty')}
           getRowKey={(r: AttributionRow) => r.key}
           columns={[
             { key: 'label', header: 'Campaign / Ad', cell: (r) => r.label },

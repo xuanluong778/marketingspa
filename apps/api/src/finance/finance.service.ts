@@ -16,6 +16,7 @@ import { AttributionHooksService } from '../attribution/attribution-hooks.servic
 import { AuditService } from '../audit/audit.service';
 import { PipelineService } from '../crm/pipeline.service';
 import { EventsGateway } from '../events/events.gateway';
+import { TenantKpiCacheService } from '../common/services/tenant-kpi-cache.service';
 import {
   CreateOrderDto,
   CreatePaymentDto,
@@ -40,6 +41,7 @@ export class FinanceService {
     private readonly audit: AuditService,
     private readonly pipeline: PipelineService,
     private readonly events: EventsGateway,
+    private readonly kpiCache?: TenantKpiCacheService,
   ) {}
 
   async listOrders(organizationId: string, query: FinanceQueryDto) {
@@ -254,6 +256,7 @@ export class FinanceService {
       },
     });
 
+    await this.kpiCache?.bump(organizationId);
     return payment;
   }
 
@@ -305,6 +308,7 @@ export class FinanceService {
       metadata: { orderId: payment.orderId, amount: Number(payment.amount), orderStatus: nextStatus },
     });
 
+    await this.kpiCache?.bump(organizationId);
     return updated;
   }
 
@@ -357,7 +361,7 @@ export class FinanceService {
       where: { id: leadId },
       data: {
         pipelineStatus: LeadPipelineStatus.PURCHASED,
-        funnelStageId: stage?.id,
+        stageId: stage?.id,
         convertedAt: new Date(),
       },
     });
@@ -404,7 +408,7 @@ export class FinanceService {
       branchId: dto.branchId,
       adCampaignId: dto.adCampaignId,
     });
-    return this.prisma.expense.create({
+    const row = await this.prisma.expense.create({
       data: {
         organizationId,
         category: dto.category,
@@ -417,11 +421,13 @@ export class FinanceService {
       },
       include: { adCampaign: true, branch: true },
     });
+    await this.kpiCache?.bump(organizationId);
+    return row;
   }
 
   async updateExpense(organizationId: string, id: string, dto: UpdateExpenseDto) {
     await this.ensureExpense(organizationId, id);
-    return this.prisma.expense.update({
+    const row = await this.prisma.expense.update({
       where: { id },
       data: {
         ...dto,
@@ -430,16 +436,23 @@ export class FinanceService {
       },
       include: { adCampaign: true, branch: true },
     });
+    await this.kpiCache?.bump(organizationId);
+    return row;
   }
 
   async removeExpense(organizationId: string, id: string) {
     await this.ensureExpense(organizationId, id);
-    return this.prisma.expense.delete({ where: { id } });
+    const row = await this.prisma.expense.delete({ where: { id } });
+    await this.kpiCache?.bump(organizationId);
+    return row;
   }
 
   async getDashboard(organizationId: string, query: DashboardQueryDto) {
     const { from, to } = this.resolveDashboardRange(query);
     const branchFilter = query.branchId ? { branchId: query.branchId } : {};
+    const cacheName = `fin:${from.toISOString()}:${to.toISOString()}:${query.branchId || 'all'}`;
+    const cached = await this.kpiCache?.getJson<Record<string, unknown>>(organizationId, cacheName);
+    if (cached) return cached;
 
     const paymentWhere: Prisma.PaymentWhereInput = {
       organizationId,
@@ -485,7 +498,7 @@ export class FinanceService {
     const revenue = Number(payments._sum.amount ?? 0);
     const profit = revenue - expenseTotal;
 
-    return {
+    const payload = {
       from: from.toISOString(),
       to: to.toISOString(),
       revenue,
@@ -500,6 +513,8 @@ export class FinanceService {
       expenseCount: expensesByCategory.reduce((s, e) => s + 1, 0),
       margin: revenue > 0 ? ((profit / revenue) * 100).toFixed(1) : '0',
     };
+    await this.kpiCache?.setJson(organizationId, cacheName, payload, 20);
+    return payload;
   }
 
   private resolveDashboardRange(query: DashboardQueryDto): { from: Date; to: Date } {

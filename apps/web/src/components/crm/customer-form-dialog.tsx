@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import type { CreateCustomerInput, CustomerDetail } from '@/types/crm';
+import { useT } from '@/i18n/i18n-provider';
 
 interface CustomerFormDialogProps {
   open: boolean;
@@ -40,6 +41,7 @@ export function CustomerFormDialog({
   onSubmit,
   isPending,
 }: CustomerFormDialogProps) {
+  const t = useT();
   const [form, setForm] = useState<CreateCustomerInput>(() => ({
     name: initial?.name ?? '',
     phone: initial?.phone ?? '',
@@ -70,11 +72,11 @@ export function CustomerFormDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{initial ? 'Sửa khách hàng' : 'Thêm khách hàng'}</DialogTitle>
+          <DialogTitle>{initial ? t('crm.editCustomer') : t('crm.addCustomer')}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="name">Họ tên *</Label>
+            <Label htmlFor="name">{t('crm.fullName')} *</Label>
             <Input
               id="name"
               value={form.name}
@@ -84,7 +86,7 @@ export function CustomerFormDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label htmlFor="phone">SĐT</Label>
+              <Label htmlFor="phone">{t('crm.phoneShort')}</Label>
               <Input
                 id="phone"
                 value={form.phone}
@@ -92,7 +94,7 @@ export function CustomerFormDialog({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{t('common.email')}</Label>
               <Input
                 id="email"
                 type="email"
@@ -103,13 +105,13 @@ export function CustomerFormDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label>Nguồn khách</Label>
+              <Label>{t('crm.customerSource')}</Label>
               <Select
                 value={form.leadSourceId || 'none'}
                 onValueChange={(v) => update('leadSourceId', v === 'none' ? '' : v)}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Chọn nguồn" />
+                  <SelectValue placeholder={t('crm.selectSource')} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">—</SelectItem>
@@ -122,13 +124,13 @@ export function CustomerFormDialog({
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Chi nhánh</Label>
+              <Label>{t('crm.branch')}</Label>
               <Select
                 value={form.branchId || 'none'}
                 onValueChange={(v) => update('branchId', v === 'none' ? '' : v)}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Chọn chi nhánh" />
+                  <SelectValue placeholder={t('crm.selectBranch')} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">—</SelectItem>
@@ -142,7 +144,7 @@ export function CustomerFormDialog({
             </div>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="tags">Tags (phân cách bằng dấu phẩy)</Label>
+            <Label htmlFor="tags">{t('crm.tagsHint')}</Label>
             <Input
               id="tags"
               value={form.tags?.join(', ') ?? ''}
@@ -155,11 +157,11 @@ export function CustomerFormDialog({
                     .filter(Boolean),
                 )
               }
-              placeholder="VIP, da liễu"
+              placeholder={t('crm.tagsExample')}
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="note">Ghi chú</Label>
+            <Label htmlFor="note">{t('crm.note')}</Label>
             <Textarea
               id="note"
               value={form.note ?? ''}
@@ -169,10 +171,10 @@ export function CustomerFormDialog({
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button type="submit" disabled={isPending}>
-              {isPending ? 'Đang lưu...' : 'Lưu'}
+              {isPending ? t('common.saving') : t('common.save')}
             </Button>
           </DialogFooter>
         </form>

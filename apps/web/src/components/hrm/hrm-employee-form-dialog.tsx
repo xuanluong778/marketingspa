@@ -29,6 +29,7 @@ import {
 } from '@/types/hrm';
 import { useCreateBranch } from '@/hooks/use-crm';
 import { useHrmEmployeeMutations } from '@/hooks/use-hrm';
+import { useT } from '@/i18n/i18n-provider';
 
 interface Props {
   open: boolean;
@@ -49,6 +50,7 @@ export function HrmEmployeeFormDialog({
   onSubmit,
   isPending,
 }: Props) {
+  const t = useT();
   const createBranch = useCreateBranch();
   const { createDepartment } = useHrmEmployeeMutations();
   const [addBranchOpen, setAddBranchOpen] = useState(false);
@@ -97,7 +99,7 @@ export function HrmEmployeeFormDialog({
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{initial ? 'Sửa nhân viên' : 'Thêm nhân viên'}</DialogTitle>
+            <DialogTitle>{initial ? t('hrm.editEmployee') : t('hrm.addEmployee')}</DialogTitle>
           </DialogHeader>
           <form
             className="space-y-3"
@@ -119,7 +121,7 @@ export function HrmEmployeeFormDialog({
           >
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1 col-span-2">
-                <Label>Họ tên *</Label>
+                <Label>{t('hrm.fullNameRequired')}</Label>
                 <Input
                   required
                   value={form.name}
@@ -127,14 +129,14 @@ export function HrmEmployeeFormDialog({
                 />
               </div>
               <div className="space-y-1">
-                <Label>Mã NV</Label>
+                <Label>{t('hrm.employeeCode')}</Label>
                 <Input
                   value={form.code ?? ''}
                   onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
                 />
               </div>
               <div className="space-y-1">
-                <Label>Ngày vào</Label>
+                <Label>{t('hrm.startDate')}</Label>
                 <Input
                   type="date"
                   value={form.startDate ?? ''}
@@ -142,7 +144,7 @@ export function HrmEmployeeFormDialog({
                 />
               </div>
               <div className="space-y-1">
-                <Label>SĐT</Label>
+                <Label>{t('hrm.phone')}</Label>
                 <Input
                   value={form.phone ?? ''}
                   onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
@@ -157,7 +159,7 @@ export function HrmEmployeeFormDialog({
                 />
               </div>
               <div className="space-y-1 col-span-2">
-                <Label>Chức vụ</Label>
+                <Label>{t('hrm.position')}</Label>
                 <Select
                   value={form.position || 'none'}
                   onValueChange={(v) =>
@@ -165,7 +167,7 @@ export function HrmEmployeeFormDialog({
                   }
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder="Chọn chức vụ" />
+                    <SelectValue placeholder={t('hrm.selectPosition')} />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">—</SelectItem>
@@ -178,7 +180,7 @@ export function HrmEmployeeFormDialog({
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label>Loại hình</Label>
+                <Label>{t('hrm.employmentTypeShort')}</Label>
                 <Select
                   value={form.employmentType ?? 'FULL_TIME'}
                   onValueChange={(v) =>
@@ -198,7 +200,7 @@ export function HrmEmployeeFormDialog({
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label>Trạng thái</Label>
+                <Label>{t('hrm.status')}</Label>
                 <Select
                   value={form.status ?? 'ACTIVE'}
                   onValueChange={(v) =>
@@ -218,7 +220,7 @@ export function HrmEmployeeFormDialog({
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label>Chi nhánh</Label>
+                <Label>{t('hrm.branch')}</Label>
                 <div className="flex gap-2">
                   <Select
                     value={form.branchId || 'none'}
@@ -249,7 +251,7 @@ export function HrmEmployeeFormDialog({
                 </div>
               </div>
               <div className="space-y-1">
-                <Label>Phòng ban</Label>
+                <Label>{t('hrm.department')}</Label>
                 <div className="flex gap-2">
                   <Select
                     value={form.departmentId || 'none'}
@@ -280,7 +282,7 @@ export function HrmEmployeeFormDialog({
                 </div>
               </div>
               <div className="space-y-1 col-span-2">
-                <Label>Địa chỉ</Label>
+                <Label>{t('hrm.address')}</Label>
                 <Input
                   value={form.address ?? ''}
                   onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
@@ -296,10 +298,10 @@ export function HrmEmployeeFormDialog({
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                Hủy
+                {t('common.cancel')}
               </Button>
               <Button type="submit" disabled={isPending}>
-                {isPending ? 'Đang lưu...' : 'Lưu'}
+                {isPending ? t('common.saving') : t('common.save')}
               </Button>
             </DialogFooter>
           </form>
@@ -309,7 +311,7 @@ export function HrmEmployeeFormDialog({
       <Dialog open={addBranchOpen} onOpenChange={setAddBranchOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Thêm chi nhánh</DialogTitle>
+            <DialogTitle>{t('hrm.addBranch')}</DialogTitle>
           </DialogHeader>
           <form
             className="space-y-3"
@@ -331,11 +333,11 @@ export function HrmEmployeeFormDialog({
               required
               value={newBranchName}
               onChange={(e) => setNewBranchName(e.target.value)}
-              placeholder="Tên chi nhánh"
+              placeholder={t('hrm.branchName')}
             />
             <DialogFooter>
               <Button type="submit" disabled={createBranch.isPending}>
-                Thêm
+                {t('common.add')}
               </Button>
             </DialogFooter>
           </form>
@@ -345,7 +347,7 @@ export function HrmEmployeeFormDialog({
       <Dialog open={addDeptOpen} onOpenChange={setAddDeptOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Thêm phòng ban</DialogTitle>
+            <DialogTitle>{t('hrm.addDepartment')}</DialogTitle>
           </DialogHeader>
           <form
             className="space-y-3"
@@ -370,11 +372,11 @@ export function HrmEmployeeFormDialog({
               required
               value={newDeptName}
               onChange={(e) => setNewDeptName(e.target.value)}
-              placeholder="Tên phòng ban"
+              placeholder={t('hrm.departmentName')}
             />
             <DialogFooter>
               <Button type="submit" disabled={createDepartment.isPending}>
-                Thêm
+                {t('common.add')}
               </Button>
             </DialogFooter>
           </form>

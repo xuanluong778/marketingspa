@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { useT } from '@/i18n/i18n-provider';
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -26,11 +27,14 @@ export function ConfirmDialog({
   onOpenChange,
   title,
   description,
-  confirmLabel = 'Xác nhận',
+  confirmLabel,
   onConfirm,
   isPending,
   destructive,
 }: ConfirmDialogProps) {
+  const t = useT();
+  const resolvedConfirm = confirmLabel ?? t('common.confirm');
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
@@ -40,14 +44,14 @@ export function ConfirmDialog({
         </DialogHeader>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Hủy
+            {t('common.cancel')}
           </Button>
           <Button
             variant={destructive ? 'destructive' : 'default'}
             disabled={isPending}
             onClick={onConfirm}
           >
-            {isPending ? 'Đang xử lý...' : confirmLabel}
+            {isPending ? t('status.processing') : resolvedConfirm}
           </Button>
         </DialogFooter>
       </DialogContent>

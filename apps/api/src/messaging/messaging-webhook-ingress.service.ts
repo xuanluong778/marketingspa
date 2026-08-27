@@ -3,6 +3,7 @@ import { Inject, Injectable, Logger, UnauthorizedException } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 import type { Queue } from 'bullmq';
 import { MessageChannel, MessagingProviderKind } from '@marketingspa/database';
+import { verifyZaloWebhookSignature } from '@marketingspa/shared';
 import { PrismaService } from '../prisma/prisma.service';
 import { QueueEnqueueService } from '../common/services/queue-enqueue.service';
 import { MESSAGING_WEBHOOK_QUEUE } from '../queue/queue.constants';
@@ -54,7 +55,10 @@ export class MessagingWebhookIngressService {
       this.config.get<string>('META_APP_SECRET') ??
       this.config.get<string>('FACEBOOK_APP_SECRET') ??
       '';
-    if (!appSecret) return;
+    if (!appSecret) {
+      this.logger.error('META_APP_SECRET missing — rejecting Messenger webhook (fail-closed)');
+      throw new UnauthorizedException('Meta webhook secret not configured');
+    }
 
     const provider = this.providers.get(MessagingProviderKind.MESSENGER);
     if (
@@ -94,29 +98,85 @@ export class MessagingWebhookIngressService {
     await this.enqueueEvents(connection, events, payload);
   }
 
-  async ingestZalo(rawBody: Buffer, payload: unknown, signature?: string): Promise<void> {
-    const body = payload as { oa_id?: string };
-    const oaId = body.oa_id;
-    if (!oaId) return;
+  /**
+   * Fail-closed Zalo OA webhook auth — thiếu secret/signature hoặc sai chữ ký → 401.
+   * Verifies official mac=sha256(appId+body+timestamp+oaSecret) (+ legacy HMAC).
+   * Không log secret.
+   */
+  async assertZaloSignature(rawBody: Buffer, payload: unknown, signature?: string): Promise<void> {
+    const body = payload as { oa_id?: string; timestamp?: string | number };
+    const oaId = typeof body.oa_id === 'string' ? body.oa_id.trim() : '';
+    if (!oaId) {
+      throw new UnauthorizedException('Zalo webhook missing oa_id');
+    }
+    if (!signature?.trim()) {
+      throw new UnauthorizedException('Invalid Zalo webhook signature');
+    }
 
+    const connection = await this.channelConnections.findByAccountRef(MessageChannel.ZALO, oaId);
+    if (!connection || connection.isPaused) {
+      throw new UnauthorizedException('Zalo OA connection not found or paused');
+    }
+
+    const secret = await this.resolveZaloWebhookSecret(oaId, connection.encryptedCredentials);
+    if (!secret) {
+      this.logger.warn(`Zalo webhook rejected — missing webhookSecret oa=${oaId}`);
+      throw new UnauthorizedException('Zalo webhook secret not configured');
+    }
+
+    const appId =
+      (this.config.get<string>('ZALO_APP_ID') ?? '').trim() ||
+      (this.config.get<string>('ZALO_OA_APP_ID') ?? '').trim();
+
+    const ok = verifyZaloWebhookSignature({
+      rawBody,
+      signature,
+      appId,
+      timestamp: body.timestamp ?? '',
+      oaSecretKey: secret,
+      allowLegacyHmac: true,
+    });
+    if (!ok) {
+      this.logger.warn(`Zalo webhook signature rejected oa=${oaId}`);
+      throw new UnauthorizedException('Invalid Zalo webhook signature');
+    }
+  }
+
+  /** Prefer connection secret; fall back to sibling rows / env (never logged). */
+  private async resolveZaloWebhookSecret(
+    oaId: string,
+    encryptedCredentials: string | null,
+  ): Promise<string> {
+    const fromConn = this.channelConnections.decryptCredentials(encryptedCredentials);
+    const direct = (fromConn.webhookSecret || fromConn.oaSecretKey || '').trim();
+    if (direct) return direct;
+
+    const siblings = await this.prisma.messagingChannelConnection.findMany({
+      where: { channel: MessageChannel.ZALO, accountRef: oaId },
+      select: { encryptedCredentials: true },
+      take: 10,
+    });
+    for (const row of siblings) {
+      const c = this.channelConnections.decryptCredentials(row.encryptedCredentials);
+      const s = (c.webhookSecret || c.oaSecretKey || '').trim();
+      if (s) return s;
+    }
+
+    return (
+      (this.config.get<string>('ZALO_OA_WEBHOOK_SECRET') ?? '').trim() ||
+      (this.config.get<string>('ZALO_WEBHOOK_SECRET') ?? '').trim()
+    );
+  }
+
+  async ingestZalo(rawBody: Buffer, payload: unknown, signature?: string): Promise<void> {
+    await this.assertZaloSignature(rawBody, payload, signature);
+
+    const body = payload as { oa_id?: string };
+    const oaId = String(body.oa_id || '').trim();
     const connection = await this.channelConnections.findByAccountRef(MessageChannel.ZALO, oaId);
     if (!connection || connection.isPaused) return;
 
-    const credentials = this.channelConnections.decryptCredentials(connection.encryptedCredentials);
-    const secret = credentials.webhookSecret ?? '';
     const provider = this.providers.get(MessagingProviderKind.ZALO_OA);
-    // Fail-closed when webhook secret is configured: missing/invalid signature → drop
-    if (secret) {
-      if (
-        !signature ||
-        !provider.verifyWebhookSignature ||
-        !provider.verifyWebhookSignature(rawBody, signature, secret)
-      ) {
-        this.logger.warn(`Zalo webhook signature rejected oa=${oaId}`);
-        return;
-      }
-    }
-
     const events = provider.normalizeWebhook(payload, oaId);
     await this.enqueueEvents(connection, events, payload);
   }

@@ -13,11 +13,18 @@ export const QUEUE_NAMES = {
   MESSAGING_CAMPAIGN_PLAN: 'messaging-campaign-plan-queue',
   MESSAGING_CAMPAIGN_DISPATCH: 'messaging-campaign-dispatch-queue',
   MESSAGING_SEND: 'messaging-send-queue',
+  ZALO_OA_TOKEN_REFRESH: 'zalo-oa-token-refresh-queue',
   ADS_SYNC: 'ads-sync-queue',
   ADS_ACTION: 'ads-action-queue',
+  ADS_CAMPAIGN_DEPLOY: 'ads-campaign-deploy-queue',
+  ADS_AUTOPILOT: 'ads-autopilot-queue',
   AFFILIATE_HOLD: 'affiliate-hold-queue',
   VIDEO_TRANSCRIPTION: 'video-transcription-queue',
   AD_URL_ANALYZE: 'ad-url-analyze-queue',
+  EMAIL_CAMPAIGN_PLAN: 'email-campaign-plan-queue',
+  EMAIL_CAMPAIGN_SEND: 'email-campaign-send-queue',
+  CUSTOMER_360_SYNC: 'customer-360-sync-queue',
+  // LOCK: do not remove — worker/API register these Autopilot queues
   MARKETING_AUTOPILOT_OUTCOME_EVAL: 'marketing-autopilot-outcome-eval-queue',
   MARKETING_AUTOPILOT_MISSION: 'marketing-autopilot-mission-queue',
 } as const;
@@ -31,6 +38,10 @@ export const WS_EVENTS = {
   LEAD_NEW: 'lead:new',
   LEAD_STALE_ALERT: 'lead:stale-alert',
   LEAD_STATUS_CHANGED: 'lead:status-changed',
+  LEAD_SCORE_CHANGED: 'lead:score-changed',
+  LEAD_QUALIFIED: 'lead:qualified',
+  LEAD_SLA_BREACHED: 'lead:sla-breached',
+  LEAD_REASSIGNED: 'lead:reassigned',
   APPOINTMENT_NEW: 'appointment:new',
   APPOINTMENT_REMINDER: 'appointment:reminder',
   DAILY_REPORT: 'daily-report:ready',
@@ -68,3 +79,11 @@ export const USER_ROLE_ALIASES = {
 
 export type CampaignStatus = (typeof CAMPAIGN_STATUS)[keyof typeof CAMPAIGN_STATUS];
 export type UserRole = (typeof USER_ROLE)[keyof typeof USER_ROLE];
+
+/** BullMQ completed/failed retention — worker + API enqueue must stay in sync. */
+export const BULLMQ_JOB_RETENTION = {
+  complete: { count: 1000, age: 7 * 24 * 3600 },
+  fail: { count: 5000, age: 14 * 24 * 3600 },
+} as const;
+
+export const REDIS_MEMORY_ALERT_PCT = { warn: 70, high: 85, critical: 95 } as const;

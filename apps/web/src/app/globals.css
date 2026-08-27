@@ -49,8 +49,14 @@
     @apply border-border;
   }
 
+  html {
+    overflow-x: clip;
+  }
+
   body {
     @apply bg-background text-foreground;
+    overflow-x: clip;
+    max-width: 100%;
   }
 
   h1,
@@ -135,6 +141,22 @@
   .content-create-tab button.text-white:hover span,
   .content-create-tab button.text-white:hover svg {
     color: #f97316 !important;
+  }
+
+  /* Lấy văn bản — CTA cam: hover chữ/icon đen */
+  .content-create-tab button.video-transcript-submit-btn:hover,
+  .content-create-tab button.video-transcript-submit-btn:hover *,
+  .content-create-tab button.video-transcript-submit-btn.text-white:hover,
+  .content-create-tab button.video-transcript-submit-btn.text-white:hover span,
+  .content-create-tab button.video-transcript-submit-btn.text-white:hover svg,
+  button.video-transcript-submit-btn:hover,
+  button.video-transcript-submit-btn:hover *,
+  button.video-transcript-submit-btn.text-white:hover,
+  button.video-transcript-submit-btn.text-white:hover span,
+  button.video-transcript-submit-btn.text-white:hover svg {
+    color: #000000 !important;
+    -webkit-text-fill-color: #000000 !important;
+    stroke: #000000 !important;
   }
 
   .content-create-tab .text-muted-foreground {
@@ -352,6 +374,79 @@
     color: #ffffff !important;
     -webkit-text-fill-color: #ffffff !important;
   }
+
+  /* Auto Post fixed bar — compact 60px height */
+  .auto-post-action-bar {
+    height: 60px !important;
+    min-height: 60px !important;
+    max-height: 60px !important;
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    box-sizing: border-box;
+    background-color: #0a3d31 !important;
+  }
+
+  .auto-post-action-bar,
+  .auto-post-action-bar label {
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+  }
+
+  .auto-post-action-bar input[type='datetime-local'] {
+    height: 36px !important;
+    min-height: 36px !important;
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+    caret-color: #ffffff;
+  }
+
+  .auto-post-action-bar button,
+  .auto-post-action-bar button.auto-post-action-btn,
+  .auto-post-action-bar button *,
+  .auto-post-action-bar button span,
+  .auto-post-action-bar button svg,
+  .auto-post-action-bar button path,
+  .auto-post-action-bar button:hover,
+  .auto-post-action-bar button:hover *,
+  .auto-post-action-bar button:disabled,
+  .auto-post-action-bar button:disabled *,
+  .auto-post-action-bar button[aria-disabled='true'],
+  .auto-post-action-bar button[aria-disabled='true'] * {
+    color: #ffffff !important;
+    -webkit-text-fill-color: #ffffff !important;
+    stroke: #ffffff !important;
+    opacity: 1 !important;
+    filter: none !important;
+  }
+}
+
+/* Auto Post action buttons — OUTSIDE @layer so these beat base utilities */
+button.msa-ap-btn,
+button.msa-ap-btn:hover,
+button.msa-ap-btn:focus,
+button.msa-ap-btn:active,
+button.msa-ap-btn:disabled,
+button.msa-ap-btn[disabled],
+button.msa-ap-btn[aria-disabled='true'],
+button.msa-ap-btn[data-disabled='true'],
+button.msa-ap-btn span,
+button.msa-ap-btn svg,
+button.msa-ap-btn path,
+button.msa-ap-btn:disabled span,
+button.msa-ap-btn:disabled svg,
+button.msa-ap-btn:disabled path,
+button.msa-ap-btn[aria-disabled='true'] span,
+button.msa-ap-btn[aria-disabled='true'] svg,
+button.msa-ap-btn[aria-disabled='true'] path,
+button.msa-ap-btn[data-disabled='true'] span,
+button.msa-ap-btn[data-disabled='true'] svg,
+button.msa-ap-btn[data-disabled='true'] path {
+  color: #ffffff !important;
+  -webkit-text-fill-color: #ffffff !important;
+  stroke: #ffffff !important;
+  opacity: 1 !important;
+  filter: none !important;
+  -webkit-filter: none !important;
 }
 
 /* Affiliate partner dashboard — dark navy + neon accent (scoped) */
@@ -363,4 +458,42 @@
 
 .affiliate-dashboard input::placeholder {
   color: rgba(255, 255, 255, 0.35);
+}
+
+/* ── Sales print (A4 / A5 / 80mm) ───────────────────────────────────────── */
+@media print {
+  @page {
+    margin: 10mm;
+  }
+
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  body[data-print-format='a4'] .sales-print-sheet {
+    width: 210mm;
+  }
+
+  body[data-print-format='a5'] .sales-print-sheet {
+    width: 148mm;
+    font-size: 11px;
+  }
+
+  body[data-print-format='mm80'] .sales-print-sheet {
+    width: 72mm;
+    font-size: 10px;
+  }
+
+  body[data-print-format='mm80'] .sales-print-sheet table th:nth-child(4),
+  body[data-print-format='mm80'] .sales-print-sheet table td:nth-child(4) {
+    display: none;
+  }
+
+  .sales-print-root,
+  .sales-print-sheet {
+    background: #fff !important;
+    color: #000 !important;
+    box-shadow: none !important;
+  }
 }

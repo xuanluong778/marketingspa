@@ -10,10 +10,14 @@ import { Label } from '@/components/ui/label';
 import { LoadingState, ErrorState } from '@/components/shared/page-state';
 import { useCurrentUser, useChangePassword, useLogoutAll, hasPermission } from '@/hooks/use-auth';
 import { useCurrentSubscription } from '@/hooks/use-billing';
+import { useSubscriptionDisplay } from '@/hooks/use-subscription-display';
 import { useOrganization } from '@/hooks/use-queries';
 import { formatDateTime } from '@/lib/format';
+import { useT } from '@/i18n/i18n-provider';
+import { SettingsLanguagePanel } from '@/components/settings/settings-language-panel';
 
 export function SettingsAccountPanel() {
+  const t = useT();
   const {
     data: user,
     isLoading: userLoading,
@@ -22,58 +26,76 @@ export function SettingsAccountPanel() {
   } = useCurrentUser();
   const { data: org } = useOrganization();
   const sub = useCurrentSubscription();
+  const { display } = useSubscriptionDisplay();
   const changePassword = useChangePassword();
   const logoutAll = useLogoutAll();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [pwdMsg, setPwdMsg] = useState<string | null>(null);
 
-  if (userLoading) return <LoadingState />;
-  if (userError) return <ErrorState onRetry={refetchUser} />;
+  if (userLoading) {
+    return (
+      <div className="grid max-w-4xl gap-6">
+        <SettingsLanguagePanel />
+        <LoadingState />
+      </div>
+    );
+  }
+  if (userError) {
+    return (
+      <div className="grid max-w-4xl gap-6">
+        <SettingsLanguagePanel />
+        <ErrorState onRetry={refetchUser} />
+      </div>
+    );
+  }
 
   const subscription = sub.data;
-  const remaining = subscription?.remainingDays ?? subscription?.daysRemaining ?? null;
+  const remaining = display?.remainingDays ?? subscription?.remainingDays ?? subscription?.daysRemaining ?? null;
+  const upgrade = display?.upgradeButton;
 
   return (
     <div className="grid gap-6 max-w-4xl">
+      <SettingsLanguagePanel />
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Tài khoản</CardTitle>
+          <CardTitle className="text-base">{t('settingsAccount.account')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
-          <Row label="Họ tên" value={user?.name} />
+          <Row label={t('settingsAccount.fullName')} value={user?.name} />
           <Separator />
-          <Row label="Email" value={user?.email} />
+          <Row label={t('common.email')} value={user?.email} />
           <Separator />
-          <Row label="Organization" value={user?.organization?.name ?? org?.name} />
+          <Row label={t('settingsAccount.organization')} value={user?.organization?.name ?? org?.name} />
           <Separator />
-          <Row label="Vai trò" value={user?.roleName ?? user?.role} />
+          <Row label={t('settingsAccount.role')} value={user?.roleName ?? user?.role} />
           <Separator />
           <Row
-            label="Email xác minh"
-            value={user?.emailVerified === false ? 'Chưa xác minh' : 'Đã xác minh / không bắt buộc'}
+            label={t('settingsAccount.emailVerified')}
+            value={user?.emailVerified === false ? t('settingsAccount.unverified') : t('settingsAccount.verifiedOk')}
           />
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Gói & quota</CardTitle>
+          <CardTitle className="text-base">{t('settingsAccount.planQuota')}</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
-          {sub.isLoading && <p className="text-muted-foreground">Đang tải subscription…</p>}
+          {sub.isLoading && <p className="text-muted-foreground">{t('settingsAccount.loadingSubscription')}</p>}
           {sub.isError && (
-            <p className="text-destructive text-sm">Không tải được gói. Thử lại sau.</p>
+            <p className="text-destructive text-sm">{t('settingsAccount.loadPlanFailed')}</p>
           )}
           {subscription && (
             <>
               <Row
-                label="Gói hiện tại"
+                label={t('settingsAccount.currentPlan')}
                 value={
-                  subscription.planName ||
-                  subscription.plan?.name ||
-                  subscription.planCode ||
-                  (subscription.hasPlan ? 'Đang có gói' : 'Chưa có gói')
+                  display?.planLabel ??
+                  (subscription.planName ||
+                    subscription.plan?.name ||
+                    subscription.planCode ||
+                    (subscription.hasPlan ? t('settingsAccount.hasPlan') : t('settingsAccount.noPlan')))
                 }
               />
               <Separator />
@@ -82,11 +104,13 @@ export function SettingsAccountPanel() {
               <Row
                 label="Ngày hết hạn"
                 value={
-                  subscription.expiresAt
-                    ? formatDateTime(subscription.expiresAt)
-                    : subscription.currentPeriodEnd
-                      ? formatDateTime(subscription.currentPeriodEnd)
-                      : '—'
+                  display?.expiresAt
+                    ? formatDateTime(display.expiresAt)
+                    : subscription.expiresAt
+                      ? formatDateTime(subscription.expiresAt)
+                      : subscription.currentPeriodEnd
+                        ? formatDateTime(subscription.currentPeriodEnd)
+                        : '—'
                 }
               />
               <Separator />
@@ -108,9 +132,17 @@ export function SettingsAccountPanel() {
                 </>
               ) : null}
               <div className="pt-2">
-                <Button asChild size="sm" variant="outline">
-                  <Link href="/pricing">Xem / nâng cấp gói</Link>
-                </Button>
+                {upgrade?.show ? (
+                  <Button asChild size="sm" variant="outline">
+                    <Link href={upgrade.href}>{upgrade.label}</Link>
+                  </Button>
+                ) : display?.tier === 'PRO_12M' ? (
+                  <p className="text-muted-foreground text-sm">{display.planLabel}</p>
+                ) : (
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/pricing">Xem / nâng cấp gói</Link>
+                  </Button>
+                )}
               </div>
             </>
           )}

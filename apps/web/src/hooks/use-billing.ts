@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api-client';
+import type { SubscriptionDisplay } from '@marketingspa/shared';
 
 export type BillingPlan = {
   id: string;
@@ -10,6 +11,7 @@ export type BillingPlan = {
   durationMonths: number;
   highlightLabel: string | null;
   savingsAmount: string | number | null;
+  creditGrant: string | number;
   sortOrder: number;
   features: string[] | unknown;
   isActive: boolean;
@@ -19,7 +21,9 @@ export type PaymentOrder = {
   id: string;
   code: string;
   organizationId: string;
-  planId: string;
+  planId: string | null;
+  creditPackageId?: string | null;
+  kind?: 'subscription' | 'credit';
   amountVnd: number;
   status: 'PENDING' | 'PAID' | 'EXPIRED' | 'CANCELLED' | 'REVIEW_REQUIRED';
   statusLabel: string;
@@ -38,6 +42,12 @@ export type PaymentOrder = {
     name: string;
     durationMonths: number;
     priceVnd: number;
+  };
+  creditPackage?: {
+    code: string;
+    name: string;
+    credits: number;
+    priceVnd?: number;
   };
   transactions?: unknown[];
 };
@@ -87,6 +97,7 @@ export type CurrentSubscription = {
   currentPeriodEnd?: string;
   plan?: { code: string; name: string; durationMonths: number } | null;
   trial?: TrialInfo;
+  display?: SubscriptionDisplay;
 };
 
 export function useBillingPlans() {
@@ -138,6 +149,21 @@ export function useCreatePaymentOrder() {
   });
 }
 
+export function useCreateCreditOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (packageCode: string) =>
+      apiClient<PaymentOrder>('/billing/credit-orders', {
+        method: 'POST',
+        body: JSON.stringify({ packageCode }),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['billing', 'orders'] });
+      void qc.invalidateQueries({ queryKey: ['credits'] });
+    },
+  });
+}
+
 export function useActivateTrial() {
   const qc = useQueryClient();
   return useMutation({
@@ -152,6 +178,7 @@ export function useActivateTrial() {
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['billing', 'subscription'] });
+      void qc.invalidateQueries({ queryKey: ['credits'] });
     },
   });
 }

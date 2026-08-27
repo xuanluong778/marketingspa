@@ -77,6 +77,14 @@ export const adsMcpAccountSchema = z.object({
   lastError: z.string().nullable(),
   currency: z.string().nullable().optional(),
   timezone: z.string().nullable().optional(),
+  readiness: z
+    .object({
+      mcpReady: z.boolean(),
+      pendingCustomerSelection: z.boolean(),
+      dataFreshnessMinutes: z.number().int().nullable(),
+      stale: z.boolean(),
+    })
+    .optional(),
 });
 
 export const adsMcpCampaignSchema = z.object({
@@ -226,6 +234,7 @@ export const adsMcpToolPermissionMap: Record<
 };
 
 export function adsMcpHasPermission(ctx: AdsMcpTenantContext, required: string): boolean {
-  if (ctx.role === 'OWNER') return true;
+  // Khớp PermissionsGuard: OWNER / SUPER_ADMIN bypass toàn bộ RBAC Ads MCP
+  if (ctx.role === 'OWNER' || ctx.role === 'SUPER_ADMIN') return true;
   return (ctx.permissions ?? []).includes(required);
 }

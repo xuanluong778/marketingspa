@@ -16,6 +16,7 @@ import {
   useCreatePayout,
   useUpsertPayoutMethod,
 } from '@/hooks/use-affiliate';
+import { useT } from '@/i18n/i18n-provider';
 import {
   buildAffiliateLink,
   calcConversionRate,
@@ -60,6 +61,7 @@ type Overview = {
 type Tab = 'overview' | 'referrals' | 'commissions' | 'payouts' | 'bank';
 
 export function AffiliateDashboard() {
+  const t = useT();
   const me = useAffiliateMe();
   const [tab, setTab] = useState<Tab>('overview');
   const [msg, setMsg] = useState('');
@@ -80,11 +82,11 @@ export function AffiliateDashboard() {
     window.setTimeout(() => setCopied(false), 1500);
   }, [link]);
 
-  if (me.isLoading) return <LoadingState message="Đang tải Affiliate..." />;
+  if (me.isLoading) return <LoadingState message={t('affiliate.loading')} />;
   if (me.isError || !data?.profile) {
     return (
       <ErrorState
-        message={formatMutationError(me.error, 'Không tải được Affiliate')}
+        message={formatMutationError(me.error, t('affiliate.loadFailed'))}
         onRetry={() => void me.refetch()}
       />
     );
@@ -94,54 +96,56 @@ export function AffiliateDashboard() {
   const totalEarned = calcTotalEarned(stats);
   const conv = calcConversionRate(stats.signups, stats.clicks);
   const tabs: Array<[Tab, string]> = [
-    ['overview', 'Tổng quan'],
-    ['referrals', 'Giới thiệu'],
-    ['commissions', 'Hoa hồng'],
-    ['payouts', 'Rút tiền'],
-    ['bank', 'Ngân hàng'],
+    ['overview', t('affiliateDash.overview')],
+    ['referrals', t('affiliateDash.referrals')],
+    ['commissions', t('affiliateDash.commission')],
+    ['payouts', t('affiliateDash.withdraw')],
+    ['bank', t('affiliateDash.bank')],
   ];
 
   return (
     <div className="space-y-4 pb-8">
       <div>
         <h1 className="text-xl font-bold tracking-tight text-[hsl(var(--heading))]">
-          Chương trình Affiliate
+          {t('affiliate.title')}
         </h1>
         <p className="text-sm text-muted-foreground">
-          Mã giới thiệu · hoa hồng · rút tiền · tỷ lệ {(data.settings.rate * 100).toFixed(1)}% · giữ{' '}
-          {data.settings.holdDays} ngày
+          {t('affiliateDash.subtitle', {
+            rate: (data.settings.rate * 100).toFixed(1),
+            days: data.settings.holdDays,
+          })}
         </p>
       </div>
 
       <div className="rounded-xl border border-white/10 bg-white/5 p-4">
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-[200px] flex-1 space-y-1">
-            <Label>Mã giới thiệu</Label>
+            <Label>{t('affiliateDash.referralCode')}</Label>
             <Input readOnly value={data.profile.code} className="font-mono" />
           </div>
           <div className="min-w-[240px] flex-[2] space-y-1">
-            <Label>Link Affiliate</Label>
+            <Label>{t('affiliate.linkLabel')}</Label>
             <Input readOnly value={link} />
           </div>
           <Button type="button" onClick={() => void copyLink()} className="bg-[#F97316] text-white">
             {copied ? <Check className="mr-1 h-4 w-4" /> : <Copy className="mr-1 h-4 w-4" />}
-            {copied ? 'Đã sao chép' : 'Sao chép link'}
+            {copied ? t('affiliateDash.copied') : t('affiliateDash.copyLink')}
           </Button>
         </div>
         <p className="mt-2 text-xs text-muted-foreground">
-          Trạng thái: <strong className="text-white">{data.profile.status}</strong>
+          {t('affiliateDash.status')}: <strong className="text-white">{data.profile.status}</strong>
         </p>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Tổng lượt click" value={String(stats.clicks)} />
-        <StatCard label="Tổng đăng ký" value={`${stats.signups} (${conv}%)`} />
-        <StatCard label="Khách đã thanh toán" value={String(stats.paidCustomers)} />
-        <StatCard label="Hoa hồng chờ duyệt" value={formatCurrency(stats.pendingCommission)} />
-        <StatCard label="Hoa hồng có thể rút" value={formatCurrency(stats.availableCommission)} />
-        <StatCard label="Đang chờ chi" value={formatCurrency(stats.payoutPendingCommission)} />
-        <StatCard label="Đã nhận" value={formatCurrency(stats.paidCommission)} />
-        <StatCard label="Tổng hoa hồng" value={formatCurrency(totalEarned)} />
+        <StatCard label={t('affiliateDash.totalClicks')} value={String(stats.clicks)} />
+        <StatCard label={t('affiliateDash.totalSignups')} value={`${stats.signups} (${conv}%)`} />
+        <StatCard label={t('affiliateDash.customerPaid')} value={String(stats.paidCustomers)} />
+        <StatCard label={t('affiliateDash.pendingApproval')} value={formatCurrency(stats.pendingCommission)} />
+        <StatCard label={t('affiliateDash.withdrawable')} value={formatCurrency(stats.availableCommission)} />
+        <StatCard label={t('affiliateDash.pendingPayout')} value={formatCurrency(stats.payoutPendingCommission)} />
+        <StatCard label={t('affiliateDash.received')} value={formatCurrency(stats.paidCommission)} />
+        <StatCard label={t('affiliateDash.totalCommission')} value={formatCurrency(totalEarned)} />
       </div>
 
       <nav className="flex flex-wrap gap-1 rounded-xl border border-white/10 bg-[#0A3D30] p-1.5">
@@ -169,9 +173,10 @@ export function AffiliateDashboard() {
       {tab === 'overview' && (
         <div className="rounded-xl border border-white/10 p-4 text-sm text-muted-foreground">
           <p>
-            Chia sẻ link Affiliate. Khi khách đăng ký và thanh toán (SePay PAID), hệ thống tạo hoa
-            hồng idempotent theo đơn. Sau {data.settings.holdDays} ngày giữ, hoa hồng chuyển sang
-            số dư có thể rút (tối thiểu {formatCurrency(data.settings.minPayoutVnd)}).
+            {t('affiliateDash.shareDetail', {
+              holdDays: data.settings.holdDays,
+              minPayout: formatCurrency(data.settings.minPayoutVnd),
+            })}
           </p>
         </div>
       )}
@@ -206,6 +211,7 @@ function StatCard({ label, value }: { label: string; value: string }) {
 }
 
 function ReferralsPanel() {
+  const t = useT();
   const q = useAffiliateReferrals(1);
   if (q.isLoading) return <LoadingState />;
   if (q.isError) return <ErrorState onRetry={() => void q.refetch()} />;
@@ -218,18 +224,18 @@ function ReferralsPanel() {
       organization: { name: string; email: string };
     }>) || [];
   if (!items.length) {
-    return <p className="text-sm text-muted-foreground">Chưa có lượt giới thiệu.</p>;
+    return <p className="text-sm text-muted-foreground">{t('affiliateDash.emptyReferrals')}</p>;
   }
   return (
     <div className="overflow-x-auto rounded-xl border border-white/10">
       <table className="w-full min-w-[640px] text-left text-sm">
         <thead className="bg-white/5 text-xs text-muted-foreground">
           <tr>
-            <th className="p-3">Tổ chức</th>
-            <th className="p-3">Email</th>
-            <th className="p-3">Đăng ký</th>
-            <th className="p-3">Thanh toán đầu</th>
-            <th className="p-3">TT</th>
+            <th className="p-3">{t('affiliateDash.organization')}</th>
+            <th className="p-3">{t('common.email')}</th>
+            <th className="p-3">{t('affiliateDash.signup')}</th>
+            <th className="p-3">{t('affiliateDash.firstPayment')}</th>
+            <th className="p-3">{t('common.status')}</th>
           </tr>
         </thead>
         <tbody>
@@ -249,6 +255,7 @@ function ReferralsPanel() {
 }
 
 function CommissionsPanel() {
+  const t = useT();
   const q = useAffiliateCommissions(1);
   if (q.isLoading) return <LoadingState />;
   if (q.isError) return <ErrorState onRetry={() => void q.refetch()} />;
@@ -262,18 +269,18 @@ function CommissionsPanel() {
       holdUntil: string;
     }>) || [];
   if (!items.length) {
-    return <p className="text-sm text-muted-foreground">Chưa có hoa hồng.</p>;
+    return <p className="text-sm text-muted-foreground">{t('affiliateDash.emptyCommission')}</p>;
   }
   return (
     <div className="overflow-x-auto rounded-xl border border-white/10">
       <table className="w-full min-w-[640px] text-left text-sm">
         <thead className="bg-white/5 text-xs text-muted-foreground">
           <tr>
-            <th className="p-3">Mã đơn</th>
-            <th className="p-3">Hoa hồng</th>
-            <th className="p-3">Trạng thái</th>
-            <th className="p-3">Giữ đến</th>
-            <th className="p-3">Tạo lúc</th>
+            <th className="p-3">{t('affiliateDash.orderCode')}</th>
+            <th className="p-3">{t('affiliateDash.commission')}</th>
+            <th className="p-3">{t('affiliateDash.status')}</th>
+            <th className="p-3">{t('affiliateDash.holdUntil')}</th>
+            <th className="p-3">{t('affiliateDash.createdAt')}</th>
           </tr>
         </thead>
         <tbody>
@@ -301,6 +308,7 @@ function PayoutsPanel({
   onMsg: (s: string) => void;
   onErr: (s: string) => void;
 }) {
+  const t = useT();
   const list = useAffiliatePayouts(1);
   const create = useCreatePayout();
   const [amount, setAmount] = useState(String(overview.settings.minPayoutVnd || ''));
@@ -321,10 +329,10 @@ function PayoutsPanel({
     onErr('');
     try {
       await create.mutateAsync({ amountVnd: Number(amount) });
-      onMsg('Đã gửi yêu cầu rút tiền.');
+      onMsg(t('affiliateDash.withdrawSubmitted'));
       void list.refetch();
     } catch (e) {
-      onErr(formatMutationError(e, 'Không tạo được yêu cầu rút'));
+      onErr(formatMutationError(e, t('affiliateDash.withdrawFailed')));
     }
   };
 
@@ -342,11 +350,11 @@ function PayoutsPanel({
       <div className="rounded-xl border border-white/10 p-4">
         <div className="mb-3 flex items-center gap-2 text-white">
           <Wallet className="h-4 w-4 text-[#F97316]" />
-          Yêu cầu rút tiền
+          {t('affiliateDash.requestWithdraw')}
         </div>
         <div className="flex flex-wrap items-end gap-3">
           <div className="space-y-1">
-            <Label>Số tiền (VND)</Label>
+            <Label>{t('affiliateDash.amountVnd')}</Label>
             <Input
               type="number"
               value={amount}
@@ -361,27 +369,24 @@ function PayoutsPanel({
             className="bg-[#F97316] text-white"
           >
             {create.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            Gửi yêu cầu
+            {t('affiliateDash.sendRequest')}
           </Button>
         </div>
         {!can ? (
-          <p className="mt-2 text-xs text-amber-200">
-            Cần: trạng thái ACTIVE, ngân hàng đã xác minh, đủ số dư tối thiểu, không có yêu cầu rút
-            đang mở.
-          </p>
+          <p className="mt-2 text-xs text-amber-200">{t('affiliateDash.withdrawRules')}</p>
         ) : null}
       </div>
 
       {list.isLoading ? <LoadingState /> : null}
-      {items.length ? (
+      {!list.isLoading && items.length ? (
         <div className="overflow-x-auto rounded-xl border border-white/10">
           <table className="w-full min-w-[520px] text-left text-sm">
             <thead className="bg-white/5 text-xs text-muted-foreground">
               <tr>
-                <th className="p-3">Số tiền</th>
-                <th className="p-3">Trạng thái</th>
-                <th className="p-3">Thời gian</th>
-                <th className="p-3">Ghi chú</th>
+                <th className="p-3">{t('affiliateDash.amount')}</th>
+                <th className="p-3">{t('affiliateDash.status')}</th>
+                <th className="p-3">{t('affiliateDash.time')}</th>
+                <th className="p-3">{t('affiliateDash.note')}</th>
               </tr>
             </thead>
             <tbody>
@@ -396,9 +401,10 @@ function PayoutsPanel({
             </tbody>
           </table>
         </div>
-      ) : (
-        <p className="text-sm text-muted-foreground">Chưa có yêu cầu rút.</p>
-      )}
+      ) : null}
+      {!list.isLoading && !items.length ? (
+        <p className="text-sm text-muted-foreground">{t('affiliateDash.emptyWithdraw')}</p>
+      ) : null}
     </div>
   );
 }
@@ -414,6 +420,7 @@ function BankPanel({
   onErr: (s: string) => void;
   onSaved: () => void;
 }) {
+  const t = useT();
   const upsert = useUpsertPayoutMethod();
   const pm = overview.profile.payoutMethod;
   const [bankCode, setBankCode] = useState(pm?.bankCode || '');
@@ -426,10 +433,10 @@ function BankPanel({
     onErr('');
     try {
       await upsert.mutateAsync({ bankCode, bankName, accountNumber, accountName });
-      onMsg('Đã lưu thông tin ngân hàng.');
+      onMsg(t('affiliateDash.bankSaved'));
       onSaved();
     } catch (e) {
-      onErr(formatMutationError(e, 'Không lưu được tài khoản ngân hàng'));
+      onErr(formatMutationError(e, t('affiliateDash.bankSaveFailed')));
     }
   };
 
@@ -437,26 +444,31 @@ function BankPanel({
     <div className="max-w-xl space-y-3 rounded-xl border border-white/10 p-4">
       <div className="mb-1 flex items-center gap-2 text-white">
         <Landmark className="h-4 w-4 text-[#F97316]" />
-        Tài khoản nhận hoa hồng
+        {t('affiliateDash.bankAccountTitle')}
       </div>
       <div className="space-y-1">
-        <Label>Mã ngân hàng (VD: VCB, TCB)</Label>
+        <Label>{t('affiliateDash.bankCodeHint')}</Label>
         <Input value={bankCode} onChange={(e) => setBankCode(e.target.value)} />
       </div>
       <div className="space-y-1">
-        <Label>Tên ngân hàng</Label>
+        <Label>{t('affiliateDash.bankName')}</Label>
         <Input value={bankName} onChange={(e) => setBankName(e.target.value)} />
       </div>
       <div className="space-y-1">
-        <Label>Số tài khoản {pm?.accountNumberMasked ? `(hiện tại ${pm.accountNumberMasked})` : ''}</Label>
+        <Label>
+          {t('affiliateDash.accountNumber')}
+          {pm?.accountNumberMasked
+            ? ` ${t('affiliateDash.currentMasked', { masked: pm.accountNumberMasked })}`
+            : ''}
+        </Label>
         <Input
           value={accountNumber}
           onChange={(e) => setAccountNumber(e.target.value)}
-          placeholder="Nhập lại số tài khoản để cập nhật"
+          placeholder={t('affiliateDash.reenterAccount')}
         />
       </div>
       <div className="space-y-1">
-        <Label>Chủ tài khoản</Label>
+        <Label>{t('affiliateDash.accountHolder')}</Label>
         <Input value={accountName} onChange={(e) => setAccountName(e.target.value)} />
       </div>
       <Button
@@ -466,7 +478,7 @@ function BankPanel({
         className="bg-[#F97316] text-white"
       >
         {upsert.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-        Lưu tài khoản
+        {t('affiliateDash.saveAccount')}
       </Button>
     </div>
   );

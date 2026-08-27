@@ -58,6 +58,7 @@ import { buildContentAutoPostHref } from '@/lib/content-auto-post-routes';
 import { formatMutationError } from '@/lib/format-mutation-error';
 import { apiClient, apiDownload } from '@/lib/api-client';
 import { MakeVideoButton } from '@/components/content-marketing/make-video-button';
+import { useT } from '@/i18n/i18n-provider';
 
 const PROGRESS_STAGES: VideoTranscriptionStage[] = [
   'validating',
@@ -94,6 +95,7 @@ function formatDuration(sec: number | null | undefined): string {
 }
 
 export function VideoTranscriptionStudio() {
+  const t = useT();
   const router = useRouter();
   const { data: user } = useCurrentUser();
   const [sourceUrl, setSourceUrl] = useState('');
@@ -101,6 +103,7 @@ export function VideoTranscriptionStudio() {
   const [language, setLanguage] = useState('auto');
   const [glossary, setGlossary] = useState('');
   const [ownership, setOwnership] = useState(false);
+  const [keepVideo, setKeepVideo] = useState(false); // default OFF always (even after reload)
   const [jobId, setJobId] = useState<string | null>(null);
   const [editorText, setEditorText] = useState('');
   const [editing, setEditing] = useState(false);
@@ -143,7 +146,7 @@ export function VideoTranscriptionStudio() {
 
   useEffect(() => {
     const url = sourceUrl.trim();
-    if (!url || file) {
+    if (!url || url.length < 8 || file) {
       setProbe(null);
       return;
     }
@@ -182,28 +185,57 @@ export function VideoTranscriptionStudio() {
     if (job.status === 'failed') return job.errorMessage || 'Xử lý thất bại';
     if (job.status === 'cancelled') return job.errorMessage || 'Đã hủy';
     if (job.status === 'completed') return 'Hoàn tất';
-    return VIDEO_TRANSCRIPTION_STAGE_LABELS[currentStage as VideoTranscriptionStage] || 'Đang xử lý…';
+    const base =
+      VIDEO_TRANSCRIPTION_STAGE_LABELS[currentStage as VideoTranscriptionStage] || 'Đang xử lý…';
+    if (
+      job.stage === 'transcribing' &&
+      job.chunkCount != null &&
+      job.chunkCount > 0
+    ) {
+      const cur =
+        job.currentChunkIndex != null && Number.isFinite(job.currentChunkIndex)
+          ? job.currentChunkIndex + 1
+          : Math.min((job.chunksCompleted ?? 0) + 1, job.chunkCount);
+      return `${base} — chunk ${cur}/${job.chunkCount}`;
+    }
+    return base;
   }, [job, currentStage]);
 
   const handleSubmit = useCallback(async () => {
     setMsg(null);
+    if (busy || running || createMut.isPending) return;
     if (!ownership) {
       setMsg('Vui lòng xác nhận bạn sở hữu hoặc có quyền sử dụng video.');
       return;
     }
     if (!file && !sourceUrl.trim()) {
-      setMsg('Nhập link YouTube / Facebook / TikTok hoặc tải lên file video/audio.');
+      setMsg('Nhập link YouTube / Facebook / TikTok hoặc tải file video/audio.');
       return;
     }
     if (!file && probe && !probe.ok) {
       setMsg(probe.message || 'URL không hợp lệ — kiểm tra lại trước khi lấy văn bản.');
       return;
     }
+    const sameFailedJob =
+      jobId &&
+      job &&
+      (job.status === 'failed' || job.status === 'cancelled') &&
+      !file &&
+      sourceUrl.trim() &&
+      job.sourceUrl === sourceUrl.trim();
     try {
+      if (sameFailedJob && jobId) {
+        const res = await retryMut.mutateAsync(jobId);
+        setJobId(res.id);
+        setEditorText('');
+        setMsg(null);
+        return;
+      }
       const res = await createMut.mutateAsync({
         sourceUrl: file ? undefined : sourceUrl.trim(),
         language,
         ownershipConfirmed: ownership,
+        keepVideo: file ? true : keepVideo,
         glossary,
         file,
         sourceTitle: probe?.title || undefined,
@@ -216,7 +248,21 @@ export function VideoTranscriptionStudio() {
     } catch (err) {
       setMsg(formatMutationError(err) || 'Không tạo được yêu cầu');
     }
-  }, [ownership, file, sourceUrl, language, glossary, createMut, probe]);
+  }, [
+    busy,
+    running,
+    ownership,
+    keepVideo,
+    file,
+    sourceUrl,
+    language,
+    glossary,
+    createMut,
+    retryMut,
+    probe,
+    job,
+    jobId,
+  ]);
 
   const handleCopy = useCallback(async () => {
     if (!editorText.trim()) return;
@@ -274,9 +320,9 @@ export function VideoTranscriptionStudio() {
     try {
       await retryMut.mutateAsync(jobId);
     } catch (err) {
-      setMsg(formatMutationError(err) || 'Thử lại thất bại');
+      setMsg(formatMutationError(err) || t('common.retryFailed'));
     }
-  }, [jobId, retryMut]);
+  }, [jobId, retryMut, t]);
 
   const handleCancel = useCallback(async () => {
     if (!jobId) return;
@@ -418,7 +464,7 @@ export function VideoTranscriptionStudio() {
           </div>
         </div>
 
-        <div className="mt-4 flex items-end">
+        <div className="mt-4 space-y-3">
           <label className="flex cursor-pointer items-start gap-2 text-sm text-slate-700">
             <Checkbox
               checked={ownership}
@@ -431,13 +477,30 @@ export function VideoTranscriptionStudio() {
               Không upload nội dung xâm phạm bản quyền.
             </span>
           </label>
+          {!file ? (
+            <label className="flex cursor-pointer items-start gap-2 text-sm text-slate-700">
+              <Checkbox
+                checked={keepVideo}
+                onCheckedChange={(v) => setKeepVideo(v === true)}
+                disabled={busy}
+                className="mt-0.5"
+              />
+              <span>
+                Lưu video tạm để tải xuống
+                <span className="mt-0.5 block text-xs text-slate-500">
+                  Tắt (mặc định): chỉ tải audio để nhận dạng giọng nói — nhanh hơn, không nút
+                  Tải video. Bật: tải cả video và giữ tạm ~30 phút để tải về.
+                </span>
+              </span>
+            </label>
+          ) : null}
         </div>
 
         <div className="mt-5 flex flex-wrap gap-2">
           <Button
             type="button"
-            className="bg-orange-500 text-white hover:bg-orange-600"
-            disabled={busy}
+            className="video-transcript-submit-btn bg-orange-500 text-white hover:bg-orange-600"
+            disabled={busy || running}
             onClick={() => void handleSubmit()}
           >
             {createMut.isPending ? (
@@ -466,7 +529,7 @@ export function VideoTranscriptionStudio() {
               onClick={() => void handleRetry()}
             >
               <RotateCcw className="mr-2 h-4 w-4" />
-              Thử lại
+              {t('common.retry')}
             </Button>
           ) : null}
           {jobId ? (
@@ -549,10 +612,18 @@ export function VideoTranscriptionStudio() {
                 ? ` · audio ${Math.round(job.audioDurationSeconds)}s`
                 : ''}
               {job?.chunkCount != null
-                ? ` · chunk ${job.chunksCompleted ?? 0}/${job.chunkCount}`
+                ? ` · chunk ${
+                    job.currentChunkIndex != null && job.status === 'processing'
+                      ? `${job.currentChunkIndex + 1}`
+                      : `${job.chunksCompleted ?? 0}`
+                  }/${job.chunkCount} (xong ${job.chunksCompleted ?? 0})`
                 : ''}
               {job?.processedDurationSeconds != null
-                ? ` · đã xử lý ${Math.round(job.processedDurationSeconds)}s`
+                ? ` · đã xử lý ${Math.round(job.processedDurationSeconds)}s${
+                    job.audioDurationSeconds != null
+                      ? `/${Math.round(job.audioDurationSeconds)}s`
+                      : ''
+                  }`
                 : ''}
               {job?.resultCharCount != null ? ` · ${job.resultCharCount} ký tự` : ''}
             </p>
@@ -562,8 +633,10 @@ export function VideoTranscriptionStudio() {
               {job.chunks.map((c) => (
                 <li key={c.index} className="flex flex-wrap items-center gap-2">
                   <span>
-                    #{c.index} · {Math.round(c.startSec)}–{Math.round(c.endSec)}s · {c.status}
+                    #{c.index + 1}/{job.chunkCount ?? '—'} · {Math.round(c.startSec)}–
+                    {Math.round(c.endSec)}s · {c.status}
                     {c.charCount ? ` · ${c.charCount} ký tự` : ''}
+                    {c.asrEndSec != null ? ` · ASR→${Math.round(c.asrEndSec)}s` : ''}
                     {c.error ? ` · ${c.error}` : ''}
                   </span>
                   {c.status === 'failed' ? (
@@ -687,12 +760,14 @@ export function VideoTranscriptionStudio() {
               </Button>
             </div>
           </div>
-          <Textarea
-            value={editorText}
-            readOnly={!editing}
-            onChange={(e) => setEditorText(e.target.value)}
-            className="min-h-[280px] max-h-none font-sans text-sm leading-relaxed"
-          />
+          <div className="mx-auto w-full max-w-5xl">
+            <Textarea
+              value={editorText}
+              readOnly={!editing}
+              onChange={(e) => setEditorText(e.target.value)}
+              className="min-h-[320px] w-full max-w-none resize-y border-slate-200 bg-slate-50/90 px-6 py-5 font-sans text-base leading-8 text-slate-900 whitespace-pre-wrap text-center shadow-inner"
+            />
+          </div>
           {job?.rawTranscript && editing === false ? (
             <details className="mt-3 text-xs text-slate-500">
               <summary className="cursor-pointer">Xem transcript thô (raw)</summary>

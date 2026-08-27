@@ -54,7 +54,7 @@ export class MessagingIdentityQueryDto extends PaginationDto {
 
   @IsOptional()
   @IsUUID()
-  funnelStageId?: string;
+  stageId?: string;
 
   @IsOptional()
   @IsBoolean()

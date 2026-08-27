@@ -1,13 +1,26 @@
 export type AdConnectionStatus =
-  'DISCONNECTED' | 'CONNECTED' | 'TOKEN_EXPIRED' | 'INSUFFICIENT_PERMISSIONS' | 'ERROR';
+  | 'DISCONNECTED'
+  | 'CONNECTED'
+  | 'TOKEN_EXPIRED'
+  | 'INSUFFICIENT_PERMISSIONS'
+  | 'ERROR'
+  | 'PENDING_ACCOUNT';
+
+export interface AdConnectionReadiness {
+  mcpReady: boolean;
+  pendingCustomerSelection: boolean;
+  dataFreshnessMinutes: number | null;
+  stale: boolean;
+}
 
 export interface AdConnectionItem {
   provider: 'META' | 'GOOGLE' | 'GMAIL';
-  status: AdConnectionStatus;
+  status: AdConnectionStatus | string;
   accountName: string | null;
   lastSyncAt: string | null;
   lastError: string | null;
   connected: boolean;
+  readiness?: AdConnectionReadiness | null;
 }
 
 export interface AdManagerDashboard {
@@ -160,6 +173,7 @@ export const RULE_TYPE_OPTIONS = [
 export const CONNECTION_STATUS_LABEL: Record<AdConnectionStatus, string> = {
   DISCONNECTED: 'Chưa kết nối',
   CONNECTED: 'Đã kết nối',
+  PENDING_ACCOUNT: 'Chọn tài khoản',
   TOKEN_EXPIRED: 'Token hết hạn',
   INSUFFICIENT_PERMISSIONS: 'Không đủ quyền',
   ERROR: 'Lỗi',

@@ -83,6 +83,12 @@ export class AutomationController {
     return this.service.deleteTemplate(user.organizationId, id, user.id);
   }
 
+  @Get('funnels')
+  @RequirePermissions('automation.view')
+  listFunnels(@CurrentUser() user: AuthUser) {
+    return this.service.listFunnels(user.organizationId);
+  }
+
   @Get('flows')
   @RequirePermissions('automation.view')
   listFlows(@CurrentUser() user: AuthUser) {

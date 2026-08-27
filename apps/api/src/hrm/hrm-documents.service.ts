@@ -5,12 +5,16 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createWriteStream, existsSync, mkdirSync, writeFileSync, copyFileSync } from 'fs';
-import { join, extname } from 'path';
-import { randomUUID } from 'crypto';
+import { join } from 'path';
 import { pipeline } from 'stream/promises';
 import { Readable } from 'stream';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import {
+  assertUploadFile,
+  randomStoredFilename,
+} from '../common/uploads/upload-policy';
+import { withSignedUploadUrl } from '../common/uploads/upload-signed-url';
 import {
   CreateEmployeeDocumentDto,
   UploadEmployeeDocumentMetaDto,
@@ -40,19 +44,18 @@ export class HrmDocumentsService {
     return join(process.cwd(), 'uploads', 'hrm');
   }
 
-  private publicFileUrl(organizationId: string, filename: string) {
-    const port = this.config.get<number>('PORT', 4000);
-    const base =
-      this.config.get<string>('API_PUBLIC_URL') ?? `http://localhost:${port}`;
-    return `${base.replace(/\/$/, '')}/uploads/hrm/${organizationId}/${filename}`;
+  private signDoc<T extends { fileUrl?: string | null }>(doc: T): T {
+    if (!doc?.fileUrl) return doc;
+    return { ...doc, fileUrl: withSignedUploadUrl(doc.fileUrl) };
   }
 
   async listByEmployee(organizationId: string, employeeId: string) {
     await this.employees.ensureEmployee(organizationId, employeeId);
-    return this.prisma.employeeDocument.findMany({
+    const rows = await this.prisma.employeeDocument.findMany({
       where: { organizationId, employeeId, isArchived: false },
       orderBy: { createdAt: 'desc' },
     });
+    return rows.map((r) => this.signDoc(r));
   }
 
   async create(
@@ -97,7 +100,7 @@ export class HrmDocumentsService {
       ipAddress: actor?.ipAddress,
     });
 
-    return document;
+    return this.signDoc(document);
   }
 
   async upload(
@@ -111,14 +114,19 @@ export class HrmDocumentsService {
       throw new BadRequestException('Thiếu file upload');
     }
 
+    assertUploadFile('document', {
+      originalname: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size ?? file.buffer?.length,
+    });
+
     const employee = await this.employees.ensureEmployee(organizationId, employeeId);
     const dir = join(this.uploadsRoot(), organizationId);
     if (!existsSync(dir)) {
       mkdirSync(dir, { recursive: true });
     }
 
-    const safeExt = extname(file.originalname || '').slice(0, 20);
-    const filename = `${randomUUID()}${safeExt}`;
+    const { filename } = randomStoredFilename(file.originalname || 'file.pdf');
     const absPath = join(dir, filename);
     const fileKey = `hrm/${organizationId}/${filename}`;
 
@@ -130,7 +138,7 @@ export class HrmDocumentsService {
       copyFileSync(file.path, absPath);
     }
 
-    const fileUrl = this.publicFileUrl(organizationId, filename);
+    const storedPath = `/uploads/hrm/${organizationId}/${filename}`;
 
     const document = await this.prisma.employeeDocument.create({
       data: {
@@ -139,7 +147,7 @@ export class HrmDocumentsService {
         branchId: employee.branchId,
         title: meta.title,
         type: meta.type,
-        fileUrl,
+        fileUrl: storedPath,
         fileKey,
         mimeType: file.mimetype,
         sizeBytes: file.size,
@@ -167,7 +175,7 @@ export class HrmDocumentsService {
       ipAddress: actor?.ipAddress,
     });
 
-    return document;
+    return this.signDoc(document);
   }
 
   async archive(organizationId: string, id: string, actor?: HrmActor) {
@@ -176,7 +184,7 @@ export class HrmDocumentsService {
     });
     if (!existing) throw new NotFoundException('Tài liệu không tồn tại');
     if (existing.isArchived) {
-      return existing;
+      return this.signDoc(existing);
     }
 
     const document = await this.prisma.employeeDocument.update({
@@ -197,6 +205,6 @@ export class HrmDocumentsService {
       ipAddress: actor?.ipAddress,
     });
 
-    return document;
+    return this.signDoc(document);
   }
 }

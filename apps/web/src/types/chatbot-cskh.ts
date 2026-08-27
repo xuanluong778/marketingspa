@@ -67,15 +67,25 @@ export interface ChatbotConversation {
   externalUserId?: string | null;
   channelRef?: string | null;
   updatedAt: string;
+  staffReadAt?: string | null;
+  lastUserMessageAt?: string | null;
+  isUnread?: boolean;
+  unreadMessageCount?: number;
   bot?: { id: string; botName: string };
   customer?: {
     name?: string | null;
     avatarUrl?: string | null;
     psid?: string | null;
+    zaloUid?: string | null;
   };
   fanpage?: {
     pageId?: string | null;
     pageName?: string | null;
+    avatarUrl?: string | null;
+  } | null;
+  zaloOa?: {
+    accountRef?: string | null;
+    oaName?: string | null;
     avatarUrl?: string | null;
   } | null;
   messages?: Array<{
@@ -90,6 +100,37 @@ export interface ChatbotConversation {
     createdAt: string;
   }>;
   _count?: { messages: number };
+}
+
+export interface ChatbotInboxPage {
+  items: ChatbotConversation[];
+  nextCursor: string | null;
+  hasMore: boolean;
+}
+
+export interface ChatbotUnreadSummaryItem {
+  conversationId: string;
+  botId?: string;
+  visitorName: string | null;
+  visitorAvatarUrl: string | null;
+  preview: string;
+  channel: string;
+  channelRef?: string | null;
+  pageName?: string | null;
+  pagePictureUrl?: string | null;
+  lastMessageAt: string;
+  unreadMessageCount: number;
+  isUnread: true;
+}
+
+export interface ChatbotUnreadSummary {
+  unreadCount: number;
+  unreadConversationCount: number;
+  items: ChatbotUnreadSummaryItem[];
+  unreadByBot?: Record<string, number>;
+  unreadByChannel?: Record<string, number>;
+  requiresBotId?: boolean;
+  asOf?: string;
 }
 
 export interface ChatbotLead {

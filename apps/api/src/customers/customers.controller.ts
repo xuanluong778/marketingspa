@@ -24,6 +24,12 @@ import { CreateCustomerNoteDto } from './dto/customer-note.dto';
 export class CustomersController {
   constructor(private readonly service: CustomersService) {}
 
+  @Get('sources')
+  @RequirePermissions('customer.read')
+  listSources() {
+    return this.service.listSources();
+  }
+
   @Get()
   @RequirePermissions('customer.read')
   findAll(@CurrentUser() user: AuthUser, @Query() query: CustomerQueryDto) {

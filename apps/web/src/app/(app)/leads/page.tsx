@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuCheckboxItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { LeadPageHeader } from '@/components/crm/lead-page-header';
+import { PageHeader } from '@/components/shared/page-header';
 import {
   LeadFilterBar,
   EMPTY_LEAD_FILTERS,
@@ -67,18 +67,24 @@ import { PIPELINE_COLUMNS, type LeadPipelineStatus } from '@/types/crm';
 import type { Lead } from '@/types/api';
 import { formatDateTime } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { useT } from '@/i18n/i18n-provider';
 import type { KanbanLead } from '@/components/crm/lead-card';
 
-const TABLE_COLUMNS = [
-  { key: 'name', label: 'Tên' },
-  { key: 'phone', label: 'SĐT' },
-  { key: 'status', label: 'Trạng thái' },
-  { key: 'source', label: 'Nguồn' },
-  { key: 'assigned', label: 'Phụ trách' },
-  { key: 'created', label: 'Ngày tạo' },
+const TABLE_COLUMN_KEYS = [
+  { key: 'name', labelKey: 'leads.columns.name' },
+  { key: 'phone', labelKey: 'crm.phoneShort' },
+  { key: 'status', labelKey: 'common.status' },
+  { key: 'source', labelKey: 'leads.columns.source' },
+  { key: 'assigned', labelKey: 'leads.columns.assignee' },
+  { key: 'created', labelKey: 'leads.columns.createdAt' },
 ] as const;
 
 function LeadsPageContent() {
+  const t = useT();
+  const tableColumns = useMemo(
+    () => TABLE_COLUMN_KEYS.map((c) => ({ key: c.key, label: t(c.labelKey) })),
+    [t],
+  );
   const searchParams = useSearchParams();
   const [page, setPage] = useState(1);
   const [view, setView] = useState<'table' | 'kanban'>('kanban');
@@ -92,7 +98,7 @@ function LeadsPageContent() {
   const [drawerLeadId, setDrawerLeadId] = useState<string | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [visibleCols, setVisibleCols] = useState<string[]>(TABLE_COLUMNS.map((c) => c.key));
+  const [visibleCols, setVisibleCols] = useState<string[]>(TABLE_COLUMN_KEYS.map((c) => c.key));
   const [saveViewOpen, setSaveViewOpen] = useState(false);
   const [saveViewName, setSaveViewName] = useState('');
   const [columnExtra, setColumnExtra] = useState<
@@ -162,19 +168,6 @@ function LeadsPageContent() {
     }
     return map;
   }, [kanban.data, kanban.isLoading, kanban.isError, columnExtra]);
-
-  const kpis = useMemo(() => {
-    const cols = kanban.data?.columns;
-    const total = cols
-      ? Object.values(cols).reduce((s, c) => s + (c.total || 0), 0)
-      : data?.total ?? 0;
-    return {
-      total,
-      newCount: cols?.NEW?.total ?? 0,
-      booked: cols?.BOOKED?.total ?? 0,
-      stale: staleLeads?.length ?? 0,
-    };
-  }, [kanban.data, data?.total, staleLeads]);
 
   const handleFilterChange = useCallback((f: LeadFilters) => {
     setFilters(f);
@@ -263,20 +256,49 @@ function LeadsPageContent() {
     if (highlightId) setDrawerLeadId(highlightId);
   }, [highlightId]);
 
+  useEffect(() => {
+    const fromUrl: LeadFilters = {};
+    const keys = [
+      'pipelineStatus',
+      'pipelineStatusIn',
+      'qualification',
+      'qualificationIn',
+      'leadSourceId',
+      'assignedToId',
+      'branchId',
+      'createdFrom',
+      'createdTo',
+      'search',
+    ] as const;
+    let has = false;
+    for (const key of keys) {
+      const v = searchParams.get(key);
+      if (v) {
+        fromUrl[key] = v;
+        has = true;
+      }
+    }
+    if (has) {
+      setFilters((prev) => ({ ...prev, ...fromUrl }));
+      setPage(1);
+    }
+  }, [searchParams]);
+
   const allSelected =
     !!data?.items?.length && data.items.every((r) => selectedIds.includes(r.id));
 
   return (
     <div className="min-h-full w-full max-w-full overflow-x-hidden space-y-0">
-      <LeadPageHeader
-        kpis={kpis}
-        onAdd={() => {
-          setEditing(null);
-          setFormOpen(true);
-        }}
-        onImport={() => alert('Import CSV sẽ mở trong bản cập nhật tiếp theo. Hiện dùng Thêm lead.')}
-        onExport={exportCsv}
-      />
+      <PageHeader title={t('leads.title')} description={t('leads.description')}>
+        <Button
+          onClick={() => {
+            setEditing(null);
+            setFormOpen(true);
+          }}
+        >
+          {t('leads.addLead')}
+        </Button>
+      </PageHeader>
 
       <div className="rounded-xl border border-border/60 bg-card/50 p-3 sm:p-3.5 space-y-3 mb-4 shadow-sm">
         <LeadFilterBar
@@ -307,7 +329,7 @@ function LeadsPageContent() {
               onClick={() => setView('table')}
             >
               <List className="h-3.5 w-3.5 mr-1.5" />
-              Bảng
+              {t('crm.viewTable')}
             </Button>
           </div>
 
@@ -342,18 +364,18 @@ function LeadsPageContent() {
               onClick={() => setSaveViewOpen(true)}
             >
               <Bookmark className="h-3.5 w-3.5 mr-1" />
-              Lưu view
+              {t('crm.saveView')}
             </Button>
             {view === 'table' && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button type="button" size="sm" variant="outline" className="h-8">
                     <Columns3 className="h-3.5 w-3.5 mr-1" />
-                    Cột
+                    {t('crm.columns')}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  {TABLE_COLUMNS.map((c) => (
+                  {tableColumns.map((c) => (
                     <DropdownMenuCheckboxItem
                       key={c.key}
                       checked={visibleCols.includes(c.key)}
@@ -393,10 +415,10 @@ function LeadsPageContent() {
         <div className="space-y-3">
           {selectedIds.length > 0 && (
             <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/40 px-3 py-2">
-              <span className="text-sm font-medium">{selectedIds.length} đã chọn</span>
+              <span className="text-sm font-medium">{t('crm.selectedCount', { count: selectedIds.length })}</span>
               <Select value={bulkStatus} onValueChange={setBulkStatus}>
                 <SelectTrigger className="h-8 w-[150px]">
-                  <SelectValue placeholder="Đổi trạng thái" />
+                  <SelectValue placeholder={t('crm.changeStatus')} />
                 </SelectTrigger>
                 <SelectContent>
                   {PIPELINE_COLUMNS.map((c) => (
@@ -421,7 +443,7 @@ function LeadsPageContent() {
                   )
                 }
               >
-                Áp dụng TT
+                {t('crm.applyStatus')}
               </Button>
               <Select
                 value=""
@@ -433,7 +455,7 @@ function LeadsPageContent() {
                 }
               >
                 <SelectTrigger className="h-8 w-[160px]">
-                  <SelectValue placeholder="Gán nhân viên" />
+                  <SelectValue placeholder={t('crm.assignEmployee')} />
                 </SelectTrigger>
                 <SelectContent>
                   {employees.map((e) => (
@@ -461,14 +483,16 @@ function LeadsPageContent() {
                   )
                 }
               >
-                Thêm tag
+                {t('crm.addTag')}
               </Button>
             </div>
           )}
 
           {isLoading && <LoadingState />}
           {isError && <ErrorState onRetry={refetch} />}
-          {!isLoading && !isError && !data?.items?.length && <EmptyState title="Chưa có lead" />}
+          {!isLoading && !isError && !data?.items?.length && (
+            <EmptyState title={t('leads.empty')} />
+          )}
           {!isLoading && !isError && !!data?.items?.length && (
             <div className="rounded-xl border bg-card overflow-auto max-h-[min(70vh,720px)]">
               <Table>
@@ -482,7 +506,7 @@ function LeadsPageContent() {
                         }
                       />
                     </TableHead>
-                    {TABLE_COLUMNS.filter((c) => visibleCols.includes(c.key)).map((c) => (
+                    {tableColumns.filter((c) => visibleCols.includes(c.key)).map((c) => (
                       <TableHead key={c.key}>{c.label}</TableHead>
                     ))}
                     <TableHead />
@@ -538,7 +562,7 @@ function LeadsPageContent() {
                             setFormOpen(true);
                           }}
                         >
-                          Sửa
+                          {t('common.edit')}
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -614,16 +638,16 @@ function LeadsPageContent() {
       <Dialog open={!!assignLead} onOpenChange={(o) => !o && setAssignLead(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Gán nhân viên — {assignLead?.name}</DialogTitle>
+            <DialogTitle>{t('crm.assignEmployeeTitle', { name: assignLead?.name ?? '' })}</DialogTitle>
           </DialogHeader>
           <div className="space-y-2">
-            <Label>Nhân viên phụ trách</Label>
+            <Label>{t('crm.assignee')}</Label>
             <Select
               value={assigneeId || assignLead?.assignedTo?.id || ''}
               onValueChange={setAssigneeId}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Chọn nhân viên" />
+                <SelectValue placeholder={t('crm.selectEmployee')} />
               </SelectTrigger>
               <SelectContent>
                 {employees.map((e) => (
@@ -636,7 +660,7 @@ function LeadsPageContent() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAssignLead(null)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button
               disabled={!assigneeId || assignLeadMut.isPending}
@@ -649,7 +673,7 @@ function LeadsPageContent() {
                 }
               }}
             >
-              Gán
+              {t('crm.assign')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -658,16 +682,16 @@ function LeadsPageContent() {
       <Dialog open={saveViewOpen} onOpenChange={setSaveViewOpen}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Lưu view hiện tại</DialogTitle>
+            <DialogTitle>{t('crm.saveCurrentView')}</DialogTitle>
           </DialogHeader>
           <Input
-            placeholder="Tên view"
+            placeholder={t('crm.viewName')}
             value={saveViewName}
             onChange={(e) => setSaveViewName(e.target.value)}
           />
           <DialogFooter>
             <Button variant="outline" onClick={() => setSaveViewOpen(false)}>
-              Hủy
+              {t('common.cancel')}
             </Button>
             <Button
               disabled={!saveViewName.trim() || createSavedView.isPending}
@@ -688,12 +712,12 @@ function LeadsPageContent() {
                 )
               }
             >
-              Lưu
+              {t('common.save')}
             </Button>
           </DialogFooter>
           {(savedViews.data?.length ?? 0) > 0 && (
             <div className="space-y-1 pt-2 border-t">
-              <p className="text-xs text-muted-foreground">View đã lưu</p>
+              <p className="text-xs text-muted-foreground">{t('crm.savedViews')}</p>
               {savedViews.data?.map((v) => (
                 <div key={v.id} className="flex items-center justify-between text-sm">
                   <span>{v.name}</span>
@@ -703,7 +727,7 @@ function LeadsPageContent() {
                     className="h-7 text-destructive"
                     onClick={() => deleteSavedView.mutate(v.id)}
                   >
-                    Xóa
+                    {t('common.delete')}
                   </Button>
                 </div>
               ))}
@@ -727,9 +751,9 @@ function LeadsPageContent() {
       <ConfirmDialog
         open={!!deleteId}
         onOpenChange={(o) => !o && setDeleteId(null)}
-        title="Xóa lead?"
-        description="Hành động này không thể hoàn tác."
-        confirmLabel="Xóa"
+        title={t('crm.deleteLeadTitle')}
+        description={t('crm.deleteLeadDesc')}
+        confirmLabel={t('common.delete')}
         destructive
         isPending={deleteLead.isPending}
         onConfirm={() =>

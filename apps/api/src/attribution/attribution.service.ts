@@ -212,6 +212,7 @@ export class AttributionService {
     organizationId: string;
     eventType: MarketingFunnelEventType;
     idempotencyKey: string;
+    funnelId?: string | null;
     leadId?: string | null;
     customerId?: string | null;
     appointmentId?: string | null;
@@ -236,17 +237,28 @@ export class AttributionService {
     if (existing) return { event: existing, created: false };
 
     let adCampaignId = params.adCampaignId ?? null;
-    if (!adCampaignId && params.leadId) {
-      const attr = await this.prisma.leadAttribution.findFirst({
-        where: { organizationId: params.organizationId, leadId: params.leadId },
-        select: { adCampaignId: true },
-      });
-      adCampaignId = attr?.adCampaignId ?? null;
+    let funnelId = params.funnelId ?? null;
+    if (params.leadId) {
+      if (!adCampaignId || !funnelId) {
+        const lead = await this.prisma.lead.findFirst({
+          where: { organizationId: params.organizationId, id: params.leadId },
+          select: { funnelRecommendationId: true },
+        });
+        funnelId = funnelId ?? lead?.funnelRecommendationId ?? null;
+      }
+      if (!adCampaignId) {
+        const attr = await this.prisma.leadAttribution.findFirst({
+          where: { organizationId: params.organizationId, leadId: params.leadId },
+          select: { adCampaignId: true },
+        });
+        adCampaignId = attr?.adCampaignId ?? null;
+      }
     }
 
     const event = await this.prisma.marketingFunnelEvent.create({
       data: {
         organizationId: params.organizationId,
+        funnelId: funnelId ?? undefined,
         eventType: params.eventType,
         idempotencyKey: params.idempotencyKey,
         leadId: params.leadId ?? undefined,

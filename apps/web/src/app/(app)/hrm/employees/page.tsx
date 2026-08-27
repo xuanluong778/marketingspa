@@ -27,12 +27,14 @@ import {
   type HrmEmployee,
 } from '@/types/hrm';
 import { ROLE_OPTIONS } from '@/types/appointments';
+import { useT } from '@/i18n/i18n-provider';
 
 function roleLabel(code?: string) {
   return ROLE_OPTIONS.find((r) => r.value === code)?.label ?? code ?? '—';
 }
 
 export default function HrmEmployeesPage() {
+  const t = useT();
   const [q, setQ] = useState('');
   const [branchId, setBranchId] = useState('');
   const [departmentId, setDepartmentId] = useState('');
@@ -60,7 +62,7 @@ export default function HrmEmployeesPage() {
 
   return (
     <div>
-      <PageHeader title="Quản Lý Nhân Sự" description="Hồ sơ, tài khoản, hợp đồng và tài liệu">
+      <PageHeader title={t('hrm.title')} description={t('hrm.description')}>
         <Button
           onClick={() => {
             setEditing(null);
@@ -68,27 +70,27 @@ export default function HrmEmployeesPage() {
           }}
         >
           <Plus className="mr-2 h-4 w-4" />
-          Thêm nhân viên
+          {t('hrm.addEmployee')}
         </Button>
       </PageHeader>
 
       <div className="mb-4 grid gap-3 md:grid-cols-2 lg:grid-cols-5">
         <div className="space-y-1 lg:col-span-2">
-          <Label className="text-xs">Tìm kiếm</Label>
+          <Label className="text-xs">{t('hrm.search')}</Label>
           <Input
-            placeholder="Tên, SĐT, email, mã NV, chức vụ..."
+            placeholder={t('hrm.searchPlaceholder')}
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
         </div>
         <div className="space-y-1">
-          <Label className="text-xs">Chi nhánh</Label>
+          <Label className="text-xs">{t('hrm.branch')}</Label>
           <Select value={branchId || 'all'} onValueChange={(v) => setBranchId(v === 'all' ? '' : v)}>
             <SelectTrigger>
-              <SelectValue placeholder="Tất cả" />
+              <SelectValue placeholder={t('common.all')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Tất cả</SelectItem>
+              <SelectItem value="all">{t('common.all')}</SelectItem>
               {branchList.map((b) => (
                 <SelectItem key={b.id} value={b.id}>
                   {b.name}
@@ -98,16 +100,16 @@ export default function HrmEmployeesPage() {
           </Select>
         </div>
         <div className="space-y-1">
-          <Label className="text-xs">Phòng ban</Label>
+          <Label className="text-xs">{t('hrm.department')}</Label>
           <Select
             value={departmentId || 'all'}
             onValueChange={(v) => setDepartmentId(v === 'all' ? '' : v)}
           >
             <SelectTrigger>
-              <SelectValue placeholder="Tất cả" />
+              <SelectValue placeholder={t('common.all')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Tất cả</SelectItem>
+              <SelectItem value="all">{t('common.all')}</SelectItem>
               {deptList.map((d) => (
                 <SelectItem key={d.id} value={d.id}>
                   {d.name}
@@ -117,16 +119,16 @@ export default function HrmEmployeesPage() {
           </Select>
         </div>
         <div className="space-y-1">
-          <Label className="text-xs">Trạng thái</Label>
+          <Label className="text-xs">{t('hrm.status')}</Label>
           <Select
             value={status || 'all'}
             onValueChange={(v) => setStatus(v === 'all' ? '' : (v as EmployeeStatus))}
           >
             <SelectTrigger>
-              <SelectValue placeholder="Tất cả" />
+              <SelectValue placeholder={t('common.all')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Tất cả</SelectItem>
+              <SelectItem value="all">{t('common.all')}</SelectItem>
               {EMPLOYEE_STATUS_OPTIONS.map((s) => (
                 <SelectItem key={s.value} value={s.value}>
                   {s.label}
@@ -136,7 +138,7 @@ export default function HrmEmployeesPage() {
           </Select>
         </div>
         <div className="space-y-1">
-          <Label className="text-xs">Loại HĐ lao động</Label>
+          <Label className="text-xs">{t('hrm.employmentType')}</Label>
           <Select
             value={employmentType || 'all'}
             onValueChange={(v) =>
@@ -144,10 +146,10 @@ export default function HrmEmployeesPage() {
             }
           >
             <SelectTrigger>
-              <SelectValue placeholder="Tất cả" />
+              <SelectValue placeholder={t('common.all')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Tất cả</SelectItem>
+              <SelectItem value="all">{t('common.all')}</SelectItem>
               {EMPLOYMENT_TYPE_OPTIONS.map((s) => (
                 <SelectItem key={s.value} value={s.value}>
                   {s.label}
@@ -163,12 +165,12 @@ export default function HrmEmployeesPage() {
         isLoading={isLoading}
         isError={isError}
         onRetry={refetch}
-        emptyTitle="Chưa có nhân viên"
+        emptyTitle={t('hrm.employeesEmpty')}
         getRowKey={(r) => r.id}
         columns={[
           {
             key: 'name',
-            header: 'Nhân viên',
+            header: t('hrm.employee'),
             cell: (r) => (
               <div>
                 <div className="font-medium">{r.name}</div>
@@ -176,13 +178,13 @@ export default function HrmEmployeesPage() {
               </div>
             ),
           },
-          { key: 'phone', header: 'SĐT', cell: (r) => r.phone ?? '—' },
-          { key: 'position', header: 'Chức vụ', cell: (r) => r.position ?? '—' },
-          { key: 'branch', header: 'Chi nhánh', cell: (r) => r.branch?.name ?? '—' },
-          { key: 'department', header: 'Phòng ban', cell: (r) => r.department?.name ?? '—' },
+          { key: 'phone', header: t('hrm.phone'), cell: (r) => r.phone ?? '—' },
+          { key: 'position', header: t('hrm.position'), cell: (r) => r.position ?? '—' },
+          { key: 'branch', header: t('hrm.branch'), cell: (r) => r.branch?.name ?? '—' },
+          { key: 'department', header: t('hrm.department'), cell: (r) => r.department?.name ?? '—' },
           {
             key: 'status',
-            header: 'Trạng thái',
+            header: t('hrm.status'),
             cell: (r) => (
               <StatusBadge
                 status={
@@ -195,9 +197,9 @@ export default function HrmEmployeesPage() {
           },
           {
             key: 'role',
-            header: 'Tài khoản',
+            header: t('hrm.account'),
             cell: (r) =>
-              r.user?.role ? <StatusBadge status={roleLabel(r.user.role.code)} /> : 'Chưa tạo',
+              r.user?.role ? <StatusBadge status={roleLabel(r.user.role.code)} /> : t('hrm.notCreated'),
           },
           {
             key: 'actions',
@@ -206,7 +208,7 @@ export default function HrmEmployeesPage() {
             cell: (r) => (
               <div className="flex justify-end gap-1">
                 <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-                  <Link href={`/hrm/employees/${r.id}`} title="Hồ sơ">
+                  <Link href={`/hrm/employees/${r.id}`} title={t('hrm.profile')}>
                     <Eye className="h-4 w-4" />
                   </Link>
                 </Button>
@@ -257,9 +259,9 @@ export default function HrmEmployeesPage() {
       <ConfirmDialog
         open={!!deactivateId}
         onOpenChange={(o) => !o && setDeactivateId(null)}
-        title="Ngưng hoạt động nhân viên?"
-        description="Nhân viên sẽ chuyển sang trạng thái Đã nghỉ (TERMINATED)."
-        confirmLabel="Xác nhận"
+        title={t('hrm.deactivateTitle')}
+        description={t('hrm.deactivateDesc')}
+        confirmLabel={t('hrm.confirm')}
         destructive
         isPending={mutations.deactivate.isPending}
         onConfirm={() =>

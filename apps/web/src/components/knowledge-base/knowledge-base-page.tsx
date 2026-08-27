@@ -1,7 +1,17 @@
 'use client';
 
 import { useMemo, useRef, useState, type ReactNode } from 'react';
-import { FileText, Info, Loader2, Pencil, RefreshCw, Search, Trash2, Upload } from 'lucide-react';
+import {
+  Download,
+  FileText,
+  Info,
+  Loader2,
+  Pencil,
+  RefreshCw,
+  Search,
+  Trash2,
+  Upload,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -25,12 +35,15 @@ import {
   useImportRagKbText,
   useReindexRagKb,
   useDeleteRagKbDocument,
+  useDownloadRagKbDocument,
+  useRagKbDocument,
   useRagKbSearch,
   type RagKnowledgeBase,
   type RagKbDocument,
 } from '@/hooks/use-rag-kb';
 import { cn } from '@/lib/utils';
 import { formatDateTime } from '@/lib/format';
+import { useT } from '@/i18n/i18n-provider';
 
 type ViewMode = 'list' | 'guide' | 'search';
 
@@ -38,6 +51,7 @@ const ACCEPT = '.pdf,.docx,.txt,.csv,application/pdf,text/plain,text/csv';
 
 /** UI Knowledge Base theo layout RAG (danh sách card + Import / Reindex). */
 export function KnowledgeBasePage() {
+  const t = useT();
   const list = useRagKnowledgeBases();
   const createKb = useCreateRagKb();
   const updateKb = useUpdateRagKb();
@@ -47,6 +61,7 @@ export function KnowledgeBasePage() {
   const importText = useImportRagKbText();
   const reindex = useReindexRagKb();
   const delDoc = useDeleteRagKbDocument();
+  const downloadDoc = useDownloadRagKbDocument();
   const search = useRagKbSearch();
 
   const [view, setView] = useState<ViewMode>('list');
@@ -68,6 +83,12 @@ export function KnowledgeBasePage() {
   } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  const fullDoc = useRagKbDocument(
+    previewDoc?.kb.id ?? null,
+    previewDoc?.doc.id ?? null,
+    !!previewDoc,
+  );
+
   const bases = useMemo(() => list.data ?? [], [list.data]);
 
   const flash = (msg: string) => {
@@ -75,7 +96,7 @@ export function KnowledgeBasePage() {
     window.setTimeout(() => setToast(null), 3500);
   };
 
-  if (list.isLoading) return <LoadingState message="Đang tải Knowledge Base…" />;
+  if (list.isLoading) return <LoadingState message={t('knowledgeBase.loading')} />;
   if (list.isError) return <ErrorState onRetry={list.refetch} />;
 
   return (
@@ -168,7 +189,7 @@ export function KnowledgeBasePage() {
           {bases.length === 0 && (
             <div className="rounded-xl border border-dashed p-10 text-center text-muted-foreground">
               <FileText className="h-10 w-10 mx-auto mb-3 opacity-50" />
-              <p className="font-medium text-foreground">Chưa có Knowledge Base</p>
+              <p className="font-medium text-foreground">{t('knowledgeBase.empty')}</p>
               <p className="text-sm mt-1">Nhấn «+ Tạo KB» để bắt đầu.</p>
             </div>
           )}
@@ -210,6 +231,21 @@ export function KnowledgeBasePage() {
                 });
               }}
               onPreviewDoc={(doc) => setPreviewDoc({ kb, doc })}
+              onDownloadDoc={(doc) =>
+                downloadDoc.mutate(
+                  { kbId: kb.id, docId: doc.id },
+                  {
+                    onSuccess: (filename) => flash(`Đã tải «${filename}».`),
+                    onError: (e) =>
+                      flash(e instanceof Error ? e.message : 'Tải về thất bại'),
+                  },
+                )
+              }
+              downloadingDocId={
+                downloadDoc.isPending
+                  ? (downloadDoc.variables as { docId?: string } | undefined)?.docId
+                  : null
+              }
               onDeleteDoc={(doc) => {
                 if (!window.confirm(`Xóa tài liệu «${doc.title}»?`)) return;
                 delDoc.mutate(
@@ -446,20 +482,84 @@ export function KnowledgeBasePage() {
         </DialogContent>
       </Dialog>
 
-      {/* Preview document */}
+      {/* Preview document — full content */}
       <Dialog open={!!previewDoc} onOpenChange={(o) => !o && setPreviewDoc(null)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>{previewDoc?.doc.title}</DialogTitle>
           </DialogHeader>
           <p className="text-xs text-muted-foreground">
-            {previewDoc?.doc.sourceType}
-            {previewDoc?.doc.url ? ` · ${previewDoc.doc.url}` : ''} ·{' '}
-            {previewDoc ? formatDateTime(previewDoc.doc.createdAt) : ''} · {previewDoc?.doc.status}
+            {fullDoc.data?.sourceType ?? previewDoc?.doc.sourceType}
+            {(fullDoc.data?.url ?? previewDoc?.doc.url)
+              ? ` · ${fullDoc.data?.url ?? previewDoc?.doc.url}`
+              : ''}{' '}
+            · {previewDoc ? formatDateTime(previewDoc.doc.createdAt) : ''} ·{' '}
+            {fullDoc.data?.status ?? previewDoc?.doc.status}
+            {fullDoc.data
+              ? ` · ${fullDoc.data.contentLength.toLocaleString()} ký tự · ${fullDoc.data.chunkCount} chunks · ${fullDoc.data.tokenCount} tokens`
+              : ''}
           </p>
-          <pre className="text-xs whitespace-pre-wrap rounded-md bg-muted p-3 max-h-72 overflow-auto">
-            {previewDoc?.doc.preview || '(không có preview)'}
-          </pre>
+          {fullDoc.isLoading ? (
+            <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              {t('knowledgeBase.loadingAll')}
+            </div>
+          ) : fullDoc.isError ? (
+            <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+              {(fullDoc.error as Error)?.message || 'Không tải được nội dung tài liệu.'}
+            </div>
+          ) : (
+            <div className="min-h-0 flex-1 space-y-3 overflow-hidden">
+              <pre className="text-xs whitespace-pre-wrap rounded-md bg-muted p-3 max-h-[50vh] overflow-auto">
+                {fullDoc.data?.content || '(không có nội dung)'}
+              </pre>
+              {fullDoc.data?.chunks && fullDoc.data.chunks.length > 0 ? (
+                <details className="rounded-md border border-border/70">
+                  <summary className="cursor-pointer select-none px-3 py-2 text-sm font-medium">
+                    Xem {fullDoc.data.chunks.length} chunks
+                  </summary>
+                  <div className="max-h-56 space-y-2 overflow-auto border-t px-3 py-2">
+                    {fullDoc.data.chunks.map((chunk) => (
+                      <div key={chunk.index} className="rounded border bg-muted/50 p-2 text-xs">
+                        <p className="mb-1 text-[11px] text-muted-foreground">
+                          Chunk #{chunk.index} · {chunk.charCount} ký tự · ~{chunk.tokenEstimate}{' '}
+                          tokens
+                        </p>
+                        <pre className="whitespace-pre-wrap">{chunk.text}</pre>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              ) : null}
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              disabled={!previewDoc || downloadDoc.isPending}
+              onClick={() => {
+                if (!previewDoc) return;
+                downloadDoc.mutate(
+                  { kbId: previewDoc.kb.id, docId: previewDoc.doc.id },
+                  {
+                    onSuccess: (filename) => flash(`Đã tải «${filename}».`),
+                    onError: (e) =>
+                      flash(e instanceof Error ? e.message : 'Tải về thất bại'),
+                  },
+                );
+              }}
+            >
+              {downloadDoc.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+              ) : (
+                <Download className="h-3.5 w-3.5 mr-1" />
+              )}
+              Tải về
+            </Button>
+            <Button variant="secondary" onClick={() => setPreviewDoc(null)}>
+              Đóng
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
@@ -500,6 +600,8 @@ function KbCard({
   onEdit,
   onDelete,
   onPreviewDoc,
+  onDownloadDoc,
+  downloadingDocId,
   onDeleteDoc,
 }: {
   kb: RagKnowledgeBase;
@@ -510,6 +612,8 @@ function KbCard({
   onEdit: () => void;
   onDelete: () => void;
   onPreviewDoc: (doc: RagKbDocument) => void;
+  onDownloadDoc: (doc: RagKbDocument) => void;
+  downloadingDocId?: string | null;
   onDeleteDoc: (doc: RagKbDocument) => void;
 }) {
   const busy = busyId === kb.id;
@@ -578,7 +682,7 @@ function KbCard({
           <div className="rounded-lg border border-dashed border-border/80 py-10 px-4 text-center">
             <FileText className="h-9 w-9 mx-auto mb-2 text-muted-foreground/60" />
             <p className="text-sm text-muted-foreground">
-              Chưa có tài liệu nào. Nhấn Import để thêm.
+              {t('knowledgeBase.emptyDocs')}
             </p>
           </div>
         ) : (
@@ -602,6 +706,20 @@ function KbCard({
                     onClick={() => onPreviewDoc(doc)}
                   >
                     Xem
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8"
+                    disabled={downloadingDocId === doc.id}
+                    onClick={() => onDownloadDoc(doc)}
+                  >
+                    {downloadingDocId === doc.id ? (
+                      <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                    ) : (
+                      <Download className="h-3.5 w-3.5 mr-1" />
+                    )}
+                    Tải về
                   </Button>
                   <Button
                     size="sm"

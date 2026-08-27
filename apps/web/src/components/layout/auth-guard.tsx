@@ -5,6 +5,7 @@ import { authStorage } from '@/lib/auth-storage';
 import { useCurrentUser } from '@/hooks/use-auth';
 import { LoadingState, ErrorState } from '@/components/shared/page-state';
 import { ApiError } from '@/lib/api-client';
+import { useT } from '@/i18n/i18n-provider';
 
 function redirectToLogin() {
   if (typeof window === 'undefined') return;
@@ -14,13 +15,14 @@ function redirectToLogin() {
 }
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
+  const t = useT();
   const [ready, setReady] = useState(false);
   const [hasToken, setHasToken] = useState(false);
-  const { isLoading, isError, error, refetch, isSuccess, data } = useCurrentUser();
+  const { isLoading, isError, error, refetch, isSuccess, data, isFetching } = useCurrentUser();
 
   const apiError = error as ApiError | undefined;
-  const isUnauthorized = isError && apiError?.statusCode === 401;
-  const isNetworkError = isError && !apiError?.statusCode;
+  const isUnauthorized = isError && apiError?.statusCode === 401 && !data;
+  const isNetworkError = isError && !apiError?.statusCode && !data;
 
   useEffect(() => {
     const authenticated = authStorage.isAuthenticated();
@@ -32,6 +34,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // Only hard-redirect when we truly have no session (no prior /auth/me data)
     if (!isUnauthorized) return;
     authStorage.clear();
     setHasToken(false);
@@ -41,26 +44,42 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
   if (!ready) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#0A3D30]">
-        <LoadingState message="Đang tải..." className="text-white [&_svg]:text-white" />
+        <LoadingState message={t('layout.loading')} className="text-white [&_svg]:text-white" />
       </div>
     );
   }
 
-  if (!hasToken || !authStorage.isAuthenticated() || isUnauthorized) {
+  if (!hasToken || !authStorage.isAuthenticated()) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#0A3D30]">
         <LoadingState
-          message={isUnauthorized ? 'Phiên đăng nhập hết hạn...' : 'Đang chuyển đến trang đăng nhập...'}
+          message={t('layout.redirectingLogin')}
           className="text-white [&_svg]:text-white"
         />
       </div>
     );
   }
 
-  if (isLoading || (!isSuccess && !isError && !data)) {
+  // Keep children mounted once we have user data — temporary 401/refetch must NOT remount Teleprompter
+  if (data || isSuccess) {
+    return <>{children}</>;
+  }
+
+  if (isUnauthorized) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#0A3D30]">
-        <LoadingState message="Đang xác thực..." className="text-white [&_svg]:text-white" />
+        <LoadingState
+          message={t('layout.sessionExpiredShort')}
+          className="text-white [&_svg]:text-white"
+        />
+      </div>
+    );
+  }
+
+  if (isLoading || isFetching || (!isSuccess && !isError && !data)) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#0A3D30]">
+        <LoadingState message={t('layout.authenticating')} className="text-white [&_svg]:text-white" />
       </div>
     );
   }
@@ -69,7 +88,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     return (
       <div className="flex min-h-screen items-center justify-center p-4">
         <ErrorState
-          message="Không kết nối được server. Kiểm tra API đang chạy (port 4000)."
+          message={t('layout.apiUnreachable')}
           onRetry={() => refetch()}
         />
       </div>
@@ -80,7 +99,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     return (
       <div className="flex min-h-screen items-center justify-center p-4">
         <ErrorState
-          message={apiError?.message ?? 'Không thể xác thực phiên đăng nhập'}
+          message={apiError?.message ?? t('layout.authFailed')}
           onRetry={() => refetch()}
         />
       </div>

@@ -13,7 +13,6 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { memoryStorage } from 'multer';
 import type { Response } from 'express';
 import { JwtAuthGuard } from '../common/guards/auth.guard';
 import { TenantGuard } from '../common/guards/tenant.guard';
@@ -21,10 +20,10 @@ import { PermissionsGuard } from '../common/guards/permissions.guard';
 import { RequirePermissions } from '../common/decorators/require-permissions.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthUser } from '../common/interfaces/auth-user.interface';
+import { createUploadMulterOptions } from '../common/uploads/upload-policy';
 import { WorkManagementService } from './work-management.service';
 import { WorkCollabService } from './work-collab.service';
 import { WORK_PERMISSIONS } from './work-management.constants';
-import { WORK_UPLOAD_MAX_BYTES } from './work-file-policy';
 import {
   CreateWorkCommentDto,
   CreateWorkProjectDto,
@@ -88,12 +87,7 @@ export class WorkManagementController {
 
   @Post('projects/:id/documents')
   @RequirePermissions(WORK_PERMISSIONS.TASK_WRITE)
-  @UseInterceptors(
-    FileInterceptor('file', {
-      storage: memoryStorage(),
-      limits: { fileSize: WORK_UPLOAD_MAX_BYTES },
-    }),
-  )
+  @UseInterceptors(FileInterceptor('file', createUploadMulterOptions('work')))
   uploadProjectDocument(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,
@@ -244,12 +238,7 @@ export class WorkManagementController {
 
   @Post('tasks/:id/files')
   @RequirePermissions(WORK_PERMISSIONS.TASK_WRITE)
-  @UseInterceptors(
-    FileInterceptor('file', {
-      storage: memoryStorage(),
-      limits: { fileSize: WORK_UPLOAD_MAX_BYTES },
-    }),
-  )
+  @UseInterceptors(FileInterceptor('file', createUploadMulterOptions('work')))
   async uploadTaskFile(
     @CurrentUser() user: AuthUser,
     @Param('id') id: string,

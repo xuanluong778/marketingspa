@@ -33,6 +33,7 @@ import {
 } from '@/hooks/use-hrm-attendance';
 import HrmAttendanceCorrectDialog from '@/components/hrm/hrm-attendance-correct-dialog';
 import { ApiError } from '@/lib/api-client';
+import { useT } from '@/i18n/i18n-provider';
 import {
   ATTENDANCE_DAY_STATUS_OPTIONS,
   type AttendanceDayStatus,
@@ -71,6 +72,7 @@ function canEditAttendance(role?: string) {
 }
 
 export default function HrmAttendancePage() {
+  const t = useT();
   const { data: user } = useCurrentUser();
   const [branchId, setBranchId] = useState('');
   const [departmentId, setDepartmentId] = useState('');
@@ -139,7 +141,7 @@ export default function HrmAttendancePage() {
   return (
     <div>
       <PageHeader
-        title="Bảng công"
+        title={t('hrm.attendanceTitle')}
         description={`Chấm công và tổng hợp tháng ${monthLabel} (múi giờ ${HRM_TZ})`}
       >
         <div className="flex flex-wrap gap-2">
@@ -248,7 +250,7 @@ export default function HrmAttendancePage() {
               <StatusBadge status={statusLabel(today.day.status)} />
             </>
           ) : (
-            <span className="text-muted-foreground">Chưa có bản ghi ngày công</span>
+            <span className="text-muted-foreground">{t('hrm.attendanceNoRecord')}</span>
           )}
           {periodLocked && (
             <span className="ml-3 text-amber-700">Kỳ đã khóa — không thể chấm/sửa</span>
@@ -457,7 +459,7 @@ export default function HrmAttendancePage() {
         isLoading={isLoading}
         isError={isError}
         onRetry={() => refetch()}
-        emptyTitle="Chưa có dữ liệu chấm công"
+        emptyTitle={t('hrm.attendanceEmpty')}
         getRowKey={(row) => row.id}
       />
 

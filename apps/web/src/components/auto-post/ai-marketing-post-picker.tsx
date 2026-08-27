@@ -6,16 +6,16 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import {
-  aiMarketingTabLabel,
   type AiMarketingPostPayload,
 } from '@/lib/auto-post-ai-marketing-bridge';
 import { buildContentAutoPostHref } from '@/lib/content-auto-post-routes';
 import type { ContentHistoryItem } from '@/types/content-marketing';
+import { useI18n, useT } from '@/i18n/i18n-provider';
 
-function formatCreatedAt(iso?: string): string {
+function formatCreatedAt(iso: string | undefined, locale: string): string {
   if (!iso?.trim()) return '';
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('vi-VN');
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString(locale === 'en' ? 'en-US' : 'vi-VN');
 }
 
 export function AiMarketingPostPicker({
@@ -31,16 +31,18 @@ export function AiMarketingPostPicker({
   className?: string;
   emptyMessage?: string;
 }) {
+  const t = useT();
+  const { locale } = useI18n();
   if (items.length === 0) {
     return (
       <div className={cn('rounded-xl border border-dashed p-8 text-center space-y-3', className)}>
         <p className="text-sm text-muted-foreground">
-          {emptyMessage ?? 'Chưa có bài từ AI Marketing. Hãy tạo bài tại tab AI Marketing trước.'}
+          {emptyMessage ?? t('content.emptyAiMarketingPosts')}
         </p>
         <Button asChild variant="outline" size="sm">
           <Link href={buildContentAutoPostHref('create')}>
             <Sparkles className="mr-2 h-4 w-4" />
-            Tạo Content
+            {t('facebookFlow.tabs.create')}
           </Link>
         </Button>
       </div>
@@ -51,7 +53,7 @@ export function AiMarketingPostPicker({
     <div className={cn('space-y-2 max-h-[min(520px,60vh)] overflow-y-auto pr-1', className)}>
       {items.map((item) => {
         const active = selectedId === item.id;
-        const title = item.title?.trim() || 'Không có tiêu đề';
+        const title = item.title?.trim() || t('facebookFlow.noTitle');
         const preview = item.content?.trim().slice(0, 120);
 
         return (
@@ -65,7 +67,7 @@ export function AiMarketingPostPicker({
                 title,
                 content: item.content,
                 contentScore: item.contentScore,
-                sourceLabel: aiMarketingTabLabel(item.tab),
+                sourceLabel: t(`facebookFlow.tabFilter.${item.tab}`),
               })
             }
             className={cn(
@@ -77,15 +79,15 @@ export function AiMarketingPostPicker({
           >
             <div className="flex flex-wrap items-center gap-2 mb-1.5">
               <Badge variant="secondary" className="font-normal text-xs">
-                {aiMarketingTabLabel(item.tab)}
+                {t(`facebookFlow.tabFilter.${item.tab}`)}
               </Badge>
               {item.contentScore > 0 && (
                 <span className="text-xs text-muted-foreground">
-                  Điểm: {Math.round(item.contentScore)}/100
+                  {t('facebookFlow.scoreLabel', { score: Math.round(item.contentScore) })}
                 </span>
               )}
               {item.createdAt && (
-                <span className="text-xs text-muted-foreground">{formatCreatedAt(item.createdAt)}</span>
+                <span className="text-xs text-muted-foreground">{formatCreatedAt(item.createdAt, locale)}</span>
               )}
             </div>
             <p className="font-medium text-slate-900 line-clamp-1">{title}</p>

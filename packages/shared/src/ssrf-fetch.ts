@@ -113,8 +113,10 @@ export async function assertPublicHttpUrl(
     }
   }
 
-  if (isIP(host)) {
-    if (isPrivateOrReservedIp(host)) {
+  // Normalize IPv6 host forms (URL may yield "::1" or occasionally bracketed).
+  const ipHost = host.replace(/^\[|\]$/g, '');
+  if (isIP(ipHost)) {
+    if (isPrivateOrReservedIp(ipHost)) {
       throw new SsrfValidationError('Không cho phép IP nội bộ / đặc biệt.', 'PRIVATE_IP');
     }
   } else {
