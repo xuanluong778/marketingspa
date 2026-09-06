@@ -1,0 +1,1 @@
+Chỉ sửa đúng phạm vi yêu cầu. TUYỆT ĐỐI không thay đổi hoặc ảnh hưởng Facebook Login/OAuth, pages_show_list, pages_read_engagement, pages_manage_posts, Connect Facebook Pages, Auto Post, English reviewer UI và toàn bộ Meta App Review flow hiện tại.
